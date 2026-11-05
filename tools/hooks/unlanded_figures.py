@@ -19,6 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config  # noqa: E402
 import deckio  # noqa: E402
 
+# Pages that run only in present mode on purpose: the interactive title
+# (make_remix.py) would start a second AI queue in the editor
+# (docs/guide/engagement-pages.md, "Interactive title").
+PRESENT_ONLY = ("page-remix-",)
+
 RECENT = 6 * 3600
 SETTLING = 10 * 60   # a page changed this recently is still being built by its agent
 
@@ -60,7 +65,8 @@ def main():
             except ValueError:
                 continue
             still = [s["id"] for s in doc.get("slides", []) for e in s.get("elements", [])
-                     if e.get("type") == "embed" and e.get("asset") and not e.get("liveInEditor")]
+                     if e.get("type") == "embed" and e.get("asset") and not e.get("liveInEditor")
+                     and not str(e["asset"]).startswith(PRESENT_ONLY)]
             if still:
                 problems.append(f"{d.relative_to(root).as_posix()}: figures show only a poster in the editor/live link: {', '.join(still)}")
     if problems:
