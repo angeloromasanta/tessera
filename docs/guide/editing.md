@@ -127,6 +127,15 @@ deck, so it waits for whichever agent opens the deck next:
   `slide.py reply DECK.html REQ_ID "One line on what changed"`. The slide's orb
   turns green and the reply shows under the comment: it is all the person
   reads about what happened, so make it the one line that says it. Change only what was asked; never delete a request.
+- **Edited or stopped while you work.** The person can rewrite a sent request
+  (click its text) or press Stop on one being worked on. Either wakes the
+  listener you re-armed. `slide.py requests` then marks the request
+  `EDITED while you work on it (rev N)`: re-read the text and adjust the
+  work (tell a subagent on it), and keep it `working`. Or it marks it
+  `STOPPED by the person`: stop at once (stop the subagent on it too), leave
+  the slide in a consistent state, land nothing more for it, and do not
+  resume it; a reply saying what was left is welcome, and the stop stands.
+  Editing a finished or stopped request opens it again: serve it like a new one.
 - Requests survive a recompile (`md_to_deck.py` carries them over by slide id)
   and are left out of the frozen Export. A request typed on the live mirror's
   phone view arrives the same way ([publishing.md](publishing.md)). The

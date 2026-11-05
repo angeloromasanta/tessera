@@ -593,10 +593,21 @@ export interface Comment {
    * answers in `replies` (author = its own name), then `status: 'done'` and
    * `resolved: true`. `elementId` names the selection the request was typed
    * against, `elementIds` the full selection when there were several.
+   *
+   * The person may edit a request after sending it: `text` is replaced,
+   * `rev` counts the edits and `editedAt` dates the last one. An edit while
+   * the agent works on it (status 'working') is meant for that agent: it
+   * re-reads the text and adjusts. An edit of a finished or stopped request
+   * reopens it. The person's stop sets `status: 'stopped'`, `stoppedAt` and
+   * `resolved: true` (older shells show it as finished): the agent stops at
+   * once and leaves the request as it is.
    */
   request?: boolean
-  status?: 'open' | 'working' | 'done'
+  status?: 'open' | 'working' | 'done' | 'stopped'
   elementIds?: string[]
+  rev?: number
+  editedAt?: string
+  stoppedAt?: string
 }
 
 export interface Slide {
@@ -615,6 +626,9 @@ export interface Slide {
    * after the parent.
    */
   stateOf?: string
+  /** Hidden: kept in the deck and the editor, skipped when presenting and
+   *  dropped from exports and published copies. */
+  hidden?: boolean
   /**
    * present-mode hover behaviour:
    * - focus-group: dim every element outside the hovered element's group

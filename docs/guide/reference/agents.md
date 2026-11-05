@@ -180,8 +180,11 @@ without them — and elements should carry the full field set shown.
 empty slide: what the slide should be). Requests about the
 whole deck are the same threads in the top-level `requests` array.
 A thread is `{id, author, text, at, elementId?, elementIds?, request: true,
-status: "open"|"working"|"done", resolved?, replies: [{id, author, text, at}]}`;
-`elementId(s)` name the selection it was typed against. Never delete one; serve
+status: "open"|"working"|"done"|"stopped", resolved?, replies: [{id, author, text, at}],
+rev?, editedAt?, stoppedAt?}`;
+`elementId(s)` name the selection it was typed against. `rev` counts the
+person's edits after sending (edited while you work on it: adjust);
+`stopped` is the person's Stop: stop at once and do not resume it. Never delete one; serve
 them with `slide.py requests` / `reply` ([../editing.md](../editing.md), "Requests typed
 in the editor"). Figure text a person retyped is the embed's `texts` (below).
 

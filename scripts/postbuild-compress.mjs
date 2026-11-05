@@ -98,10 +98,14 @@ const SLIDES_TOOLING = `<!--
     "improve the flow") is an entry of the top-level "requests" array.
     A new empty slide whose request says what it should be is yours to
     build. Both have the shape:
-    { id, text, author, at, status: "open"|"working"|"done", elementId?,
-      elementIds?, replies?: [{ id, author, text, at }], resolved? }.
-    elementId(s) name what was selected when it was typed.
-  · Treat every request whose status is not "done" as work to do: set
+    { id, text, author, at, status: "open"|"working"|"done"|"stopped",
+      elementId?, elementIds?, replies?: [{ id, author, text, at }],
+      resolved?, rev?, editedAt?, stoppedAt? }.
+    elementId(s) name what was selected when it was typed. "rev" counts the
+    person's edits of the text after sending: one edited while you work on it
+    means adjust to the new text. "stopped" means the person stopped it:
+    stop at once, land nothing more for it, do not resume it.
+  · Treat every request whose status is not "done" or "stopped" as work to do: set
     status "working", make the change, then add a reply (author = your own
     name, saying what you did) and set status "done" and resolved: true.
     Change only what the request asks for. Never delete a request.

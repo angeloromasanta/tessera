@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Requests can be edited and stopped.** A sent request shows its whole
+  text; clicking it edits it (Enter saves, Escape cancels). An edit while the
+  agent works on it reaches that agent; an edit of a finished one sends it
+  again. While the agent works, the request's × is a Stop button
+  (`status: "stopped"`). Both wake `slide.py requests --wait`.
+- **Hide a slide.** An eye button beside Duplicate and Delete on each
+  thumbnail sets `hidden: true`: the slide stays in the deck, faded in the
+  list, and the show, its counter and published copies skip it.
+
 ## 0.1.0 — 2026-11-05 First public release
 
 Tessera is a single-file slide engine: a deck is one `.html` file that edits,

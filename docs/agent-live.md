@@ -161,11 +161,23 @@ over by slide id.
 (author = the agent's own name) and set `status: "done"`, `resolved: true`.
 Never delete a request; the person deletes their own.
 
+**Edited or stopped by the person** (shells built 2026-11-05 on). Clicking a
+sent request's text edits it: `text` is replaced, `rev` goes up by one and
+`editedAt` is set. A waiting request just has the new text; one being worked
+on stays `working` and the agent adjusts to the new text; a done or stopped
+one goes back to `open` (its `resolved` and `stoppedAt` dropped). While a
+request is `working` its delete button is Stop: it sets
+`status: "stopped"`, `resolved: true` (an older shell shows it as done) and
+`stoppedAt`. The agent stops, lands nothing more for it and does not resume
+it. A later reply is kept but does not change the status
+(`slide.py reply` and `window.tessera.requests.reply` both keep the stop).
+Both wake listeners through `pendingIds` (below).
+
 **Protocol additions** (all on the bridge above):
 
 | where | field / route | meaning |
 |---|---|---|
-| editor → `/tick` body | `pending: <int>`, `pendingIds: [id…]` | requests with status `open` in the open document (ids from shells built 2026-10-22 on) |
+| editor → `/tick` body | `pending: <int>`, `pendingIds: [id…]` | `pending` counts requests with status `open`. `pendingIds` lists the open ones (ids from shells built 2026-10-22 on), and from 2026-11-05 also each edited request as `id@rev` (open or working) and each request stopped in the last 10 minutes as `id!stop`, so an edit or a stop wakes a listener once |
 | `/tick` response | `listening: <bool>`, `saveVersion: 2` | a listener is waiting for this file (a waiting request no longer says "no agent listening"); the bridge takes the raw `/save` below |
 | CLI `POST /wait` | `{file?: "file:///…", timeout: <=25, listener?: name}` | blocks until a live session (of that file, or any) has an open request THIS listener (key: `listener`, else the file) was not told about yet; returns `{sessions, new: [ids]}` or `{sessions: [], timeout: true}`. Each id is reported once per listener, so re-arming while the agent is still on the last request does not fire again at once. A shell that sends only the count gets one report per rise of the count. Each call keeps the listener present for 30 s, so call it in a loop |
 

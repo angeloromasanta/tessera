@@ -19,7 +19,7 @@
 
 import type { Store } from '../store'
 import { uid, type Comment, type Slide, type SlideElement } from '../model'
-import { listRequests, requestStatus } from '../requests'
+import { listRequests, requestClosed, requestStatus } from '../requests'
 import { ICONS } from '../icons'
 import { t } from '../i18n'
 
@@ -184,7 +184,7 @@ window.addEventListener('tessera-agent-listening', ((ev: CustomEvent) => {
 // --- the review list: a comment field beside every slide --------------------------
 
 /** The status word for a request. */
-const statusWord = (s: string) => ({ open: t('Waiting'), working: t('Working…'), done: t('Done') } as Record<string, string>)[s] ?? s
+const statusWord = (s: string) => ({ open: t('Waiting'), working: t('Working…'), done: t('Done'), stopped: t('Stopped') } as Record<string, string>)[s] ?? s
 
 /** Whether an agent is waiting for requests right now. */
 export const agentListening = () => listening
@@ -231,6 +231,61 @@ function removeRequest(store: Store, slideId: string | null, id: string) {
     s.comments = (s.comments ?? []).filter((x) => x.id !== id)
     if (!s.comments.length) delete s.comments
   }))
+}
+
+/** Change one request in place (an edit, a stop) without repainting the slide. */
+function updateRequest(store: Store, slideId: string | null, id: string, fn: (c: Comment) => void): Comment | null {
+  let hit: Comment | null = null
+  quiet(store, () => store.commit(() => {
+    const list = slideId === null ? store.doc.requests : store.doc.slides.find((x) => x.id === slideId)?.comments
+    const c = list?.find((x) => x.id === id)
+    if (c) { fn(c); hit = c }
+  }))
+  // a hosted mirror (no bridge) carries the changed request to the file itself
+  if (hit) window.dispatchEvent(new CustomEvent('tessera-request', { detail: { slideId: slideId ?? '', request: hit } }))
+  return hit
+}
+
+/** The person rewrote a sent request. Waiting: the new text replaces the old.
+ *  Working: the agent on it is told (the edit wakes its listener) and adjusts.
+ *  Done or stopped: the request opens again with the new text. */
+export function editRequest(store: Store, slideId: string | null, id: string, text: string) {
+  updateRequest(store, slideId, id, (c) => {
+    c.text = text
+    c.rev = (c.rev ?? 0) + 1
+    c.editedAt = new Date().toISOString()
+    const st = requestStatus(c)
+    if (st === 'done' || st === 'stopped') {
+      c.status = 'open'
+      delete c.resolved
+      delete c.stoppedAt
+    }
+  })
+}
+
+/** The person stops the agent working on a request. */
+export function stopRequest(store: Store, slideId: string | null, id: string) {
+  updateRequest(store, slideId, id, (c) => {
+    c.status = 'stopped'
+    c.resolved = true
+    c.stoppedAt = new Date().toISOString()
+  })
+}
+
+/** The button at the end of a request: Stop while the agent works on it,
+ *  else Delete. */
+function endButton(cls: string, store: Store, slideId: string | null, c: Comment): HTMLButtonElement {
+  const working = requestStatus(c) === 'working'
+  const b = el('button', `${cls}${working ? ' stop' : ''}`, working ? undefined : '×')
+  if (working) b.innerHTML = ICONS.stop
+  b.title = working ? t('Stop the agent') : t('Delete')
+  b.setAttribute('aria-label', b.title)
+  b.addEventListener('click', (ev) => {
+    ev.stopPropagation()
+    if (working) stopRequest(store, slideId, c.id)
+    else removeRequest(store, slideId, c.id)
+  })
+  return b
 }
 
 export interface RowAskHooks {
@@ -297,6 +352,8 @@ export class RowAsk {
   private target = div('ed-row-target')
   private open = false
   private sig = ''
+  /** the request whose text is being edited, if any: the list holds still */
+  private editing = ''
 
   constructor(private store: Store, readonly slideId: string | null, hooks: RowAskHooks) {
     // ed-agent-input: typing a comment must not hold up an agent's edits (agent-bridge busy())
@@ -352,6 +409,7 @@ export class RowAsk {
     const reqs = this.threads()
     const s = this.slide()
     const sel = this.selected()
+    if (this.editing) { this.sig = ''; return } // repaint once the edit ends
     const sig = JSON.stringify([reqs, this.open, sel, s?.elements.length === 0])
     if (sig === this.sig) return
     this.sig = sig
@@ -390,13 +448,47 @@ export class RowAsk {
     dot.addEventListener('mouseleave', hideReply)
     dot.addEventListener('blur', hideReply)
     const text = el('div', 'ed-row-text', c.text)
-    const x = el('button', 'ed-row-x', '×')
-    x.title = t('Delete')
-    x.addEventListener('click', () => removeRequest(this.store, this.slideId, c.id))
+    text.title = st === 'working' ? t('Click to edit: the agent working on it gets the new text')
+      : st === 'open' ? t('Click to edit') : t('Click to edit and send again')
+    text.addEventListener('click', () => this.edit(c, text))
     const head = div('ed-row-head')
-    head.append(dot, text, x)
+    head.append(dot, text, endButton('ed-row-x', this.store, this.slideId, c))
     row.append(head)
     return row
+  }
+
+  /** Turn a sent request's text into a field: Enter saves, Shift+Enter is a
+   *  new line, Escape cancels, leaving the field saves. */
+  private edit(c: Comment, text: HTMLElement) {
+    if (this.editing) return
+    this.editing = c.id
+    const ta = document.createElement('textarea')
+    ta.className = 'ed-row-edit ed-agent-input'
+    ta.value = c.text
+    ta.rows = 1
+    ta.setAttribute('aria-label', t('Edit the request'))
+    const fit = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px` }
+    let done = false
+    const finish = (save: boolean) => {
+      if (done) return
+      done = true
+      this.editing = ''
+      const v = ta.value.trim()
+      if (save && v && v !== c.text) editRequest(this.store, this.slideId, c.id, v)
+      this.sig = ''
+      this.paint()
+    }
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation()
+      if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); finish(true) }
+      if (ev.key === 'Escape') { ev.preventDefault(); finish(false) }
+    })
+    ta.addEventListener('input', fit)
+    ta.addEventListener('blur', () => finish(true))
+    text.replaceWith(ta)
+    fit()
+    ta.focus()
+    ta.setSelectionRange(ta.value.length, ta.value.length)
   }
 
   focus() { this.input.focus() }
@@ -518,10 +610,7 @@ export class RequestList {
       idle.title = t('Requests are saved in the deck; the next agent that opens it picks them up')
       head.append(idle)
     }
-    const x = el('button', 'ed-req-x', '×')
-    x.title = t('Delete')
-    x.addEventListener('click', (ev) => { ev.stopPropagation(); removeRequest(this.store, this.store.slide.id, c.id) })
-    head.append(x)
+    head.append(endButton('ed-req-x', this.store, this.store.slide.id, c))
     item.append(head, el('div', 'ed-req-text', c.text))
     const ids = c.elementIds ?? (c.elementId ? [c.elementId] : [])
     if (ids.length) {
@@ -533,7 +622,7 @@ export class RequestList {
       a.append(el('b', '', r.author), document.createTextNode(' ' + r.text))
       item.appendChild(a)
     }
-    if (status === 'done') {
+    if (status === 'done' || status === 'stopped') {
       item.addEventListener('click', () => {
         if (this.opened.has(c.id)) this.opened.delete(c.id)
         else this.opened.add(c.id)
@@ -551,7 +640,7 @@ export class RequestList {
     const reqs = (slide.comments ?? []).filter((c) => c.request)
     // newest done request stays open (its reply is the news); older ones fold
     // to a line, and past two they hide behind "n earlier"
-    const done = reqs.filter((c) => requestStatus(c) === 'done')
+    const done = reqs.filter((c) => requestClosed(c))
     const latestDone = done[done.length - 1]
     const older = done.slice(0, -1)
     const hidden = !this.showOld && older.length > 2 ? new Set(older.slice(0, older.length - 1).map((c) => c.id)) : new Set<string>()
@@ -562,7 +651,7 @@ export class RequestList {
     }
     for (const c of reqs) {
       if (hidden.has(c.id)) continue
-      const full = requestStatus(c) !== 'done' || c === latestDone || this.opened.has(c.id)
+      const full = !requestClosed(c) || c === latestDone || this.opened.has(c.id)
       this.list.appendChild(this.card(c, slide, full))
     }
     if (atBottom) this.list.scrollTop = this.list.scrollHeight

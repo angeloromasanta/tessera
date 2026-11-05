@@ -6,10 +6,13 @@
 
 import type { TesseraDoc, Comment, Slide } from './model'
 
-export type RequestStatus = 'open' | 'working' | 'done'
+export type RequestStatus = 'open' | 'working' | 'done' | 'stopped'
 
 export const requestStatus = (c: Comment): RequestStatus =>
-  c.resolved ? 'done' : c.status === 'working' ? 'working' : c.status === 'done' ? 'done' : 'open'
+  c.status === 'stopped' ? 'stopped' : c.resolved ? 'done' : c.status === 'working' ? 'working' : c.status === 'done' ? 'done' : 'open'
+
+/** Finished: done, or stopped by the person. */
+export const requestClosed = (c: Comment) => { const s = requestStatus(c); return s === 'done' || s === 'stopped' }
 
 export interface RequestItem {
   /** '' for a request about the whole deck (doc.requests) */
@@ -23,6 +26,8 @@ export interface RequestItem {
   status: RequestStatus
   elementIds: string[]
   replies: Array<{ id: string; author: string; text: string; at: string }>
+  /** how many times the person edited it after sending (0 = never) */
+  rev: number
 }
 
 const item = (c: Comment, slideId: string, slideIndex: number): RequestItem => ({
@@ -35,12 +40,13 @@ const item = (c: Comment, slideId: string, slideIndex: number): RequestItem => (
   status: requestStatus(c),
   elementIds: c.elementIds ?? (c.elementId ? [c.elementId] : []),
   replies: c.replies ?? [],
+  rev: c.rev ?? 0,
 })
 
 /** Every request thread: the whole-deck ones first (doc.requests), then the
  *  slides' in slide order. */
 export function listRequests(doc: TesseraDoc, opts: { open?: boolean } = {}): RequestItem[] {
-  const keep = (c: Comment) => !!c.request && (!opts.open || requestStatus(c) !== 'done')
+  const keep = (c: Comment) => !!c.request && (!opts.open || !requestClosed(c))
   return [
     ...(doc.requests ?? []).filter(keep).map((c) => item(c, '', -1)),
     ...doc.slides.flatMap((s, slideIndex) => (s.comments ?? []).filter(keep).map((c) => item(c, s.id, slideIndex))),
@@ -62,3 +68,25 @@ export function findRequest(doc: TesseraDoc, id: string): { thread: Comment; sli
 /** Requests nobody has picked up yet — what the bridge reports as `pending`. */
 export const pendingRequests = (doc: TesseraDoc): number =>
   listRequests(doc).filter((r) => r.status === 'open').length
+
+/** How long a stop keeps waking listeners, so an agent busy on the request hears it. */
+const STOP_SIGNAL_MS = 10 * 60_000
+
+/**
+ * What the editor reports to the bridge as `pendingIds` (each id wakes a
+ * listener once): every open request; a request edited after it was sent, as
+ * `id@rev` (so an edit wakes the listener again, also while the agent works on
+ * it); a request the person stopped in the last 10 minutes, as `id!stop`.
+ */
+export function signalIds(doc: TesseraDoc, now = Date.now()): string[] {
+  const out: string[] = []
+  const threads = [...(doc.requests ?? []), ...doc.slides.flatMap((s) => s.comments ?? [])]
+  for (const c of threads) {
+    if (!c.request) continue
+    const st = requestStatus(c)
+    const id = c.rev ? `${c.id}@${c.rev}` : c.id
+    if (st === 'open' || (st === 'working' && c.rev)) out.push(id)
+    else if (st === 'stopped' && c.stoppedAt && now - Date.parse(c.stoppedAt) < STOP_SIGNAL_MS) out.push(`${c.id}!stop`)
+  }
+  return out
+}

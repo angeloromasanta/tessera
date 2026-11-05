@@ -102,6 +102,7 @@ the string `</script>` can never appear and terminate the block.
 | `notes` | `string` | yes | Speaker notes (travel in the file; shown in speaker view). |
 | `name?` | `string` | no | Friendly label for link pickers / state badges. |
 | `stateOf?` | `string` | no | Marks this slide a hidden *state* variant of the slide with this id (see [Interactive states](#interactive-states)). |
+| `hidden?` | `boolean` | no | Hidden slide: kept in the deck and the editor (faded thumbnail, eye button), skipped when presenting and left out of the counter, frozen exports and published copies. |
 | `hover?` | `{ type, dim?, default? }` | no | Present-mode hover behaviour: `type: 'focus-group'` (dim elements outside the hovered group) or `'reveal'` (`showOnHover` set swap; `default` names the resting set). |
 | `comments?` | `Comment[]` | no | Review threads. Editor-only — never rendered in present/print, but saved in the file. |
 

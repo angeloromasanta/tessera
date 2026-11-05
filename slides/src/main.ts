@@ -225,8 +225,9 @@ exposeApi({
       store.commit(() => {
         const c = findRequest(store.doc, id)!.thread
         if (text) c.replies = [...(c.replies ?? []), { id: uid('rep'), author: agent, text, at: new Date().toISOString() }]
+        if (c.status === 'stopped') return // the person stopped it: a late reply does not resume it
         c.status = status
-        c.resolved = status === 'done' || undefined
+        c.resolved = status === 'done' || status === 'stopped' || undefined
       })
       return true
     },

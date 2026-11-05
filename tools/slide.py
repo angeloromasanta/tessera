@@ -78,6 +78,7 @@ pass --agent on every command; an `export` dies with its Bash call.
 from __future__ import annotations
 
 import argparse
+import calendar
 import contextlib
 import copy
 import html as htmllib
@@ -665,10 +666,26 @@ def _requests(doc, everything=False):
         for c in threads:
             if not c.get("request"):
                 continue
-            status = "done" if c.get("resolved") else c.get("status") or "open"
-            if everything or status != "done":
+            status = _req_status(c)
+            if everything or status not in ("done", "stopped") or _recent_stop(c):
                 out.append((i, s, c, status))
     return out
+
+
+def _req_status(c):
+    # same order as slides/src/requests.ts requestStatus
+    if c.get("status") == "stopped":
+        return "stopped"
+    return "done" if c.get("resolved") else c.get("status") or "open"
+
+
+def _recent_stop(c, minutes=10):
+    # a stop is listed (and wakes listeners) for 10 minutes, so the agent on it hears
+    try:
+        t = calendar.timegm(time.strptime(c.get("stoppedAt", "")[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return False
+    return c.get("status") == "stopped" and time.time() - t < minutes * 60
 
 
 def _print_requests(doc, everything=False):
@@ -678,7 +695,14 @@ def _print_requests(doc, everything=False):
     for i, s, c, status in rows:
         els = c.get("elementIds") or ([c["elementId"]] if c.get("elementId") else [])
         where = "[deck] whole deck" if s is None else f"[{i + 1}] {s['id']}"
-        print(f"{where}  {c['id']}  {status}" + (f"  on {', '.join(els)}" if els else "")
+        note = ""
+        if status == "stopped":
+            note = "  STOPPED by the person: stop now, keep the deck consistent, do not resume"
+        elif c.get("rev") and status == "working":
+            note = f"  EDITED while you work on it (rev {c['rev']}): re-read the text and adjust"
+        elif c.get("rev"):
+            note = f"  (edited, rev {c['rev']})"
+        print(f"{where}  {c['id']}  {status}" + (f"  on {', '.join(els)}" if els else "") + note
               + f"\n    {c.get('author', '?')}: {c['text']}")
         for r in c.get("replies") or []:
             print(f"    > {r.get('author', '?')}: {r.get('text', '')}")
@@ -718,11 +742,15 @@ def cmd_reply(args):
                     c.setdefault("replies", []).append({
                         "id": "rep-" + uuid.uuid4().hex[:10], "author": agent_name(args),
                         "text": args.text, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-                c["status"] = args.status
-                if args.status == "done":
-                    c["resolved"] = True
+                if c.get("status") == "stopped" and args.status != "stopped":
+                    # the person stopped it: a late reply is kept, the stop stands
+                    print(f"{args.req} was stopped by the person; status left as stopped", file=sys.stderr)
                 else:
-                    c.pop("resolved", None)
+                    c["status"] = args.status
+                    if args.status in ("done", "stopped"):
+                        c["resolved"] = True
+                    else:
+                        c.pop("resolved", None)
                 commit(deck, new, args)
                 return
     raise SystemExit(f"no request {args.req}")
@@ -737,8 +765,26 @@ def cmd_ask(args):
     s = None if args.id == "-" else find(new, args.id)
     held = (new.get("requests") or []) if s is None else (s.get("comments") or [])
     rid = args.req_id or "req-" + uuid.uuid4().hex[:10]
-    if any(c.get("id") == rid for c in held):
-        print("no change")
+    old = next((c for c in held if c.get("id") == rid), None)
+    if old is not None:
+        # a retry of the same request, or (--rev above the stored one) the
+        # person's later edit or stop of it, relayed by a page with no bridge
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if args.state == "stopped":
+            if old.get("status") == "stopped":
+                print("no change")
+                return
+            old.update(status="stopped", resolved=True, stoppedAt=now)
+        elif (args.rev or 0) > (old.get("rev") or 0):
+            old.update(text=args.text, rev=args.rev, editedAt=now)
+            if _req_status(old) in ("done", "stopped"):
+                old["status"] = "open"
+                old.pop("resolved", None)
+                old.pop("stoppedAt", None)
+        else:
+            print("no change")
+            return
+        commit(deck, new, args)
         return
     c = {"id": rid, "request": True, "status": "open", "author": args.author, "text": args.text,
          "at": args.at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
@@ -1655,7 +1701,7 @@ def main():
     q.add_argument("--minutes", type=float, default=115, help="--wait gives up after this long")
     q = p("reply", cmd_reply, "req", write=True, help="answer a request and set its status")
     q.add_argument("text", nargs="?", default="")
-    q.add_argument("--status", choices=["working", "done"], default="done")
+    q.add_argument("--status", choices=["working", "done", "stopped"], default="done")
     q = p("ask", cmd_ask, "id", write=True, help="record a change request on slide ID (- = whole deck)")
     q.add_argument("text")
     q.add_argument("--id", dest="req_id", default=None)
@@ -1663,6 +1709,8 @@ def main():
                    help="who asked (default $TESSERA_AUTHOR)")
     q.add_argument("--at", default=None)
     q.add_argument("--element", nargs="+", default=None)
+    q.add_argument("--rev", type=int, default=0, help="an edit of request --id (above its stored rev)")
+    q.add_argument("--state", choices=["stopped"], default=None, help="the person stopped request --id")
     q = p("set", cmd_set, "id", "elem", write=True, help="set fields: ELEM or - for the slide")
     q.add_argument("pairs", nargs="+", help="key=value (JSON-parsed if valid); key= deletes")
     q = p("new", cmd_new, write=True, help="new slide from a layout")

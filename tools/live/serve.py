@@ -216,6 +216,11 @@ def request(slug: str, body: bytes) -> tuple:
         cmd += ["--at", req["at"][:40]]
     if els:
         cmd += ["--element", *els]
+    # the person's later edit (rev) or stop of a request already relayed
+    if isinstance(req.get("rev"), int) and 0 < req["rev"] < 10000:
+        cmd += ["--rev", str(req["rev"])]
+    if req.get("status") == "stopped":
+        cmd += ["--state", "stopped"]
     cmd += ["--", str(path), sid, text]   # a text that starts with "-" is not an option
     # slide.py retries for about 90 s while the editor here is busy (someone typing)
     try:

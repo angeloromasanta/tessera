@@ -1,6 +1,6 @@
 import { AgentEditor } from './agent-editor'
 import type { Store } from './store'
-import { listRequests, pendingRequests } from './requests'
+import { pendingRequests, signalIds } from './requests'
 import { hasFileHandle, currentFileName } from './save'
 import { foldDiskChanges, OtherDeckError } from './save-merge'
 
@@ -184,7 +184,7 @@ export function connectAgentBridge(store: Store, flush: () => void, presenting: 
       const usedToken = token
       const usedSession = sessionId
       try {
-        const pendingIds = listRequests(store.doc, { open: true }).filter((r) => r.status === 'open').map((r) => r.id)
+        const pendingIds = signalIds(store.doc)
         const response = await fetch(`${BRIDGE}/tick`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${usedToken}` },
           body: JSON.stringify({ sessionId, file, docId: store.doc.docId, title: store.doc.title, dirty: store.dirty, canSave: hasFileHandle() || bridgeSaves, busy: busy(), pending: pendingRequests(store.doc), pendingIds, reply: pending }),

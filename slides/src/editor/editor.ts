@@ -797,11 +797,20 @@ export class Editor {
     const surface = renderThumbnail(slide, this.store.doc, this.thumbWidth(isState))
     paintOrbs(item, slide.comments, this.mode !== 'review')
     const tools = div('ed-thumb-tools')
+    let badge: HTMLElement | null = null
+    if (slide.hidden) {
+      item.classList.add('is-hidden')
+      badge = div('ed-thumb-hidden')
+      badge.innerHTML = ICONS.eyeOff
+      item.title = t('Hidden: skipped when presenting')
+    }
     tools.append(
+      ...(isState ? [] : [btn(slide.hidden ? ICONS.eye : ICONS.eyeOff, '', (ev) => { ev.stopPropagation(); this.toggleHidden(i) },
+        slide.hidden ? t('Show slide') : t('Hide slide'))]),
       btn(ICONS.copy, '', (ev) => { ev.stopPropagation(); this.duplicateSlide(i) }, t('Duplicate slide')),
       btn(ICONS.trash, '', (ev) => { ev.stopPropagation(); this.deleteSlide(i) }, t('Delete slide')),
     )
-    item.append(num, surface, tools)
+    item.append(num, surface, ...(badge ? [badge] : []), tools)
     if (this.mode === 'review') {
       const rn = div('ed-row-num')
       rn.textContent = isState ? '' : label
@@ -1060,6 +1069,16 @@ export class Editor {
   }
 
   // --- slide ops ------------------------------------------------------------------
+
+  /** Hide a slide from the show (it stays in the deck), or show it again. */
+  private toggleHidden(i: number) {
+    const s = this.store.doc.slides[i]
+    if (!s) return
+    this.store.commit(() => {
+      if (s.hidden) delete s.hidden
+      else s.hidden = true
+    }, 'slides')
+  }
 
   private duplicateSlide(i: number) {
     // Duplicated slides keep element ids → set transition to morph and you

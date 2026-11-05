@@ -219,6 +219,13 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 }
 .ed-thumb:hover .ed-thumb-tools { display: flex; }
 .ed-thumb-tools .ed-btn { padding: 3px; background: rgb(255 255 255 / 0.9); }
+/* a hidden slide: skipped when presenting; its thumbnail faded, an eye struck through */
+.ed-thumb.is-hidden .tessera-thumb-surface { opacity: 0.35; }
+.ed-thumb-hidden {
+  position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: inline-flex; padding: 4px; border-radius: 50%; color: var(--ink-2); background: rgb(255 255 255 / 0.9); pointer-events: none;
+}
+.ed-thumb-hidden svg { width: 16px; height: 16px; }
 
 .tessera-thumb-surface { overflow: hidden; pointer-events: none; }
 
@@ -667,6 +674,7 @@ a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is 
 .ed-orb { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; box-shadow: inset 0 0 0 2px var(--accent); background: #fff; }
 .ed-orb[data-s="working"] { background: #2563eb; box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
 .ed-orb[data-s="done"] { background: #2fb36d; box-shadow: none; }
+.ed-orb[data-s="stopped"] { background: #9aa3b2; box-shadow: none; border-radius: 2px; }
 .ed-thumb-cmt {
   z-index: 2;
   width: 9px;
@@ -1369,6 +1377,7 @@ body.ed-col-resizing, body.ed-thumbcol-resizing { cursor: col-resize; user-selec
 .ed-req-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px #9aa4b2; }
 .ed-req.working .ed-req-dot { background: var(--accent); box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
 .ed-req.done .ed-req-dot { background: #2fb36d; box-shadow: none; }
+.ed-req.stopped .ed-req-dot { background: #9aa3b2; box-shadow: none; border-radius: 2px; }
 .ed-req-status { font-weight: 600; color: var(--ink-2); }
 .ed-req.working .ed-req-status { color: var(--accent-ink); }
 .ed-req.done .ed-req-status { color: #1d7a47; }
@@ -1547,8 +1556,17 @@ body.ed-phone-on .ed-recover { display: none; }
 .ed-row-reqs:empty { display: none; }
 .ed-row-req { font-size: 13.5px; line-height: 1.4; color: var(--ink); }
 .ed-row-head { display: flex; align-items: flex-start; gap: 6px; }
-.ed-row-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.ed-row-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; border-radius: 4px; }
+.ed-row-text:hover { background: rgb(15 23 42 / 0.04); box-shadow: 0 0 0 3px rgb(15 23 42 / 0.04); }
 .ed-row-req.done .ed-row-text { color: #1a7f4b; }
+.ed-row-req.stopped .ed-row-text { color: var(--muted); }
+/* a sent request being edited: the whole text, growing with it */
+.ed-row-edit {
+  flex: 1; min-width: 0; box-sizing: border-box; resize: none; overflow: hidden; margin: -2px 0;
+  font: inherit; line-height: inherit; color: var(--ink); background: #fff;
+  border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; outline: none;
+  box-shadow: 0 0 0 2px rgb(91 141 239 / 0.3);
+}
 /* the status dot before a request (hollow waiting, pulsing working, green
    done); hovering it shows the agent's reply (.ed-reply-pop) */
 .ed-row-dot { flex: none; position: relative; width: 15px; height: 19px; margin-inline-start: -3px; cursor: default; outline: none; }
@@ -1558,6 +1576,7 @@ body.ed-phone-on .ed-recover { display: none; }
 }
 .ed-row-dot[data-s="working"]::after { background: #2563eb; box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
 .ed-row-dot[data-s="done"]::after { background: #2fb36d; box-shadow: none; }
+.ed-row-dot[data-s="stopped"]::after { background: #9aa3b2; box-shadow: none; border-radius: 2px; }
 .ed-row-dot:hover::after, .ed-row-dot:focus-visible::after { outline: 3px solid rgb(47 179 109 / 0.25); }
 .ed-reply-pop {
   position: fixed; z-index: 1000; max-width: 340px; box-sizing: border-box; padding: 9px 12px; border-radius: 8px;
@@ -1572,6 +1591,10 @@ body.ed-phone-on .ed-recover { display: none; }
 .ed-row-x { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: 0; }
 .ed-row-req:hover .ed-row-x, .ed-row-x:focus-visible { opacity: 1; }
 .ed-row-x:hover { color: var(--ink); }
+/* while the agent works on it: Stop, always shown */
+.ed-row-x.stop, .ed-req-x.stop { opacity: 1; color: var(--ink-2); display: inline-flex; padding: 1px; border-radius: 4px; }
+.ed-row-x.stop svg, .ed-req-x.stop svg { width: 15px; height: 15px; }
+.ed-row-x.stop:hover, .ed-req-x.stop:hover { color: #c0262d; background: rgb(192 38 45 / 0.08); }
 .ed-row-more { align-self: flex-start; border: 0; background: none; font: inherit; font-size: 11.5px; color: var(--muted); cursor: pointer; padding: 0; }
 .ed-row-more:hover { color: var(--ink); text-decoration: underline; }
 .ed-row-target { align-self: flex-start; font-size: 11px; font-weight: 600; color: var(--accent-ink); background: #fff3d6; border-radius: 6px; padding: 1px 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

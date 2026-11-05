@@ -53,7 +53,7 @@ export function startPresentation(
     const section = document.createElement('section')
     // Morph slides swap instantly; the Flip animation supplies the motion.
     section.dataset.transition = slide.transition === 'morph' ? 'none' : slide.transition
-    if (slide.stateOf) section.dataset.tesseraState = '1' // dimmed in overview
+    if (slide.stateOf || slide.hidden) section.dataset.tesseraState = '1' // dimmed in overview
     const surface = renderSlide(slide, doc, { hidePlaceholders: true, liveMedia: true })
     // reveal slides start with only the default hover set visible
     if (slide.hover?.type === 'reveal') applyRevealSet(surface, slide.hover.default ?? null, slide.hover.default)
@@ -72,6 +72,9 @@ export function startPresentation(
   // ——— state-aware linear navigation ———
   // Slides with stateOf are interactive states: linked-to, never walked-to.
   const isState = (i: number) => !!doc.slides[i]?.stateOf
+  // Hidden slides stay in the deck but the show walks past them (and so do
+  // the counter, the rail and the overview's numbering).
+  const walked = (i: number) => !!doc.slides[i] && !doc.slides[i].stateOf && !doc.slides[i].hidden
   const anchorOf = (i: number) => {
     const pid = doc.slides[i]?.stateOf
     const p = doc.slides.findIndex((s) => s.id === pid)
@@ -80,20 +83,20 @@ export function startPresentation(
   const goNext = () => {
     const cur = deck.getIndices().h
     for (let i = (isState(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
-      if (!isState(i)) return deck.slide(i, 0)
+      if (walked(i)) return deck.slide(i, 0)
     }
   }
   const goPrev = () => {
     const cur = deck.getIndices().h
     if (isState(cur)) return deck.slide(anchorOf(cur), 0)
     for (let i = cur - 1; i >= 0; i--) {
-      if (!isState(i)) return deck.slide(i, 0)
+      if (walked(i)) return deck.slide(i, 0)
     }
   }
   const hasNext = () => {
     const cur = deck.getIndices().h
     for (let i = (isState(cur) ? anchorOf(cur) : cur) + 1; i < doc.slides.length; i++) {
-      if (!isState(i)) return true
+      if (walked(i)) return true
     }
     return false
   }
@@ -101,15 +104,15 @@ export function startPresentation(
     const cur = deck.getIndices().h
     if (isState(cur)) return true // right-swipe returns to the parent slide
     for (let i = cur - 1; i >= 0; i--) {
-      if (!isState(i)) return true
+      if (walked(i)) return true
     }
     return false
   }
-  const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((s) => !s.stateOf).length
-  const visibleTotal = doc.slides.filter((s) => !s.stateOf).length
+  const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((s) => !s.stateOf && !s.hidden).length
+  const visibleTotal = doc.slides.filter((s) => !s.stateOf && !s.hidden).length
   // real slide indices that appear in linear navigation (states are excluded) —
   // the presenter-view thumbnail rail and grid iterate this.
-  const railIndices = doc.slides.map((_, i) => i).filter((i) => !isState(i))
+  const railIndices = doc.slides.map((_, i) => i).filter(walked)
   const goFirst = () => deck.slide(railIndices[0] ?? 0, 0)
   const goLast = () => deck.slide(railIndices[railIndices.length - 1] ?? 0, 0)
 
@@ -205,7 +208,7 @@ export function startPresentation(
   // the chosen display synchronously when the notes open.
   const nextVisibleIndex = (from: number) => {
     for (let i = (isState(from) ? anchorOf(from) : from) + 1; i < doc.slides.length; i++) {
-      if (!isState(i)) return i
+      if (walked(i)) return i
     }
     return -1
   }
