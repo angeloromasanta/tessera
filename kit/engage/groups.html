@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Group draw</title>
+<!--
+  Group draw for an `embed` slide (full-bleed, 1280x720).
+
+  Reads the names the room sent to the sign-in poll (bucket NAMES_CODE), draws
+  them into N groups, and remembers every round it has drawn by posting the
+  grouping to a second bucket (HISTORY_CODE) on the same poll service. The
+  next draw minimises the number of pairs who have already sat together.
+
+  Sandbox rules: one file, no CDN, no storage (the frame runs at an opaque
+  origin, so localStorage throws) -- which is exactly why the history lives on
+  the service and not in the browser. The service address arrives in
+  window.TESSERA_EMBED.poll (injected by the deck in present mode); the
+  hard-coded fallback is for opening this page standalone.
+
+  Keys: D draws, S saves, + / - change the group count, R re-reads the names.
+
+  Editable text (the deck's EMBED_TEXT_BRIDGE): the heading carries data-edit="title",
+  so the deck's `texts` override it and a double-click on the edit canvas
+  rewords it. Buttons, counts and status lines are UI and stay fixed.
+-->
+<style>
+  :root {
+    --navy:#0D2A2F; --blue:#0F6B73; --ink:#FFF; --muted:#8E97BC;
+    --line:rgba(255,255,255,.14); --card:rgba(255,255,255,.06);
+    --go:#7A5BBF; --warn:#BF831A; --bad:#D2553A; --pink:#2B6CB0;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; overflow:hidden; }
+  body { background:var(--navy); color:var(--ink);
+    font:16px/1.35 Manrope,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:grid; place-items:center; }
+  #stage { position:relative; width:1280px; height:720px; transform-origin:center;
+    display:grid; grid-template-rows:88px 1fr 40px; padding:0 48px; }
+
+  /* ── top bar ── */
+  #bar { display:flex; align-items:center; gap:14px; border-bottom:1px solid var(--line); }
+  #bar h1 { font-size:26px; font-weight:800; margin:0 18px 0 0; letter-spacing:-.01em; }
+  .pill { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px;
+    background:var(--card); border:1px solid var(--line); font-size:15px; }
+  .pill b { font-size:18px; }
+  button { font:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:8px 16px; cursor:pointer; font-weight:700; }
+  button:hover { background:rgba(255,255,255,.12); }
+  button.primary { background:var(--blue); border-color:var(--blue); }
+  button.primary:hover { background:#2d5cc0; }
+  button.go { background:var(--go); border-color:var(--go); color:var(--navy); }
+  button.tiny { padding:6px 12px; font-size:15px; }
+  button:disabled { opacity:.4; cursor:default; }
+  #kcount { min-width:36px; text-align:center; font-size:20px; font-weight:800; }
+  #status { margin-left:auto; color:var(--muted); font-size:14px; max-width:330px; text-align:right; }
+  #status.bad { color:var(--bad); }
+  #status.good { color:var(--go); }
+
+  /* ── groups ── */
+  #wall { display:grid; gap:14px; padding:16px 0; align-content:start; }
+  .grp { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 14px 12px;
+    display:grid; grid-template-columns:auto 1fr; gap:6px 12px; align-items:start; min-height:0; }
+  .grp .n { font-size:34px; font-weight:800; line-height:1; color:var(--go); grid-row:span 2; padding-top:2px; }
+  .grp .t { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+  .grp ul { margin:0; padding:0; list-style:none; font-size:16px; font-weight:600; line-height:1.3; }
+  .grp li.rep { color:var(--warn); }
+  .grp li.rep::after { content:" ·"; }
+  #empty { grid-column:1/-1; text-align:center; color:var(--muted); padding:80px 0; font-size:20px; }
+  #empty b { color:var(--ink); }
+
+  /* ── foot ── */
+  #foot { display:flex; align-items:center; gap:18px; color:var(--muted); font-size:13px; border-top:1px solid var(--line); }
+  #foot .k { color:var(--ink); font-weight:700; }
+  #foot a { color:var(--muted); cursor:pointer; text-decoration:underline; margin-left:auto; }
+
+  /* ── paste fallback ── */
+  #paste { position:absolute; inset:88px 48px 40px; background:var(--navy); display:none; padding:16px 0; }
+  #paste.on { display:grid; grid-template-rows:auto 1fr auto; gap:10px; }
+  #paste textarea { width:100%; height:100%; background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:10px; padding:12px; font:15px/1.4 inherit; resize:none; }
+  #paste .row { display:flex; gap:10px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bar">
+    <h1 data-edit="title">Group draw</h1>
+    <span class="pill">👥 <b id="ncount">0</b> names</span>
+    <button class="tiny" id="refresh" title="R">↻ Names</button>
+    <span class="pill">Groups <button class="tiny" id="kminus">−</button><span id="kcount">11</span><button class="tiny" id="kplus">+</button></span>
+    <button class="primary" id="draw" title="D">Draw groups</button>
+    <button class="go" id="save" title="S" disabled>Save round</button>
+    <span id="status">…</span>
+  </div>
+  <div id="wall"><div id="empty">Reading the sign-in poll…</div></div>
+  <div id="foot">
+    <span><span class="k" id="rounds">0</span> rounds saved</span>
+    <span><span class="k" id="repeats">–</span> repeated pairs in this draw</span>
+    <span>D draw · S save · + / − groups · R re-read names</span>
+    <a id="pasteToggle">Type or paste names instead</a>
+  </div>
+  <div id="paste">
+    <div>One name per line. These replace the poll's names for this session only.</div>
+    <textarea id="pasteBox" placeholder="Ana G.&#10;Marc P.&#10;…"></textarea>
+    <div class="row"><button class="primary" id="pasteUse">Use these names</button><button id="pasteCancel">Back</button></div>
+  </div>
+</div>
+
+<script>
+// ── config ────────────────────────────────────────────────────────────────
+const NAMES_CODE   = "namewk";   // the sign-in poll's pinned code
+const HISTORY_CODE = "grphty";   // where saved rounds go, one answer per round
+const DEFAULT_K    = 11;
+const HOST = (window.TESSERA_EMBED && window.TESSERA_EMBED.poll) || {};
+const SERVICE = (HOST.service || "").replace(/\/+$/, "");   // the deck's poll service (doc.poll.service)
+const HDR = HOST.lecturer ? { "x-tessera-lecturer": HOST.lecturer } : {};
+/* The lecturer key goes as x-tessera-lecturer. A poll service from before the rename lists
+   only its old header name in CORS, so its preflight fails: a request carrying the key that
+   fails on the network is sent once more under that name. */
+const OLD_LECTURER_HEADER = 'x-bento-lecturer'; // decks written before the rename / the old service only allow this name
+async function lfetch(url, opts = {}) {
+  try { return await fetch(url, opts); }
+  catch (err) {
+    const h = Object.assign({}, opts.headers || {});
+    if (!h['x-tessera-lecturer'] || (err && err.name === 'AbortError')) throw err;
+    h[OLD_LECTURER_HEADER] = h['x-tessera-lecturer']; delete h['x-tessera-lecturer'];
+    return fetch(url, Object.assign({}, opts, { headers: h }));
+  }
+}
+
+// ── state ─────────────────────────────────────────────────────────────────
+let names = [];          // current roster (strings)
+let history = [];        // [[ [names], [names], … ], …] one entry per saved round
+let groups = null;       // the current draw: [[names], …]
+let k = DEFAULT_K;
+let saved = false;
+
+const $ = id => document.getElementById(id);
+const norm = s => s.trim().replace(/\s+/g, " ");
+const key = s => norm(s).toLowerCase();
+
+function status(msg, cls) { const el = $("status"); el.textContent = msg; el.className = cls || ""; }
+
+// ── scaling ───────────────────────────────────────────────────────────────
+// A frame can run this before it has a size (a slideshow started on this slide):
+// scaling to 0 would leave it blank, so keep the last scale and ask again.
+function fit() {
+  if (!innerWidth || !innerHeight) return;
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
+  $("stage").style.transform = `scale(${s})`;
+}
+addEventListener("resize", fit); addEventListener("load", fit); fit();
+if (window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
+setInterval(fit, 1000);
+
+// ── service ───────────────────────────────────────────────────────────────
+async function readBucket(code) {
+  if (!SERVICE) throw new Error("this deck names no poll service (doc.poll.service)");
+  const r = await lfetch(`${SERVICE}/api/poll?c=${encodeURIComponent(code)}`, { cache: "no-store", headers: HDR });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const d = await r.json();
+  if (d.answersWithheld) throw new Error("answers withheld — enter the lecturer key in the deck's poll panel");
+  return d.answers || [];
+}
+
+async function loadNames() {
+  status("Reading the sign-in poll…");
+  try {
+    const ans = await readBucket(NAMES_CODE);
+    const seen = new Map();
+    for (const a of ans) {
+      const n = norm(a.name || a.text || "");
+      if (n && !seen.has(key(n))) seen.set(key(n), n.slice(0, 24));
+    }
+    names = [...seen.values()].sort((a, b) => a.localeCompare(b));
+    $("ncount").textContent = names.length;
+    status(`${names.length} unique names (${ans.length} answers)`, "good");
+  } catch (e) {
+    status("Names: " + e.message, "bad");
+  }
+  render();
+}
+
+async function loadHistory() {
+  try {
+    const ans = await readBucket(HISTORY_CODE);
+    history = [];
+    for (const a of ans) {
+      try { const j = JSON.parse(a.text); if (Array.isArray(j.g)) history.push(j.g); } catch (_) {}
+    }
+    $("rounds").textContent = history.length;
+  } catch (e) {
+    // a missing history bucket is normal on the first day
+    history = []; $("rounds").textContent = 0;
+  }
+}
+
+async function saveRound() {
+  if (!groups || saved) return;
+  const text = JSON.stringify({ r: history.length + 1, at: Date.now(), g: groups });
+  if (text.length > 2000) { status("Round too long to save (>2000 chars) — shorten the names", "bad"); return; }
+  $("save").disabled = true; status("Saving round…");
+  try {
+    if (!SERVICE) throw new Error("this deck names no poll service (doc.poll.service)");
+    const r = await lfetch(`${SERVICE}/api/answer`, {
+      method: "POST", headers: { "content-type": "application/json", ...HDR },
+      body: JSON.stringify({ code: HISTORY_CODE, text, question: "Group draw history" }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    history.push(groups); saved = true;
+    $("rounds").textContent = history.length;
+    status(`Round ${history.length} saved — the next draw will avoid these pairs`, "good");
+  } catch (e) {
+    status("Save failed: " + e.message + " (the draw is still on screen)", "bad");
+    $("save").disabled = false;
+  }
+}
+
+// ── the draw ──────────────────────────────────────────────────────────────
+// pairCount[a][b] = how many saved rounds a and b shared a group.
+function pairCounts() {
+  const m = new Map();
+  const add = (a, b) => { const kk = key(a) + "|" + key(b); m.set(kk, (m.get(kk) || 0) + 1); };
+  for (const round of history) for (const g of round)
+    for (let i = 0; i < g.length; i++) for (let j = 0; j < g.length; j++) if (i !== j) add(g[i], g[j]);
+  return (a, b) => m.get(key(a) + "|" + key(b)) || 0;
+}
+
+function draw() {
+  if (!names.length) return;
+  const seen = pairCounts();
+  const n = names.length, K = Math.max(1, Math.min(k, n));
+  // random start, balanced sizes
+  const order = names.slice();
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const gs = Array.from({ length: K }, () => []);
+  order.forEach((p, i) => gs[i % K].push(p));
+  const cost = g => { let c = 0; for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) c += seen(g[i], g[j]); return c; };
+  const costOf = (g, p, without) => g.reduce((c, q) => (q === without ? c : c + seen(p, q)), 0);
+  // local search: swap two people from different groups when it lowers repeats
+  let total = gs.reduce((s, g) => s + cost(g), 0);
+  const iters = Math.min(20000, 60 * n * n);
+  for (let it = 0; it < iters && total > 0; it++) {
+    const a = Math.floor(Math.random() * K), b = Math.floor(Math.random() * K);
+    if (a === b || !gs[a].length || !gs[b].length) continue;
+    const i = Math.floor(Math.random() * gs[a].length), j = Math.floor(Math.random() * gs[b].length);
+    const pa = gs[a][i], pb = gs[b][j];
+    const before = costOf(gs[a], pa) + costOf(gs[b], pb);
+    const after = costOf(gs[a], pb, pa) + costOf(gs[b], pa, pb);
+    if (after < before) { gs[a][i] = pb; gs[b][j] = pa; total += after - before; }
+  }
+  groups = gs.map(g => g.slice().sort((x, y) => x.localeCompare(y)));
+  saved = false; $("save").disabled = false;
+  $("repeats").textContent = total;
+  status(total ? `${total} pairs have sat together before — the fewest possible found` : "No repeated pairs", total ? "" : "good");
+  render();
+}
+
+// ── render ────────────────────────────────────────────────────────────────
+function render() {
+  $("kcount").textContent = k;
+  const wall = $("wall");
+  wall.innerHTML = "";
+  if (!groups) {
+    const e = document.createElement("div"); e.id = "empty";
+    e.innerHTML = names.length
+      ? `<b>${names.length} names</b> signed in. Press <b>Draw groups</b>.`
+      : `Nobody yet. Send the room back to the sign-in slide, then <b>↻ Names</b>.`;
+    wall.appendChild(e); wall.style.gridTemplateColumns = "1fr"; return;
+  }
+  const K = groups.length;
+  const cols = K <= 4 ? K : K <= 8 ? 4 : K <= 12 ? 6 : 8;
+  wall.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  const seen = pairCounts();
+  groups.forEach((g, i) => {
+    const d = document.createElement("div"); d.className = "grp";
+    const rep = p => g.some(q => q !== p && seen(p, q) > 0);
+    d.innerHTML = `<div class="n">${i + 1}</div><div class="t">Table ${i + 1} · ${g.length}</div>` +
+      `<ul>${g.map(p => `<li class="${rep(p) ? "rep" : ""}">${esc(p)}</li>`).join("")}</ul>`;
+    wall.appendChild(d);
+  });
+  // shrink the type when a wall of 12 groups of 6 would overflow the frame
+  const rows = Math.ceil(K / cols), per = Math.ceil(names.length / K);
+  const fs = rows * (per * 21 + 60) > 560 ? Math.max(12, Math.floor(560 / rows - 60) / per / 1.3) : 16;
+  wall.querySelectorAll("ul").forEach(u => u.style.fontSize = fs + "px");
+}
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+// ── wiring ────────────────────────────────────────────────────────────────
+$("draw").onclick = draw;
+$("save").onclick = saveRound;
+$("refresh").onclick = loadNames;
+$("kminus").onclick = () => { k = Math.max(1, k - 1); render(); };
+$("kplus").onclick = () => { k = Math.min(30, k + 1); render(); };
+$("pasteToggle").onclick = () => { $("paste").classList.add("on"); $("pasteBox").focus(); };
+$("pasteCancel").onclick = () => $("paste").classList.remove("on");
+$("pasteUse").onclick = () => {
+  const seen = new Map();
+  for (const l of $("pasteBox").value.split(/\r?\n/)) { const n = norm(l); if (n && !seen.has(key(n))) seen.set(key(n), n.slice(0, 24)); }
+  names = [...seen.values()].sort((a, b) => a.localeCompare(b));
+  $("ncount").textContent = names.length; groups = null;
+  $("paste").classList.remove("on"); status(`${names.length} names from the box`, "good"); render();
+};
+addEventListener("keydown", e => {
+  if (e.target.tagName === "TEXTAREA") return;
+  if (e.key === "d" || e.key === "D") draw();
+  else if (e.key === "s" || e.key === "S") saveRound();
+  else if (e.key === "+" || e.key === "=") $("kplus").click();
+  else if (e.key === "-" || e.key === "_") $("kminus").click();
+  else if (e.key === "r" || e.key === "R") loadNames();
+});
+
+(async () => { await loadHistory(); await loadNames(); })();
+</script>
+</body>
+</html>

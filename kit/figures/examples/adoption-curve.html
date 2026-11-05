@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The adoption curve</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+  --slate:#8A9496;  /* figure-only: neutral 5th category (laggards) */
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset 1.4s cubic-bezier(.35,0,.25,1),opacity .25s}
+.draw.on{stroke-dashoffset:0}
+.band{transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.axis{font-weight:600;font-size:16px;fill:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <pattern id="gap" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="0" y2="8" style="stroke:var(--coral)" stroke-width="3.4" opacity=".45"/>
+    </pattern>
+  </defs>
+  <!-- frame: never fades -->
+  <line x1="150" y1="396" x2="1200" y2="396" style="stroke:var(--line)" stroke-width="2"/>
+  <!-- generated marks are appended here -->
+</svg>
+
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+/* ---- geometry ------------------------------------------------------- */
+const X0 = 150, X1 = 1200, BASE = 396, AMP = 306, Z = 3.2;
+const px = z => X0 + (z + Z) / (2 * Z) * (X1 - X0);
+const g  = z => Math.exp(-z * z / 2);
+const py = z => BASE - AMP * g(z);
+
+const SVG = 'http://www.w3.org/2000/svg';
+const fig = document.getElementById('fig');
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+function mk(tag, attrs, txt) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  fig.appendChild(e);
+  return e;
+}
+// Editable words (assets/figure.html): every label carries data-edit=KEY and
+// reads its text through T(), so the deck editor can retype it.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+const label = (key, attrs, words) => mk('text', { ...attrs, 'data-edit': key }, T(key, words));
+function samples(a, b, n) {
+  const out = [];
+  for (let k = 0; k <= n; k++) out.push(a + (b - a) * k / n);
+  return out;
+}
+
+/* ---- the five waves ------------------------------------------------- */
+const segs = [
+  { id: 'inn', z: [-Z, -2], c: C.accent, name: 'Innovators',    pct: '2.5%'  },
+  { id: 'ear', z: [-2, -1], c: C.green,  name: 'Early adopters', pct: '13.5%' },
+  { id: 'em',  z: [-1,  0], c: C.amber,  name: 'Early majority', pct: '34%'   },
+  { id: 'lm',  z: [ 0,  1], c: C.coral,  name: 'Late majority',  pct: '34%'   },
+  { id: 'lag', z: [ 1,  Z], c: C.slate,  name: 'Laggards',       pct: '16%'   },
+];
+
+// filled areas under the curve, painted behind everything
+for (const s of segs) {
+  const zs = samples(s.z[0], s.z[1], 60);
+  let d = `M${px(zs[0]).toFixed(1)},${BASE}`;
+  for (const z of zs) d += ` L${px(z).toFixed(1)},${py(z).toFixed(1)}`;
+  d += ` L${px(zs[zs.length - 1]).toFixed(1)},${BASE} Z`;
+  mk('path', { class: 'el band', id: s.id, d, style: `fill:${s.c}`, 'fill-opacity': .82 });
+  // divider tick at the right edge of the band
+  if (s.z[1] < Z) mk('line', { class: 'el', id: s.id + 'v',
+    x1: px(s.z[1]), y1: py(s.z[1]), x2: px(s.z[1]), y2: BASE,
+    style: 'stroke:#fff', 'stroke-width': 2 });
+  // name + share under the axis
+  const mid = (s.z[0] + s.z[1]) / 2, cx = px(s.id === 'inn' ? -2.45 : s.id === 'lag' ? 1.55 : mid);
+  label(s.id + 't', { class: 'el lbl', id: s.id + 't', x: cx, y: 427, 'text-anchor': 'middle' }, s.name);
+  label(s.id + 'p', { class: 'el lbl', id: s.id + 'p', x: cx, y: 451, 'text-anchor': 'middle', style: `fill:${s.c}` }, s.pct);
+}
+
+/* ---- the chasm ------------------------------------------------------ */
+const CX = px(-1);
+mk('rect', { class: 'el', id: 'ch', x: CX - 15, y: 55, width: 30, height: BASE - 55, fill: 'url(#gap)' });
+mk('line', { class: 'el', id: 'chl', x1: CX - 15, y1: 55, x2: CX - 15, y2: BASE, style: `stroke:${C.coral}`, 'stroke-width': 1.5, 'stroke-dasharray': '5 5' });
+mk('line', { class: 'el', id: 'chr', x1: CX + 15, y1: 55, x2: CX + 15, y2: BASE, style: `stroke:${C.coral}`, 'stroke-width': 1.5, 'stroke-dasharray': '5 5' });
+label('cht', { class: 'el lbl', id: 'cht', x: CX - 30, y: 115, 'text-anchor': 'end', style: `fill:${C.coral}` }, 'THE CHASM');
+label('cht2', { class: 'el sub', id: 'cht2', x: CX - 30, y: 144, 'text-anchor': 'end', style: `fill:${C.coral}` }, 'a pilot buyer is not a production buyer');
+
+/* ---- the bell outline ----------------------------------------------- */
+{
+  const zs = samples(-Z, Z, 200);
+  let d = `M${px(zs[0]).toFixed(1)},${py(zs[0]).toFixed(1)}`;
+  for (const z of zs.slice(1)) d += ` L${px(z).toFixed(1)},${py(z).toFixed(1)}`;
+  mk('path', { class: 'el draw', id: 'curve', d, fill: 'none', style: `stroke:${C.ink}`,
+    'stroke-width': 4, 'stroke-linecap': 'round' });
+}
+
+/* ---- the cumulative S-curve ----------------------------------------- */
+{
+  const zs = samples(-Z, Z, 200);
+  const w = zs.map(g), tot = w.reduce((a, b) => a + b, 0);
+  let run = 0, d = '';
+  zs.forEach((z, k) => {
+    run += w[k] / tot;
+    const y = BASE - 331 * run;
+    d += (k ? ' L' : 'M') + px(z).toFixed(1) + ',' + y.toFixed(1);
+  });
+  mk('path', { class: 'el draw', id: 'cum', d, fill: 'none', style: `stroke:${C.accent}`,
+    'stroke-width': 3.5, 'stroke-dasharray': '1 1', 'stroke-linecap': 'round' });
+  label('cumt', { class: 'el lbl', id: 'cumt', x: X1, y: 48, 'text-anchor': 'end', style: `fill:${C.accent}` }, 'Cumulative adoption — the S-curve');
+  mk('circle', { class: 'el', id: 'cumd', cx: X1, cy: BASE - 331, r: 7, style: `fill:${C.accent}` });
+}
+
+/* ---- steps ----------------------------------------------------------- */
+const steps = [
+  ['curve'],
+  ['curve','inn','innt','innp','innv'],
+  ['curve','inn','innt','innp','innv','ear','eart','earp','earv'],
+  ['curve','inn','innt','innp','ear','eart','earp','ch','chl','chr','cht','cht2'],
+  ['curve','inn','innt','innp','ear','eart','earp','ch','chl','chr','em','emt','emp','emv'],
+  ['curve','inn','innt','innp','ear','eart','earp','em','emt','emp','emv','lm','lmt','lmp','lmv'],
+  ['curve','inn','innt','innp','ear','eart','earp','em','emt','emp','emv','lm','lmt','lmp','lmv','lag','lagt','lagp','chl','chr'],
+  ['curve','inn','innt','innp','ear','eart','earp','em','emt','emp','emv','lm','lmt','lmp','lmv','lag','lagt','lagp','chl','chr','cht','cum','cumt','cumd'],
+];
+
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();
+  p.style.strokeDasharray = L + ' ' + L;
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  const on = steps[i];
+  els.forEach(e => e.classList.toggle('on', on.includes(e.id)));
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+// keys stop at either end so the deck moves on (see assets/figure.html)
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

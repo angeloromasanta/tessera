@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hive matrix</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+:root{
+  --ink:#1A2326;--navy:#0D2A2F;--accent:#0F6B73;--sky:#2B6CB0;
+  --muted:#5A6467;--faint:#A7AFB1;--line:#C7CFD1;--rule:#D7DEDF;--tint:#F1F5F5;--blue-tint:#E2F0F1;
+  --amber:#BF831A;--amber-text:#8E5F00;--amber-tint:#FCF0DA;
+  --green:#3B9457;--green-text:#2B7041;--green-tint:#E3F2E6;
+  --coral:#D2553A;--coral-text:#A83A20;--coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#fff;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{position:relative;width:100%;height:100%;cursor:pointer;user-select:none;-webkit-user-select:none;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+canvas{display:block;width:100%;height:100%}
+/* editable text (the deck's EMBED_TEXT_BRIDGE): on the edit canvas only, a transparent box over a
+   string the canvas draws, holding that string, so a double-click rewords it (spot()) */
+.edit{position:absolute;left:0;top:0;transform-origin:0 0;color:transparent;overflow:hidden;white-space:pre-wrap;display:none}
+.edit.on{display:block}
+#tip{position:absolute;left:0;top:0;max-width:340px;padding:12px 16px 13px;border-radius:10px;
+  background:#fff;color:var(--ink);font-size:18px;font-weight:600;line-height:1.3;
+  box-shadow:0 6px 24px rgba(26,35,38,.18),0 0 0 1.5px var(--line);
+  pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .15s,transform .15s}
+#tip.on{opacity:1;transform:none}
+#tip b{display:block;font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-top:6px}
+#btn{position:absolute;left:0;top:0;transform-origin:0 0;border:0;border-radius:999px;
+  padding:13px 24px 13px 20px;background:var(--navy);color:#fff;font:700 19px Manrope,sans-serif;
+  display:flex;align-items:center;gap:10px;cursor:pointer;white-space:nowrap;
+  box-shadow:0 6px 18px rgba(13,42,47,.25);opacity:0;pointer-events:none;transition:opacity .3s,background .3s}
+#btn.on{opacity:1;pointer-events:auto}
+#btn.busy{background:var(--muted);pointer-events:none}
+#btn i{font-style:normal;color:var(--amber);font-size:20px}
+#btn.pulse{animation:pulse 1.6s ease-in-out infinite}
+#unlock{position:absolute;left:0;top:0;transform-origin:0 0;display:none;gap:10px;align-items:center}
+#unlock.on{display:flex}
+#unlock input{font:600 19px Manrope,sans-serif;padding:11px 16px;border:1.5px solid var(--line);border-radius:999px;width:220px;color:var(--ink)}
+#unlock button{font:700 19px Manrope,sans-serif;padding:12px 22px;border:0;border-radius:999px;background:var(--navy);color:#fff;cursor:pointer}
+#join{position:absolute;left:0;top:0;transform-origin:0 0;display:none;gap:16px;align-items:center;pointer-events:none}
+#join.on{display:flex}
+#jQr{width:96px;height:96px;display:block}
+#join div{display:flex;flex-direction:column;gap:2px;color:var(--muted);font:600 15px Manrope,sans-serif}
+#jHost{color:var(--ink);font-size:17px}
+#jCode{color:var(--accent);font-size:28px;font-weight:800;letter-spacing:.04em}
+#gear{position:absolute;left:0;top:0;transform-origin:0 0}
+#gearBtn{border:0;background:none;color:var(--muted);font:600 15px Manrope,sans-serif;display:flex;align-items:center;
+  gap:7px;padding:7px 12px 7px 10px;border-radius:999px;cursor:pointer;opacity:.5;transition:opacity .2s,background .2s}
+#gearBtn:hover,#gear.open #gearBtn{opacity:1;background:var(--tint)}
+#gearBtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+#sets{position:absolute;right:0;top:calc(100% + 10px);width:340px;padding:16px 20px 18px;background:#fff;border-radius:14px;
+  box-shadow:0 10px 32px rgba(26,35,38,.2);display:none;flex-direction:column;gap:12px;color:var(--ink);font:600 15px Manrope,sans-serif}
+#gear.open #sets{display:flex}
+#sets .eb{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#sets .ax{color:var(--muted);font-weight:600;line-height:1.4}
+#wipe{font:700 15px Manrope,sans-serif;padding:9px 14px;border:1.5px solid var(--coral);border-radius:999px;background:#fff;color:var(--coral-text);cursor:pointer}
+#wipe.arm{background:var(--coral);color:#fff}
+#wipe:disabled{opacity:.5;cursor:default}
+#wipeMsg{font-size:13px;font-weight:600;color:var(--muted);min-height:1em}
+@keyframes pulse{0%,100%{box-shadow:0 6px 18px rgba(13,42,47,.25),0 0 0 0 rgba(191,131,26,.7)}
+  50%{box-shadow:0 6px 18px rgba(13,42,47,.25),0 0 0 10px rgba(191,131,26,0)}}
+</style></head><body>
+<div id="stage"><canvas aria-label="Open-poll answers as hexagons, placed on the presenter's axes"></canvas>
+<div id="tip"></div><button id="btn" type="button"></button>
+<div id="gear"><div id="sets">
+  <div class="eb">Axes</div><div class="ax" id="axList"></div>
+  <div class="eb">Responses</div>
+  <button id="wipe" type="button">Clear responses</button><span id="wipeMsg"></span>
+</div><button id="gearBtn" type="button" title="Settings (S)"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Display</button></div>
+<div id="join"><img id="jQr" alt=""><div><span>Join at</span><b id="jHost"></b><b id="jCode"></b></div></div>
+<form id="unlock"><input type="password" placeholder="Lecturer key" autocomplete="off"><button>Unlock</button></form></div>
+<script>
+// Live hive matrix, for ANY open poll: answers placed on axes the PRESENTER chose
+// (the clustered hive discovers themes instead). One axis = a beeswarm along a
+// line; two = a 2x2 matrix.
+//   waiting     answers land in one comb as they arrive; the newest is quoted
+//   Place       POST /api/cluster {op:"score", axes}: an LLM rates each answer
+//               -3..+3 per axis against the pole labels (null = no stance); the
+//               embedding projection orders answers sharing a score. The x axis
+//               grows and the answers fly onto it.
+//   next click  (two axes) the axis rises, the y axis grows, the answers split
+//               into quadrants; then one voice per quadrant
+//   after       each new answer waits in "arriving", is scored, flies to its place
+// Home empties the slide back to the comb. Needs present mode with the lecturer
+// key (window.TESSERA_EMBED.poll). The deck tools rewrite the two CONFIG lines
+// `axes:` and `quads:` per slide (slide.py copy --axes, add-poll --axes, spec axes:).
+const CONFIG={
+  code:'',                 // the poll bucket; '' = the nearest poll at or before this slide
+  eyebrow:'OPEN QUESTION',
+  axes:[{"neg":"Automation","pos":"Augmentation","negDef":"","posDef":""},{"neg":"Use","pos":"Build","negDef":"","posDef":""}],
+  quads:[],
+};
+const SAMPLE=null; // __SAMPLE__ (build step: baked answers + scores, data/sample-matrix.json)
+const SAMPLE_ALWAYS=false; // __ALWAYS__ (true in hive-matrix-demo.html: posters and offline rehearsal)
+const HOST=(window.TESSERA_EMBED&&window.TESSERA_EMBED.poll)||{};
+// ---- editable text (the deck's EMBED_TEXT_BRIDGE) ----------------------------------------
+// CONFIG holds the defaults; the deck's overrides (the embed's `texts`) win: TX(KEY, default).
+// The canvas draws its strings, so on the edit canvas (TESSERA_EMBED.editable) spot() keeps a
+// transparent box holding the string over where it is drawn, data-edit=KEY; a double-click
+// rewords it in place. KEY 'poll.question' is the question of the poll the slide reports:
+// the editor stores it there, not in `texts`.
+const TX=(k,d)=>{const E=window.TESSERA_EMBED;d=d==null?'':d;return E&&typeof E.text==='function'?E.text(k,d):d;};
+const EDITABLE=!!(window.TESSERA_EMBED&&window.TESSERA_EMBED.editable);
+const spots={};
+// the poles (axes.N.neg / axes.N.pos) and quadrant names (quads.N) are CONFIG strings too: an
+// override replaces them everywhere the page reads them, the scoring request included
+const AXES0=CONFIG.axes.map(a=>({...a}));
+function applyTexts(){CONFIG.axes.forEach((a,i)=>{a.neg=TX(`axes.${i}.neg`,AXES0[i].neg);a.pos=TX(`axes.${i}.pos`,AXES0[i].pos);});}
+applyTexts();
+// box in slide px (top-left x, y, w, h), drawn with `font`; show=false hides it this frame
+function spot(key,text,x,y,w,h,font,lh,show=true){
+  if(!EDITABLE)return;
+  let n=spots[key];
+  if(!n){n=spots[key]=document.createElement('div');n.className='edit';n.setAttribute('data-edit',key);
+    stage.insertBefore(n,canvas.nextSibling);}
+  if(n.textContent!==text)n.textContent=text;
+  n.classList.toggle('on',!!show&&!!text);
+  const css=`width:${Math.ceil(w)}px;height:${Math.ceil(h)}px;font:${font};line-height:${lh}px;transform:translate(${OX+x*S}px,${OY+y*S}px) scale(${S})`;
+  if(n._css!==css){n._css=css;n.style.cssText=css;}
+}
+// on the edit canvas a click on a label is half of a double-click (rewording it), not a step
+const onLabel=e=>EDITABLE&&!!(e.target&&e.target.closest&&e.target.closest('[data-edit]'));
+// sample mode: while the question is still the template's placeholder AND the axes are the
+// template's own, the page shows the baked sample, already placed, and never calls the service.
+const DEMO=SAMPLE&&(SAMPLE_ALWAYS||(HOST.previous&&HOST.previous.question===SAMPLE.placeholder&&
+  JSON.stringify(CONFIG.axes.map(a=>[a.neg,a.pos]))===JSON.stringify(SAMPLE.axes)))?SAMPLE:null;
+const SERVICE=(HOST.service||'').replace(/\/$/,'');
+const HDR=HOST.lecturer?{'x-tessera-lecturer':HOST.lecturer}:{};
+const CODE=CONFIG.code||(HOST.previous&&HOST.previous.code)||'';
+const PREV=HOST.previous&&(!CONFIG.code||HOST.previous.code===CONFIG.code)?HOST.previous:null;
+const JOIN=DEMO?'':(PREV&&PREV.join)||HOST.session||CODE,JOIN_Y=552;
+const AX=CONFIG.axes[0],AY=CONFIG.axes[1]||null,TWO=!!AY;
+
+const C=(()=>{const s=getComputedStyle(document.documentElement),o={};
+  for(const k of ['ink','navy','accent','sky','muted','faint','line','rule','tint','blue-tint',
+    'amber','amber-text','green','green-text','coral','coral-text'])o[k]=s.getPropertyValue('--'+k).trim();return o;})();
+const $=id=>document.getElementById(id);
+const stage=$('stage'),canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),tip=$('tip'),btn=$('btn'),unlock=$('unlock');
+const W=1280,H=720,SQ3=Math.sqrt(3),PANEL={x:72,w:340};
+const PX0=500,PX1=1110,XC=(PX0+PX1)/2,PY0=150,PY1=606,YC=(PY0+PY1)/2;
+const LINE_Y=YC-6,AXIS_Y=PY1+14,TRAY=[1196,590],INBOX=[1196,420],LIM=3.45;
+const mapX=v=>XC+v/LIM*(PX1-PX0)/2,mapY=v=>YC-v/LIM*(PY1-PY0)/2;
+const clamp=(u,a=0,b=1)=>Math.max(a,Math.min(b,u)),mix=(a,b,u)=>a+(b-a)*u;
+const ease=u=>{u=clamp(u);return u<.5?4*u*u*u:1-(-2*u+2)**3/2;};
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const mixC=(a,b,u)=>a.map((x,i)=>x+(b[i]-x)*u),css=(c)=>`rgb(${c.map(Math.round).join(',')})`;
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let seed=5,random=()=>(seed=(seed*1664525+1013904223)>>>0)/4294967296;
+const QUAD_COL=[C.amber,C.accent,C.coral,C.green],QUAD_TEXT=[C['amber-text'],C.accent,C['coral-text'],C['green-text']];
+let QNAME;
+const qnames=()=>QNAME=[0,1,2,3].map(k=>TX(`quads.${k}`,CONFIG.quads[k]||'')||`${k<2?AY?.pos:AY?.neg} · ${k%2?AX.pos:AX.neg}`);
+qnames();
+
+// ---- state -------------------------------------------------------------------------
+// view: 'wait' (comb) · 'x' (one axis) · 'xy' (matrix) · 'voice' (one voice per quadrant)
+let clock=0,last=0,view='wait',viewAt=0,question='',status='loading',statusMsg='',by='';
+let hexes=[],byId=new Map(),scoring=false,scored=false,lastScore=-9,newest=null,hover=null,pinned=null;
+let R=20,Rfrom=20,Rto=20,Rat=0;
+let axX=0,axY=0,lift=0,lbl=0,quadA=0,voiceA=0;             // eased toward their targets each frame
+const T={axX:0,axY:0,lift:0,lbl:0,quad:0,voice:0};
+
+// ---- the service -------------------------------------------------------------------
+/* The lecturer key goes as x-tessera-lecturer. A poll service from before the rename lists
+   only its old header name in CORS, so its preflight fails: a request carrying the key that
+   fails on the network is sent once more under that name. */
+const OLD_LECTURER_HEADER = 'x-bento-lecturer'; // decks written before the rename / the old service only allow this name
+async function lfetch(url, opts = {}) {
+  try { return await fetch(url, opts); }
+  catch (err) {
+    const h = Object.assign({}, opts.headers || {});
+    if (!h['x-tessera-lecturer'] || (err && err.name === 'AbortError')) throw err;
+    h[OLD_LECTURER_HEADER] = h['x-tessera-lecturer']; delete h['x-tessera-lecturer'];
+    return fetch(url, Object.assign({}, opts, { headers: h }));
+  }
+}
+async function api(path,opts={}){
+  const r=await lfetch(SERVICE+path,{cache:'no-store',...opts,headers:{...HDR,...(opts.body?{'content-type':'application/json'}:{}),...(opts.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+  return j;
+}
+let loaded=false,reading=false,wipes=0;
+async function readBucket(){
+  if(reading)return;
+  if(DEMO){if(!loaded){question=DEMO.question;status='ok';DEMO.answers.forEach(a=>add(a,true));loaded=true;}return;}
+  if(!CODE){status='offline';statusMsg='No poll on or before this slide — add an open question first.';return;}
+  reading=true;
+  try{
+    const w=wipes,d=await api('/api/poll?c='+CODE);
+    if(w!==wipes){reading=false;return;}
+    // the deck's wording first: the service holds the copy from the poll's last publish, and
+    // the question may have been reworded since (on the edit canvas, too)
+    question=(PREV&&PREV.question)||d.question||question||(HOST.previous&&HOST.previous.question)||'';
+    if(d.answersWithheld){status='locked';statusMsg=statusMsg||'Answers are locked — enter the lecturer key.';reading=false;return;}
+    status='ok';
+    const first=!loaded;(d.answers||[]).forEach(a=>{if(a.id&&a.text&&a.text.trim()&&!byId.has(a.id))add(a,first);});
+    loaded=true;
+  }catch(e){status='offline';statusMsg='Poll service unreachable: '+e.message;}
+  reading=false;
+}
+function add(a,quiet){
+  const h={id:a.id,text:a.text.replace(/\s+([.,;:!?])/g,'$1').trim(),s:null,e:null,pos:[null,null],
+    x:XC,y:H+40,from:null,to:null,mt:-9,md:1,col:rgb(C.sky),colFrom:null,colTo:null,
+    tone:.45+random()*.55,phase:random()*6.28,born:clock,a:1,aTo:1,sc:1,scTo:1};
+  h.col=h.colTo=mixC([255,255,255],rgb(C.sky),h.tone);
+  hexes.push(h);byId.set(h.id,h);
+  if(!quiet)newest={h,at:clock};
+  layout(quiet?0:.9);
+}
+
+// ---- scoring --------------------------------------------------------------------------
+async function score(ids){
+  if(scoring)return;
+  scoring=true;lastScore=clock;statusMsg='';
+  try{
+    let d;
+    if(DEMO)d={by:'llm',answers:ids.map(id=>({id,...DEMO.scores[id]}))};
+    else d=await api('/api/cluster',{method:'POST',body:JSON.stringify({code:CODE,op:'score',axes:CONFIG.axes,ids})});
+    by=d.by;
+    for(const a of d.answers){const h=byId.get(a.id);if(h&&a.s){h.s=a.s;h.e=a.e;}}
+    positions();
+    if(!scored){scored=true;go('x');}else layout(.1);
+  }catch(e){statusMsg='Placing failed — '+e.message;}
+  scoring=false;
+}
+// position on an axis: the LLM score is the bin; inside it, answers are ranked by
+// their embedding projection and spread evenly across the bin, so bins touch
+function positions(){
+  for(let k=0;k<(TWO?2:1);k++){
+    const bins={};
+    for(const h of hexes)if(h.s&&h.s[k]!=null)(bins[h.s[k]]||(bins[h.s[k]]=[])).push(h);
+    for(const [b,hs] of Object.entries(bins)){hs.sort((p,q)=>p.e[k]-q.e[k]);
+      hs.forEach((h,r)=>h.pos[k]=+b+((r+.5)/hs.length-.5)*.96);}
+    for(const h of hexes)if(!h.s||h.s[k]==null)h.pos[k]=null;
+  }
+}
+const lineView=()=>view==='x'||(!TWO&&view==='voice');
+const placed=h=>!!h.s&&h.pos[0]!=null&&(!TWO||lineView()||h.pos[1]!=null);
+const quad=h=>(h.pos[1]>=0?0:2)+(h.pos[0]>=0?1:0);
+
+// ---- layout: optimal assignment of answers to honeycomb cells near their targets ----
+const cellXY=(q,r,Rr)=>[SQ3*Rr*(q+r/2),1.5*Rr*r];
+function cellsIn(x0,y0,x1,y1,Rr){const out=[];
+  for(let r=Math.floor(y0/(1.5*Rr));r<=Math.ceil(y1/(1.5*Rr));r++)
+    for(let q=Math.floor(x0/(SQ3*Rr)-r/2);q<=Math.ceil(x1/(SQ3*Rr)-r/2);q++){
+      const [x,y]=cellXY(q,r,Rr);if(x>=x0&&x<=x1&&y>=y0&&y<=y1)out.push([x,y]);}
+  return out;}
+function hungarian(cost,n,m){
+  const INF=1e18,u=new Float64Array(n+1),v=new Float64Array(m+1),p=new Int32Array(m+1),way=new Int32Array(m+1);
+  for(let i=1;i<=n;i++){p[0]=i;let j0=0;const minv=new Float64Array(m+1).fill(INF),used=new Uint8Array(m+1);
+    do{used[j0]=1;const i0=p[j0];let delta=INF,j1=0;
+      for(let j=1;j<=m;j++)if(!used[j]){const cur=cost(i0-1,j-1)-u[i0]-v[j];if(cur<minv[j]){minv[j]=cur;way[j]=j0;}if(minv[j]<delta){delta=minv[j];j1=j;}}
+      for(let j=0;j<=m;j++){if(used[j]){u[p[j]]+=delta;v[j]-=delta;}else minv[j]-=delta;}j0=j1;}while(p[j0]!==0);
+    do{const j1=way[j0];p[j0]=p[j1];j0=j1;}while(j0);}
+  const out=new Int32Array(n);for(let j=1;j<=m;j++)if(p[j])out[p[j]-1]=j-1;return out;}
+function assign(T,box,Rr,wx=1){
+  if(!T.length)return[];
+  const cells=cellsIn(...box,Rr);
+  if(T.length<=220&&cells.length>=T.length){
+    const col=hungarian((i,j)=>wx*(T[i][0]-cells[j][0])**2+(T[i][1]-cells[j][1])**2,T.length,cells.length);
+    return Array.from(col,j=>cells[j]);}
+  // a big room: greedy, densest targets first, each to the nearest free cell
+  const free=cells.slice(),out=new Array(T.length);
+  T.map((t,i)=>i).sort((a,b)=>Math.abs(T[a][1]-YC)-Math.abs(T[b][1]-YC)).forEach(i=>{
+    let bj=0,bd=1e18;free.forEach((c,j)=>{const d=wx*(T[i][0]-c[0])**2+(T[i][1]-c[1])**2;if(d<bd){bd=d;bj=j;}});
+    out[i]=free.splice(bj,1)[0]||T[i];});
+  return out;}
+function comb(n,cx,cy,Rr){
+  const cells=cellsIn(cx-500,cy-400,cx+500,cy+400,Rr).map(([x,y])=>[x,y,Math.hypot(x-cx,y-cy)]).sort((a,b)=>a[2]-b[2]);
+  const [ox,oy]=cells[0];return cells.slice(0,n).map(([x,y])=>[x-ox+cx,y-oy+cy]);}
+function radiusFor(n){return clamp(Math.sqrt(.26*(PX1-PX0)*(PY1-PY0)/(2.6*Math.max(n,1))),8,22);}
+
+function colorFor(h){
+  if(view==='wait')return mixC([255,255,255],rgb(C.sky),h.tone);
+  if(!h.s)return rgb(C.line);
+  if(!placed(h))return rgb(C.line);
+  if(lineView()){const t=Math.min(1,Math.abs(h.pos[0])/3);return mixC([214,218,228],rgb(h.pos[0]<0?C.amber:C.accent),.35+.65*t);}
+  return rgb(QUAD_COL[quad(h)]);
+}
+/** Recompute every hex's target for the current view and tween there; delay per hex from dl(h). */
+function layout(dur=.9,dl=()=>0){
+  const n=hexes.length,Rn=radiusFor(n);
+  if(Math.abs(Rn-Rto)>.4){Rfrom=curR();Rto=Rn;Rat=clock;}
+  const Rr=Rto,tgt=new Map();
+  if(view==='wait')comb(n,XC,YC,Rr).forEach((p,k)=>tgt.set(hexes[k],p));
+  else{
+    const on=hexes.filter(placed),off=hexes.filter(h=>h.s&&!placed(h)),wait=hexes.filter(h=>!h.s);
+    if(lineView())assign(on.map(h=>[mapX(h.pos[0]),LINE_Y]),[PX0-40,PY0,PX1+40,AXIS_Y-Rr*1.2],Rr,8).forEach((p,k)=>tgt.set(on[k],p));
+    else assign(on.map(h=>[mapX(h.pos[0]),mapY(h.pos[1])]),[PX0-30,PY0+34,PX1+30,PY1-34],Rr).forEach((p,k)=>tgt.set(on[k],p));
+    const rs=Math.min(Rr,12);
+    comb(off.length,...TRAY,rs).forEach((p,k)=>tgt.set(off[k],p));
+    comb(wait.length,...INBOX,rs).forEach((p,k)=>tgt.set(wait[k],p));
+  }
+  for(const h of hexes){const p=tgt.get(h);if(!p)continue;
+    if(h.to&&Math.abs(h.to[0]-p[0])<.5&&Math.abs(h.to[1]-p[1])<.5){h.colTo=colorFor(h);continue;}
+    const c=cur(h);h.from=[c.x,c.y];h.to=p;h.mt=clock+(reduced?0:dl(h));h.md=reduced?.01:dur;
+    h.colFrom=c.col;h.colTo=colorFor(h);}
+  sizeFor();
+}
+function sizeFor(){                         // the voices swell, the rest recede
+  for(const h of hexes){const v=view==='voice'&&voices.includes(h);h.scTo=v?1.7:1;h.aTo=view==='voice'&&!v?.28:1;}
+}
+function cur(h){
+  if(!h.to)return{x:h.x,y:h.y,col:h.col};
+  const u=h.md<=0?1:ease((clock-h.mt)/h.md),lift=Math.sin(Math.PI*u)*Math.min(40,Math.hypot(h.to[0]-h.from[0],h.to[1]-h.from[1])*.18);
+  return{x:mix(h.from[0],h.to[0],u),y:mix(h.from[1],h.to[1],u)-lift,col:h.colFrom?mixC(h.colFrom,h.colTo,u):h.colTo};
+}
+const curR=()=>mix(Rfrom,Rto,ease((clock-Rat)/.9));
+
+// one voice per quadrant (or per side): the clearest short answer
+let voices=[];
+function pickVoices(){
+  const firm=h=>Math.abs(h.s[0])+(TWO?Math.abs(h.s[1]):0);
+  const groups=TWO?[0,1,2,3]:[0,1],of=h=>TWO?quad(h):(h.pos[0]>=0?1:0);
+  voices=groups.map(g=>hexes.filter(h=>h.s&&placed(h)&&of(h)===g&&h.text.length>=18&&h.text.length<=95
+    &&Math.abs(h.s[0])>=1&&(!TWO||Math.abs(h.s[1])>=1)).sort((a,b)=>firm(b)-firm(a)||a.text.length-b.text.length)[0]).filter(Boolean);
+}
+
+// ---- views ---------------------------------------------------------------------------------
+function go(v){
+  view=v;viewAt=clock;
+  if(v==='wait'){Object.assign(T,{axX:0,axY:0,lift:0,lbl:0,quad:0,voice:0});layout(.9,h=>hexes.indexOf(h)*.004);}
+  if(v==='x'){Object.assign(T,{axX:1,axY:0,lift:0,lbl:1,quad:0,voice:0});
+    layout(.95,h=>.1+Math.abs((placed(h)?mapX(h.pos[0]):XC)-XC)/(PX1-XC)*.8);}
+  if(v==='xy'){Object.assign(T,{axX:1,axY:1,lift:1,lbl:1,quad:1,voice:0});
+    layout(1,h=>.3+(placed(h)?Math.abs(mapY(h.pos[1])-YC)/(YC-PY0):.5)*.8);}
+  if(v==='voice'){pickVoices();T.voice=1;layout(.6);}
+}
+const NEXT={wait:()=>scored?'x':null,x:()=>TWO?'xy':'voice',xy:()=>'voice',voice:()=>null};
+/** One "next" from a click or → : Place, or the next view. False = nothing to do. */
+function advance(){
+  if(status!=='ok')return false;
+  if(view==='wait'){if(scoring)return true;if(!hexes.length)return false;
+    if(scored){go('x');return true;}score(hexes.map(h=>h.id));return true;}
+  const n=NEXT[view]();if(!n)return false;go(n);return true;
+}
+function back(){const prev={x:null,xy:'x',voice:TWO?'xy':'x'}[view];if(!prev)return false;
+  go(prev);if(prev!=='voice')T.voice=0;return true;}
+function reset(){go('wait');}
+
+// ---- screen mapping, drawing ---------------------------------------------------------------
+let S=1,OX=0,OY=0;
+const hostScale=()=>Math.max(1,Math.min(screen.width/innerWidth,screen.height/innerHeight)||1);
+const SPX=()=>canvas.width/Math.max(1,stage.clientWidth);
+function resize(){const r=stage.getBoundingClientRect(),dpr=Math.min((devicePixelRatio||1)*hostScale(),4);
+  canvas.width=Math.round(r.width*dpr);canvas.height=Math.round(r.height*dpr);
+  S=Math.min(r.width/W,r.height/H);OX=(r.width-W*S)/2;OY=(r.height-H*S)/2;}
+addEventListener('resize',resize);new ResizeObserver(resize).observe(stage);resize();
+function hexPath(x,y,r){ctx.beginPath();
+  for(let k=0;k<6;k++){const a=(k*60-90)*Math.PI/180;k?ctx.lineTo(x+r*Math.cos(a),y+r*Math.sin(a)):ctx.moveTo(x+r*Math.cos(a),y+r*Math.sin(a));}
+  ctx.closePath();}
+function wrap(text,maxW){const words=text.split(/\s+/),lines=[];let line='';
+  for(const w of words){const t=line?line+' '+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
+  if(line)lines.push(line);return lines;}
+function label(s,x,y,{size=18,weight=700,color=C.ink,align='left',alpha=1,halo=0}={}){
+  if(alpha<=.01)return;ctx.save();ctx.globalAlpha=alpha;ctx.font=`${weight} ${size}px Manrope`;ctx.textAlign=align;ctx.textBaseline='middle';
+  if(halo){ctx.strokeStyle='rgba(255,255,255,.92)';ctx.lineWidth=halo;ctx.lineJoin='round';ctx.strokeText(s,x,y);}
+  ctx.fillStyle=color;ctx.fillText(s,x,y);ctx.restore();}
+
+function drawAxes(){
+  const y=mix(AXIS_Y,YC,lift);
+  ctx.save();ctx.lineCap='round';ctx.strokeStyle=C.line;ctx.lineWidth=2.5;
+  if(axX>.001){const half=(PX1-PX0)/2+34;
+    ctx.beginPath();ctx.moveTo(XC-half*axX,y);ctx.lineTo(XC+half*axX,y);ctx.stroke();ctx.fillStyle=C.faint;
+    for(const s of [-1,1]){const e=XC+s*half*axX;ctx.beginPath();ctx.moveTo(e+s*10,y);ctx.lineTo(e-s*2,y-7);ctx.lineTo(e-s*2,y+7);ctx.fill();}
+    ctx.strokeStyle=C.faint;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(XC,y-8*axX*(1-lift));ctx.lineTo(XC,y+8*axX*(1-lift));ctx.stroke();}
+  if(axY>.001){ctx.strokeStyle=C.line;ctx.lineWidth=2.5;const half=(PY1-PY0)/2+20;
+    ctx.beginPath();ctx.moveTo(XC,YC-half*axY);ctx.lineTo(XC,YC+half*axY);ctx.stroke();}
+  ctx.restore();
+  const ly=mix(AXIS_Y+34,H-36,lift),on=hexes.filter(placed);
+  label(`← ${AX.neg}`,PX0-34-20*(1-lbl),ly,{size:22,color:C['amber-text'],alpha:lbl});
+  label(`${AX.pos} →`,PX1+34+20*(1-lbl),ly,{size:22,color:C.accent,alpha:lbl,align:'right'});
+  ctx.font='700 22px Manrope';
+  {const wn=ctx.measureText(`← ${AX.neg}`).width,wp=ctx.measureText(`${AX.pos} →`).width;
+    spot('axes.0.neg',AX.neg,PX0-34-4,ly-15,wn+8,30,'700 22px Manrope',30,lbl>.5);
+    spot('axes.0.pos',AX.pos,PX1+34-wp-4,ly-15,wp+8,30,'700 22px Manrope',30,lbl>.5);}
+  const c=(1-lift)*lbl,nNeg=on.filter(h=>h.pos[0]<0).length;
+  label(`${nNeg} answers`,PX0-34,ly+26,{size:16,weight:600,color:C.muted,alpha:c});
+  label(`${on.length-nNeg} answers`,PX1+34,ly+26,{size:16,weight:600,color:C.muted,alpha:c,align:'right'});
+  if(TWO){label(`${AY.pos} ↑`,XC,PY0-40+12*(1-axY),{size:20,alpha:axY,align:'center',halo:6});
+    label(`${AY.neg} ↓`,XC,H-36-12*(1-axY),{size:20,alpha:axY,align:'center',halo:6});
+    ctx.font='700 20px Manrope';const wp=ctx.measureText(`${AY.pos} ↑`).width,wn=ctx.measureText(`${AY.neg} ↓`).width;
+    spot('axes.1.pos',AY.pos,XC-wp/2-4,PY0-40+12*(1-axY)-14,wp+8,28,'700 20px Manrope',28,axY>.5);
+    spot('axes.1.neg',AY.neg,XC-wn/2-4,H-36-12*(1-axY)-14,wn+8,28,'700 20px Manrope',28,axY>.5);}
+  if(view!=='wait'){
+    const off=hexes.filter(h=>h.s&&!placed(h)).length,wait=hexes.filter(h=>!h.s).length;
+    if(off)label('NO STANCE',TRAY[0],TRAY[1]-48,{size:13,color:C.faint,align:'center'});
+    if(wait)label('ARRIVING',INBOX[0],INBOX[1]-48,{size:13,color:C.muted,align:'center'});
+  }
+}
+function drawQuads(){
+  if(!TWO||quadA<.01)return;const on=hexes.filter(placed),cnt=[0,0,0,0];on.forEach(h=>cnt[quad(h)]++);
+  const at=[[PX0-24,PY0+2,'left'],[PX1+24,PY0+2,'right'],[PX0-24,PY1-2,'left'],[PX1+24,PY1-2,'right']];
+  at.forEach(([x,y,al],k)=>{const dy=(k<2?-1:1)*10*(1-quadA);
+    label(QNAME[k],x,y+dy,{size:19,color:QUAD_TEXT[k],alpha:quadA,align:al,halo:7});
+    ctx.font='700 19px Manrope';const w=ctx.measureText(QNAME[k]).width;
+    spot(`quads.${k}`,QNAME[k],(al==='right'?x-w:x)-4,y+dy-14,w+8,28,'700 19px Manrope',28,quadA>.5);
+    label(`${cnt[k]} · ${on.length?Math.round(cnt[k]/on.length*100):0}%`,x,y+dy+(k<2?24:-24),{size:15,weight:600,color:C.muted,alpha:quadA,align:al,halo:6});});
+}
+function drawHexes(){
+  const Rc=curR();
+  for(const h of hexes){const c=cur(h);h._x=c.x;h._y=c.y;h.col=c.col;
+    h.a+=(h.aTo-h.a)*.12;h.sc+=(h.scTo-h.sc)*.12;
+    const pop=clamp((clock-h.born)/.5),br=reduced?1:1+.05*Math.sin(clock*1.7+h.phase+c.x*.01);
+    const think=scoring&&(!scored||!h.s)?1+.07*Math.sin(clock*9+h.phase*3):1;
+    const inbox=view!=='wait'&&!h.s,r=(inbox||(h.s&&!placed(h))?Math.min(Rc,12):Rc);
+    ctx.globalAlpha=h.a*pop;hexPath(c.x,c.y+(1-ease(pop))*30,(r-1.2)*h.sc*br*think*(.4+.6*ease(pop)));ctx.fillStyle=css(c.col);ctx.fill();
+    if(inbox){ctx.setLineDash([3,3]);ctx.strokeStyle=C.muted;ctx.lineWidth=1.2;hexPath(c.x,c.y,r-3);ctx.stroke();ctx.setLineDash([]);}
+    if(h===(pinned||hover)){ctx.globalAlpha=1;ctx.lineWidth=2.5;ctx.strokeStyle=C.ink;hexPath(c.x,c.y,(r-1.2)*h.sc);ctx.stroke();}
+  }
+  ctx.globalAlpha=1;
+}
+function drawVoices(){
+  if(voiceA<.01)return;const font='600 17px Manrope';
+  voices.forEach((h,g)=>{
+    const [hx,hy]=[h._x,h._y];ctx.font=font;
+    const lines=wrap(`“${h.text}”`,238),bw=262,bh=lines.length*23+24;
+    const q=TWO?quad(h):(g?1:0),col=TWO?QUAD_COL[q]:(g?C.accent:C.amber);
+    const tx=(q%2?(XC+PX1)/2:(PX0+XC)/2)-bw/2,ty=TWO?(q<2?(PY0+YC)/2:(YC+PY1)/2)-bh/2:PY0+20;
+    const x=mix(hx,tx,voiceA),y=mix(hy,ty,voiceA),s=.2+.8*voiceA;
+    ctx.save();ctx.globalAlpha=Math.min(1,voiceA*1.4);ctx.strokeStyle=col;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(x+bw*s/2,y+bh*s/2);ctx.stroke();
+    ctx.translate(x,y);ctx.scale(s,s);ctx.shadowColor='rgba(26,35,38,.16)';ctx.shadowBlur=18*SPX();ctx.shadowOffsetY=5*SPX();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(0,0,bw,bh,10);ctx.fill();ctx.shadowColor='transparent';
+    ctx.lineWidth=2;ctx.strokeStyle=col;ctx.stroke();ctx.fillStyle=C.ink;ctx.font=font;ctx.textBaseline='top';
+    lines.forEach((l,k)=>ctx.fillText(l,12,12+k*23));ctx.restore();});
+}
+function drawPanel(){
+  const x=PANEL.x;ctx.textBaseline='alphabetic';ctx.fillStyle=C.muted;ctx.font='700 16px Manrope';
+  const sampleEb=DEMO&&!SAMPLE_ALWAYS,eb=sampleEb?'SAMPLE ANSWERS':TX('eyebrow',CONFIG.eyebrow);
+  ctx.letterSpacing='1.4px';ctx.fillText(eb,x,150);spot('eyebrow',eb,x,132,ctx.measureText(eb).width+8,24,'700 16px Manrope',24,!sampleEb);ctx.letterSpacing='0px';
+  const qt=TX('poll.question',question||(PREV&&PREV.question)||'');
+  const floor=(JOIN?JOIN_Y:672)-12;let q,lh,L;
+  const LOOK=[{fs:32,gap:52,num:88,base:56},{fs:28,gap:44,num:64,base:44},{fs:24,gap:40,num:64,base:44},{fs:21,gap:36,num:56,base:40}];
+  for(L of LOOK){ctx.font=`700 ${L.fs}px Manrope`;lh=Math.round(L.fs*1.3);q=wrap(qt||'…',PANEL.w);
+    if(196+q.length*lh+L.gap+L.base+150<=floor)break;}
+  ctx.fillStyle=C.ink;q.forEach((l,k)=>ctx.fillText(l,x,196+k*lh));
+  spot('poll.question',qt,x-4,196-L.fs*1.02,PANEL.w+8,(q.length-1)*lh+L.fs*1.3,`700 ${L.fs}px Manrope`,lh,!!PREV);   // the editor writes it to that poll
+  const y0=196+q.length*lh+L.gap;ctx.fillStyle=C.accent;ctx.fillRect(x,y0-L.gap+8,48,4);
+  const n=hexes.length;ctx.fillStyle=C.navy;ctx.font=`800 ${L.num}px Manrope`;ctx.fillText(String(n),x-4,y0+L.base);
+  const nw=ctx.measureText(String(n)).width;ctx.fillStyle=C.muted;ctx.font='600 22px Manrope';ctx.fillText(n===1?'answer':'answers',x+nw+12,y0+L.base-2);
+  let y=y0+L.base+36;const lines=[];
+  if(status!=='ok'&&status!=='loading')lines.push(statusMsg);
+  else if(scoring&&!scored)lines.push('Placing — rating each answer on the axes…');
+  else if(scored){const on=hexes.filter(placed).length;
+    lines.push(`${on} placed · ${by==='llm'?'LLM rating':'embeddings only'} + embedding order`);
+    const w=hexes.filter(h=>!h.s).length;if(w)lines.push(`+${w} arriving · placed in a moment`);}
+  if(statusMsg&&status==='ok')lines.push(statusMsg);
+  ctx.font='600 18px Manrope';ctx.fillStyle=C.muted;
+  lines.forEach(l=>wrap(l,PANEL.w+40).slice(0,2).forEach(s=>{ctx.fillText(s,x,y);y+=26;}));
+  // the newest answer, quoted for a few seconds
+  if(newest&&clock-newest.at<4.5&&status==='ok'){const a=clamp((clock-newest.at)/.3)*clamp((4.5-(clock-newest.at))/.5);
+    ctx.save();ctx.globalAlpha=a;ctx.font='italic 600 18px Manrope';ctx.fillStyle=C.ink;
+    wrap(`“${newest.h.text}”`,PANEL.w).slice(0,2).forEach(s=>{ctx.fillText(s,x,y+4);y+=25;});ctx.restore();y+=6;}
+  PANEL.btnY=Math.min(y+6,floor-56);
+}
+function buttonState(){
+  if(status!=='ok'||view!=='wait')return null;
+  if(scoring)return{label:'<i>✦</i>Placing…',busy:true};
+  if(!hexes.length)return null;
+  return{label:scored?'<i>✦</i>Show the axes':`<i>✦</i>Place ${hexes.length} on the axes`,pulse:hexes.length>=3};
+}
+function updateButton(){const b=buttonState();
+  btn.classList.toggle('on',!!b);btn.classList.toggle('pulse',!!(b&&b.pulse));btn.classList.toggle('busy',!!(b&&b.busy));
+  if(b&&btn.dataset.l!==b.label){btn.innerHTML=b.label;btn.dataset.l=b.label;}
+  btn.style.transform=`translate(${OX+PANEL.x*S}px,${OY+(PANEL.btnY||560)*S}px) scale(${S})`;}
+function drawNotice(){
+  if(status==='ok'||status==='loading')return;
+  ctx.fillStyle=C.tint;ctx.beginPath();ctx.roundRect(XC-240,YC-60,480,120,14);ctx.fill();
+  ctx.fillStyle=C.ink;ctx.font='700 20px Manrope';ctx.textAlign='center';ctx.textBaseline='middle';
+  wrap(statusMsg,420).slice(0,3).forEach((l,k,a)=>ctx.fillText(l,XC,YC+(k-(a.length-1)/2)*28));
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';}
+function updateUnlock(){unlock.classList.toggle('on',status==='locked');
+  unlock.style.transform=`translate(${OX+(XC-160)*S}px,${OY+(YC+80)*S}px) scale(${S})`;}
+unlock.addEventListener('click',e=>e.stopPropagation());
+unlock.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();
+  const k=unlock.querySelector('input').value.trim();if(!k)return;
+  HDR['x-tessera-lecturer']=k;status='loading';statusMsg='';loaded=false;
+  (async()=>{while(!loaded&&status!=='locked'){await readBucket();if(!loaded&&status!=='locked')await new Promise(r=>setTimeout(r,2000));}
+    if(status==='locked')statusMsg='That key was not accepted — try again.';})();});
+// settings: the axes this slide uses, and Clear responses (two clicks, no confirm())
+const gear=$('gear');
+const axList=()=>$('axList').textContent=CONFIG.axes.map(a=>`${a.neg} ↔ ${a.pos}`).join('  ·  ');
+axList();
+// a pole or quadrant reworded on the edit canvas: everything that read it reads it again
+window.TESSERA_REFIT=()=>{applyTexts();qnames();axList();};
+$('gearBtn').addEventListener('click',()=>gear.classList.toggle('open'));
+['click','pointerdown','pointermove'].forEach(t=>gear.addEventListener(t,e=>e.stopPropagation()));
+const wipe=$('wipe'),wipeMsg=$('wipeMsg');let wipeArm=0;
+function disarm(){wipeArm=0;wipe.classList.remove('arm');wipe.textContent='Clear responses';}
+wipe.addEventListener('click',async()=>{
+  if(!CODE||DEMO){wipeMsg.textContent='No live poll on or before this slide.';return;}
+  if(!wipeArm){wipeArm=setTimeout(disarm,4000);wipe.classList.add('arm');
+    wipe.textContent=`Delete every response (${hexes.length})? Click again`;wipeMsg.textContent='Cannot be undone.';return;}
+  clearTimeout(wipeArm);disarm();wipe.disabled=true;wipeMsg.textContent='Clearing…';
+  try{const d=await api('/api/poll?c='+encodeURIComponent(CODE),{method:'DELETE'});
+    wipes++;hexes=[];byId.clear();scored=false;scoring=false;newest=null;hover=pinned=null;showTip(null);statusMsg='';go('wait');
+    wipeMsg.textContent=`Cleared ${d.cleared??0} responses.`;
+  }catch(e){wipeMsg.textContent='Could not clear: '+e.message;}
+  wipe.disabled=false;});
+function updateGear(){gear.style.transform=`translate(${OX+(W-56-gear.offsetWidth)*S}px,${OY+30*S}px) scale(${S})`;}
+const join=$('join');
+if(JOIN){$('jQr').src=SERVICE+'/api/qr?c='+encodeURIComponent(JOIN)+'&fg=131d41';
+  $('jHost').textContent=SERVICE.replace(/^https?:\/\//,'');$('jCode').textContent=JOIN;
+  $('jQr').addEventListener('error',()=>{$('jQr').style.display='none';});}
+function updateJoin(){join.classList.toggle('on',!!JOIN&&status!=='offline');
+  join.style.transform=`translate(${OX+PANEL.x*S}px,${OY+JOIN_Y*S}px) scale(${S})`;}
+
+function render(){
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const px=canvas.width/stage.getBoundingClientRect().width;ctx.setTransform(S*px,0,0,S*px,OX*px,OY*px);
+  drawAxes();drawHexes();drawQuads();drawVoices();drawPanel();drawNotice();
+  updateButton();updateUnlock();updateGear();updateJoin();
+}
+let polling=-9;
+function frame(now){const dt=Math.min(.05,(now-last)/1000||.016);last=now;clock+=dt;
+  const k=reduced?1:1-Math.exp(-dt*3.2);
+  axX+=(T.axX-axX)*k;axY+=(T.axY-axY)*k;lift+=(T.lift-lift)*k;lbl+=(T.lbl-lbl)*k;quadA+=(T.quad-quadA)*k;voiceA+=(T.voice-voiceA)*k;
+  if(clock-polling>3){polling=clock;readBucket();}
+  // after the first placing, new answers are rated in batches every 2 s
+  if(scored&&!scoring&&clock-lastScore>2){const ids=hexes.filter(h=>!h.s).map(h=>h.id);if(ids.length)score(ids);}
+  render();requestAnimationFrame(frame);}
+
+// ---- hover / tap --------------------------------------------------------------------------
+function hit(e){const r=stage.getBoundingClientRect(),x=(e.clientX-r.left-OX)/S,y=(e.clientY-r.top-OY)/S;
+  let best=null,bd=Math.max(curR(),10)**2;for(const h of hexes){const d=(h._x-x)**2+(h._y-y)**2;if(d<bd){bd=d;best=h;}}return best;}
+const sgn=v=>v==null?'no stance':v>0?'+'+v:v===0?'±0':'−'+(-v);
+function showTip(h){
+  if(!h){tip.classList.remove('on');return;}
+  tip.innerHTML='';tip.append(h.text);
+  if(h.s&&view!=='wait'){const b=document.createElement('b');
+    b.textContent=`${AX.neg}–${AX.pos} ${sgn(h.s[0])}`+(TWO&&view!=='x'?` · ${AY.neg}–${AY.pos} ${sgn(h.s[1])}`:'');tip.append(b);}
+  const rect=stage.getBoundingClientRect(),sx=OX+h._x*S,sy=OY+h._y*S,tw=tip.offsetWidth,th=tip.offsetHeight;
+  let x=clamp(sx-tw/2,8,rect.width-tw-8),y=sy-curR()*S-th-10;if(y<8)y=sy+curR()*S+10;
+  tip.style.left=x+'px';tip.style.top=y+'px';tip.classList.add('on');}
+stage.addEventListener('pointermove',e=>{if(e.pointerType!=='mouse')return;const h=hit(e);if(h!==hover){hover=h;showTip(h);}});
+stage.addEventListener('pointerleave',()=>{hover=null;if(!pinned)showTip(null);});
+let lastTouch=0;stage.addEventListener('touchstart',()=>{lastTouch=performance.now();},{passive:true});
+stage.addEventListener('click',e=>{
+  if(e.target===btn||onLabel(e))return;
+  if(gear.classList.contains('open')){gear.classList.remove('open');return;}
+  if(e.pointerType==='touch'||e.pointerType==='pen'||lastTouch>performance.now()-600){
+    const h=hit(e);if(h){pinned=h===pinned?null:h;showTip(pinned);return;}
+    if(pinned){pinned=null;showTip(null);return;}}
+  advance();});
+btn.addEventListener('click',e=>{e.stopPropagation();advance();});
+window.TESSERA_STEPPED=true;
+addEventListener('keydown',e=>{
+  if(e.target&&e.target.tagName==='INPUT')return;
+  if(['ArrowRight',' ','Enter','PageDown'].includes(e.key)){if(advance())e.preventDefault();}
+  if(['ArrowLeft','PageUp'].includes(e.key)){if(back())e.preventDefault();}
+  if(e.key==='Home'){reset();e.preventDefault();}
+  if(e.key==='s'||e.key==='S')gear.classList.toggle('open');
+  if(e.key==='Escape')gear.classList.remove('open');});
+window.matrixStats=()=>({view,status,statusMsg,n:hexes.length,scored,scoring,by,
+  placed:hexes.filter(placed).length,noStance:hexes.filter(h=>h.s&&!placed(h)).length,arriving:hexes.filter(h=>!h.s).length,
+  voices:voices.map(h=>h.text),axes:CONFIG.axes});
+// sample mode opens already placed on its axes; Home, then clicks, replay the flow
+if(DEMO&&!SAMPLE_ALWAYS)(async()=>{await readBucket();await score(hexes.map(h=>h.id));if(TWO)go('xy');
+  clock+=10;for(const h of hexes){h.mt=-99;h.md=.01;}Rat=-99;
+  axX=T.axX;axY=T.axY;lift=T.lift;lbl=T.lbl;quadA=T.quad;voiceA=T.voice;})();
+document.fonts.load('700 34px Manrope').finally(()=>requestAnimationFrame(frame));
+</script></body></html>

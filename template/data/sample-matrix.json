@@ -1,0 +1,847 @@
+{
+ "question": "What would you most like AI to help you with this year?",
+ "answers": [
+  {
+   "id": "s56",
+   "text": "Remember what was decided and by whom"
+  },
+  {
+   "id": "s53",
+   "text": "Prepare an agenda for meetings"
+  },
+  {
+   "id": "s35",
+   "text": "Build a chatbot for our documents"
+  },
+  {
+   "id": "s50",
+   "text": "Plan my week"
+  },
+  {
+   "id": "s28",
+   "text": "Read financial statements faster"
+  },
+  {
+   "id": "s02",
+   "text": "First drafts of blog posts"
+  },
+  {
+   "id": "s24",
+   "text": "Find the outliers in survey results"
+  },
+  {
+   "id": "s21",
+   "text": "Explain a spreadsheet I did not build"
+  },
+  {
+   "id": "s39",
+   "text": "Build an agent that runs a task end to end"
+  },
+  {
+   "id": "s57",
+   "text": "Organise my notes"
+  },
+  {
+   "id": "s22",
+   "text": "Make charts from raw data"
+  },
+  {
+   "id": "s25",
+   "text": "Summarise customer feedback"
+  },
+  {
+   "id": "s55",
+   "text": "Plan a trip with a group"
+  },
+  {
+   "id": "s43",
+   "text": "Prepare for a job interview"
+  },
+  {
+   "id": "s29",
+   "text": "Forecast next quarter roughly"
+  },
+  {
+   "id": "s49",
+   "text": "Coach me through a hard problem"
+  },
+  {
+   "id": "s19",
+   "text": "Answer the same questions people always ask"
+  },
+  {
+   "id": "s01",
+   "text": "Rewrite my reports so they read better"
+  },
+  {
+   "id": "s00",
+   "text": "Draft emails faster"
+  },
+  {
+   "id": "s14",
+   "text": "Copy data between spreadsheets"
+  },
+  {
+   "id": "s48",
+   "text": "Turn a textbook chapter into flashcards"
+  },
+  {
+   "id": "s04",
+   "text": "Turn meeting notes into a summary"
+  },
+  {
+   "id": "s23",
+   "text": "Compare two long reports"
+  },
+  {
+   "id": "s18",
+   "text": "Clean up messy data exports"
+  },
+  {
+   "id": "s47",
+   "text": "Recommend what to read next"
+  },
+  {
+   "id": "s15",
+   "text": "Send reminders without me"
+  },
+  {
+   "id": "s40",
+   "text": "Learn a new subject in a week"
+  },
+  {
+   "id": "s46",
+   "text": "Explain concepts at my level"
+  },
+  {
+   "id": "s52",
+   "text": "Keep track of my to-do list"
+  },
+  {
+   "id": "s42",
+   "text": "Quiz me before an exam"
+  },
+  {
+   "id": "s51",
+   "text": "Break a big project into steps"
+  },
+  {
+   "id": "s54",
+   "text": "Prioritise what matters today"
+  },
+  {
+   "id": "s37",
+   "text": "Turn a spreadsheet into a simple app"
+  },
+  {
+   "id": "s36",
+   "text": "Make a dashboard that updates itself"
+  },
+  {
+   "id": "s20",
+   "text": "Spot trends in our sales numbers"
+  },
+  {
+   "id": "s06",
+   "text": "Translate messages for colleagues abroad"
+  },
+  {
+   "id": "s31",
+   "text": "Make a website without learning to code"
+  },
+  {
+   "id": "s45",
+   "text": "Get up to speed on a new industry"
+  },
+  {
+   "id": "s05",
+   "text": "Shorten long documents"
+  },
+  {
+   "id": "s11",
+   "text": "Sort my inbox automatically"
+  },
+  {
+   "id": "s34",
+   "text": "Connect two tools that do not talk to each other"
+  },
+  {
+   "id": "s59",
+   "text": "Draft a project timeline"
+  },
+  {
+   "id": "s16",
+   "text": "Process invoices"
+  },
+  {
+   "id": "s09",
+   "text": "Find the right tone for a difficult email"
+  },
+  {
+   "id": "s27",
+   "text": "Ask questions of a dataset in plain words"
+  },
+  {
+   "id": "s03",
+   "text": "Proofread before I hit send"
+  },
+  {
+   "id": "s08",
+   "text": "Polish slides before a presentation"
+  },
+  {
+   "id": "s38",
+   "text": "Learn enough code to fix things myself"
+  },
+  {
+   "id": "s07",
+   "text": "Help me write clearer instructions"
+  },
+  {
+   "id": "s10",
+   "text": "Automate the weekly status report"
+  },
+  {
+   "id": "s44",
+   "text": "Practise a new language"
+  },
+  {
+   "id": "s41",
+   "text": "Explain research papers simply"
+  },
+  {
+   "id": "s58",
+   "text": "Plan events without the back and forth"
+  },
+  {
+   "id": "s32",
+   "text": "Write scripts that save me an hour a week"
+  },
+  {
+   "id": "s26",
+   "text": "Check my numbers before a meeting"
+  },
+  {
+   "id": "s33",
+   "text": "Prototype an idea over a weekend"
+  },
+  {
+   "id": "s30",
+   "text": "Build a small app for my team"
+  },
+  {
+   "id": "s17",
+   "text": "Schedule meetings across time zones"
+  },
+  {
+   "id": "s13",
+   "text": "Rename and file documents"
+  },
+  {
+   "id": "s12",
+   "text": "Fill in forms for me"
+  }
+ ],
+ "scores": {
+  "s00": {
+   "s": [
+    2,
+    -2
+   ],
+   "e": [
+    -0.383,
+    -0.007
+   ]
+  },
+  "s01": {
+   "s": [
+    1,
+    -1
+   ],
+   "e": [
+    1.933,
+    0.354
+   ]
+  },
+  "s02": {
+   "s": [
+    3,
+    -2
+   ],
+   "e": [
+    0.089,
+    -0.527
+   ]
+  },
+  "s03": {
+   "s": [
+    1,
+    -2
+   ],
+   "e": [
+    1.638,
+    -0.117
+   ]
+  },
+  "s04": {
+   "s": [
+    3,
+    -2
+   ],
+   "e": [
+    -0.365,
+    0.154
+   ]
+  },
+  "s05": {
+   "s": [
+    1,
+    -2
+   ],
+   "e": [
+    -1.618,
+    -0.076
+   ]
+  },
+  "s06": {
+   "s": [
+    2,
+    -2
+   ],
+   "e": [
+    1.148,
+    -1.284
+   ]
+  },
+  "s07": {
+   "s": [
+    3,
+    -2
+   ],
+   "e": [
+    0.178,
+    -0.871
+   ]
+  },
+  "s08": {
+   "s": [
+    1,
+    -2
+   ],
+   "e": [
+    1.139,
+    1.541
+   ]
+  },
+  "s09": {
+   "s": [
+    2,
+    -2
+   ],
+   "e": [
+    1.233,
+    0.352
+   ]
+  },
+  "s10": {
+   "s": [
+    -2,
+    0
+   ],
+   "e": [
+    0.035,
+    1.931
+   ]
+  },
+  "s11": {
+   "s": [
+    -3,
+    1
+   ],
+   "e": [
+    -0.876,
+    -0.812
+   ]
+  },
+  "s12": {
+   "s": [
+    -3,
+    0
+   ],
+   "e": [
+    0.259,
+    -1.174
+   ]
+  },
+  "s13": {
+   "s": [
+    -3,
+    0
+   ],
+   "e": [
+    0.18,
+    1.382
+   ]
+  },
+  "s14": {
+   "s": [
+    -3,
+    -1
+   ],
+   "e": [
+    1.23,
+    0.0
+   ]
+  },
+  "s15": {
+   "s": [
+    -2,
+    0
+   ],
+   "e": [
+    0.14,
+    1.691
+   ]
+  },
+  "s16": {
+   "s": [
+    -2,
+    1
+   ],
+   "e": [
+    0.113,
+    -0.177
+   ]
+  },
+  "s17": {
+   "s": [
+    -3,
+    0
+   ],
+   "e": [
+    -0.382,
+    0.129
+   ]
+  },
+  "s18": {
+   "s": [
+    -3,
+    0
+   ],
+   "e": [
+    0.418,
+    -0.877
+   ]
+  },
+  "s19": {
+   "s": [
+    null,
+    null
+   ],
+   "e": [
+    -0.27,
+    0.037
+   ]
+  },
+  "s20": {
+   "s": [
+    2,
+    0
+   ],
+   "e": [
+    0.724,
+    1.538
+   ]
+  },
+  "s21": {
+   "s": [
+    3,
+    0
+   ],
+   "e": [
+    0.804,
+    -0.043
+   ]
+  },
+  "s22": {
+   "s": [
+    2,
+    0
+   ],
+   "e": [
+    -0.127,
+    -0.37
+   ]
+  },
+  "s23": {
+   "s": [
+    2,
+    -1
+   ],
+   "e": [
+    0.217,
+    -1.309
+   ]
+  },
+  "s24": {
+   "s": [
+    2,
+    0
+   ],
+   "e": [
+    -0.463,
+    1.82
+   ]
+  },
+  "s25": {
+   "s": [
+    1,
+    0
+   ],
+   "e": [
+    1.593,
+    0.08
+   ]
+  },
+  "s26": {
+   "s": [
+    1,
+    -1
+   ],
+   "e": [
+    0.41,
+    0.085
+   ]
+  },
+  "s27": {
+   "s": [
+    3,
+    -1
+   ],
+   "e": [
+    0.497,
+    -0.104
+   ]
+  },
+  "s28": {
+   "s": [
+    1,
+    1
+   ],
+   "e": [
+    -1.281,
+    0.845
+   ]
+  },
+  "s29": {
+   "s": [
+    3,
+    1
+   ],
+   "e": [
+    0.397,
+    -1.061
+   ]
+  },
+  "s30": {
+   "s": [
+    0,
+    2
+   ],
+   "e": [
+    0.105,
+    0.627
+   ]
+  },
+  "s31": {
+   "s": [
+    1,
+    3
+   ],
+   "e": [
+    0.038,
+    0.534
+   ]
+  },
+  "s32": {
+   "s": [
+    null,
+    null
+   ],
+   "e": [
+    0.67,
+    -0.069
+   ]
+  },
+  "s33": {
+   "s": [
+    0,
+    3
+   ],
+   "e": [
+    0.145,
+    -0.186
+   ]
+  },
+  "s34": {
+   "s": [
+    1,
+    3
+   ],
+   "e": [
+    1.075,
+    -1.157
+   ]
+  },
+  "s35": {
+   "s": [
+    1,
+    3
+   ],
+   "e": [
+    0.471,
+    -0.239
+   ]
+  },
+  "s36": {
+   "s": [
+    0,
+    2
+   ],
+   "e": [
+    0.226,
+    -0.217
+   ]
+  },
+  "s37": {
+   "s": [
+    null,
+    null
+   ],
+   "e": [
+    0.417,
+    0.003
+   ]
+  },
+  "s38": {
+   "s": [
+    -1,
+    3
+   ],
+   "e": [
+    0.353,
+    -1.805
+   ]
+  },
+  "s39": {
+   "s": [
+    0,
+    3
+   ],
+   "e": [
+    0.004,
+    0.868
+   ]
+  },
+  "s40": {
+   "s": [
+    3,
+    -1
+   ],
+   "e": [
+    -1.681,
+    -0.497
+   ]
+  },
+  "s41": {
+   "s": [
+    3,
+    -1
+   ],
+   "e": [
+    1.744,
+    0.037
+   ]
+  },
+  "s42": {
+   "s": [
+    3,
+    -1
+   ],
+   "e": [
+    0.21,
+    0.296
+   ]
+  },
+  "s43": {
+   "s": [
+    2,
+    0
+   ],
+   "e": [
+    -0.205,
+    1.679
+   ]
+  },
+  "s44": {
+   "s": [
+    2,
+    -2
+   ],
+   "e": [
+    1.023,
+    0.178
+   ]
+  },
+  "s45": {
+   "s": [
+    2,
+    -2
+   ],
+   "e": [
+    1.172,
+    -0.084
+   ]
+  },
+  "s46": {
+   "s": [
+    3,
+    -1
+   ],
+   "e": [
+    0.713,
+    -0.239
+   ]
+  },
+  "s47": {
+   "s": [
+    3,
+    0
+   ],
+   "e": [
+    -0.179,
+    -0.277
+   ]
+  },
+  "s48": {
+   "s": [
+    3,
+    0
+   ],
+   "e": [
+    -1.517,
+    -0.914
+   ]
+  },
+  "s49": {
+   "s": [
+    2,
+    -1
+   ],
+   "e": [
+    0.871,
+    -0.342
+   ]
+  },
+  "s50": {
+   "s": [
+    -2,
+    -1
+   ],
+   "e": [
+    0.219,
+    1.874
+   ]
+  },
+  "s51": {
+   "s": [
+    -1,
+    -3
+   ],
+   "e": [
+    0.755,
+    0.011
+   ]
+  },
+  "s52": {
+   "s": [
+    -2,
+    -2
+   ],
+   "e": [
+    -0.083,
+    0.506
+   ]
+  },
+  "s53": {
+   "s": [
+    -1,
+    -2
+   ],
+   "e": [
+    1.207,
+    1.027
+   ]
+  },
+  "s54": {
+   "s": [
+    -1,
+    -2
+   ],
+   "e": [
+    -1.348,
+    0.401
+   ]
+  },
+  "s55": {
+   "s": [
+    -2,
+    -1
+   ],
+   "e": [
+    -0.605,
+    -0.788
+   ]
+  },
+  "s56": {
+   "s": [
+    -1,
+    -1
+   ],
+   "e": [
+    -0.877,
+    -0.009
+   ]
+  },
+  "s57": {
+   "s": [
+    -1,
+    -2
+   ],
+   "e": [
+    -0.082,
+    1.04
+   ]
+  },
+  "s58": {
+   "s": [
+    -1,
+    -3
+   ],
+   "e": [
+    -0.454,
+    -0.364
+   ]
+  },
+  "s59": {
+   "s": [
+    -2,
+    -3
+   ],
+   "e": [
+    -0.177,
+    -0.394
+   ]
+  }
+ }
+}

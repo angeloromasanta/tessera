@@ -1,0 +1,30 @@
+{
+  "template": "template.html",
+  "prefix": "",
+  "title_font": "Fraunces, Georgia, 'Times New Roman', serif",
+  "navy": "#0D2A2F",
+  "logo": null,
+  "retoken": true,
+  "examples": [
+    "kit/figures/examples"
+  ],
+  "swarm": {
+    "page": "template/figures/swarm-cover.html",
+    "poster": "template/media/posters/img-swarm-cover-poster.png"
+  },
+  "hive": {
+    "page": "template/figures/hive-cluster.html",
+    "sample": "template/data/sample-cluster.json",
+    "poster": "template/media/posters/img-hive-cluster-poster.jpg"
+  },
+  "matrix": {
+    "page": "template/figures/hive-matrix.html",
+    "sample": "template/data/sample-matrix.json",
+    "poster": "template/media/posters/img-hive-matrix-poster.jpg"
+  },
+  "figures": {
+    "page-adoption-curve": "@examples/adoption-curve.html",
+    "page-evolution": "@examples/evolution.html",
+    "page-perceptron": "@examples/perceptron.html"
+  }
+}

@@ -1,0 +1,1609 @@
+/* ————— Tessera chrome ————— */
+
+:root {
+  --ink: #1e2a3a;
+  --ink-2: #31445c;
+  --chrome: #f5f7fa;
+  --chrome-2: #eceff4;
+  --line: #e3e8ef;
+  --muted: #5b6472;
+  --accent: #f7a600;
+  --accent-ink: #7a5200;
+  --blue: #5b8def;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--chrome);
+  overscroll-behavior: none;
+}
+
+#app { height: 100%; }
+
+.ed-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+/* iOS Safari (WebKit) renders a <select>'s chosen value as BLANK text when any
+   ancestor sets user-select:none — restore it on form fields app-wide. Inputs
+   and textareas need it too or the iOS text-selection caret misbehaves. */
+select, option, input, textarea, [contenteditable='true'] {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+/* The editor chrome is light-only. Without this, dark-mode phones render
+   NATIVE form controls dark (and Chrome-on-Android may force-darken the whole
+   page) while our ink stays dark — dark-on-dark, i.e. "blank" dropdowns.
+   Pair with the color-scheme meta in index.html; the explicit background/color
+   below keeps contrast even under a force-dark engine that ignores both. */
+:root { color-scheme: only light; }
+select {
+  background: #fff;
+  color: var(--ink-2, #1e2a3a);
+}
+option { background: #fff; color: #1e2a3a; }
+
+/* ————— THE DOCUMENT NEVER MIRRORS —————————————————————————————————————————
+   An Arabic/Hebrew viewer gets an RTL *chrome* (i18n.ts applyDirection sets
+   dir on <html>). The DOCUMENT must be immune to that: slide elements carry
+   absolute x/y model coordinates, so a mirrored surface would move every
+   element of every existing deck, and the same file would look different
+   depending on who opened it — a format-level bug, far worse than an
+   unmirrored panel.
+
+   So every surface that draws slide content is pinned back to LTR:
+
+   - .tessera-slide is the SHARED root of the canvas stage, sidebar thumbnails,
+     present sections, print pages and the speaker view's frames (render.ts
+     renderSlide), so this one rule covers all four surfaces at once. The
+     containers are pinned too, belt and braces, because they also carry
+     positioned chrome of their own.
+   - .ed-scroll additionally protects the canvas COORDINATE MATH: direction
+     changes what scrollLeft means (0 at the right edge, negative leftwards),
+     and canvas.ts reads/writes scrollLeft to centre and to pin the stage
+     during Moveable gestures. Pinned, none of that math can shift.
+   - .moveable-control-box is mounted with rootContainer: document.body, i.e.
+     outside the canvas subtree — it needs its own pin.
+
+   Text INSIDE elements still resolves its own direction per element, from the
+   content the author typed (render.ts sets dir="auto"). That is the content
+   half of RTL and is unaffected by any of this. */
+.tessera-slide, .tessera-thumb-surface, .ed-scroll, .tessera-present-overlay, .moveable-control-box {
+  direction: ltr;
+}
+
+/* ————— topbar ————— */
+
+.ed-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  z-index: 20;
+}
+
+.ed-title {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  width: 220px;
+  background: transparent;
+}
+.ed-title:hover { border-color: var(--line); }
+.ed-title:focus { border-color: var(--blue); outline: none; background: #fff; }
+
+.ed-group { display: flex; align-items: center; gap: 6px; }
+.ed-group-right { margin-inline-start: auto; }
+
+.ed-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+a.ed-btn { text-decoration: none; }  /* the update block's "What's new" link is styled as a button */
+.ed-btn:hover { background: var(--chrome-2); }
+.ed-btn:active { background: var(--line); }
+.ed-btn svg { display: block; }
+
+.ed-btn-primary {
+  background: var(--ink);
+  color: #fff;
+  padding: 6px 14px;
+}
+.ed-btn-primary:hover { background: var(--ink-2); }
+
+.ed-dropdown { position: relative; }
+.ed-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(20 30 45 / 0.14);
+  padding: 4px;
+  z-index: 50;
+  min-width: 150px;
+}
+.ed-dropdown.open .ed-menu { display: flex; }
+.ed-menu .ed-btn { justify-content: flex-start; width: 100%; }
+
+/* ————— main layout ————— */
+
+.ed-main { flex: 1; display: flex; min-height: 0; }
+
+.ed-sidebar {
+  width: var(--panew, 224px);
+  flex: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #fff;
+  border-inline-end: 1px solid var(--line);
+}
+.ed-slidelist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.ed-thumb {
+  position: relative;
+  max-width: 100%;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  flex: none;
+  background: #fff;
+}
+.ed-thumb:hover { border-color: #c9d2de; }
+.ed-thumb.active { border-color: var(--accent); }
+.ed-thumb.picked { border-color: var(--blue); box-shadow: 0 0 0 2px rgb(91 141 239 / 0.35); }
+.ed-thumb.active.picked { border-color: var(--accent); }
+/* where a dragged selection lands: a bar before or after the thumbnail */
+.ed-thumb.drop-before { box-shadow: 0 -6px 0 -2px var(--blue); }
+.ed-thumb.drop-after { box-shadow: 0 6px 0 -2px var(--blue); }
+.ed-grid .ed-thumb.drop-before { box-shadow: -6px 0 0 -2px var(--blue); }
+.ed-grid .ed-thumb.drop-after { box-shadow: 6px 0 0 -2px var(--blue); }
+.ed-slidelist.ed-dragging .ed-insertgap { pointer-events: none; }
+.ed-thumb-num {
+  position: absolute;
+  top: 4px; inset-inline-start: 4px;
+  z-index: 2;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgb(255 255 255 / 0.85);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ed-thumb-tools {
+  position: absolute;
+  inset-inline-end: 4px; top: 4px;
+  z-index: 2;
+  display: none;
+  gap: 2px;
+}
+.ed-thumb:hover .ed-thumb-tools { display: flex; }
+.ed-thumb-tools .ed-btn { padding: 3px; background: rgb(255 255 255 / 0.9); }
+
+.tessera-thumb-surface { overflow: hidden; pointer-events: none; }
+
+.ed-add-slide { border: 1.5px dashed var(--line); justify-content: center; color: var(--muted); align-self: stretch; }
+
+/* interactive-state thumbs: slightly smaller, centred under their parent.
+   No explicit width — the box sizes to its rendered surface (like normal
+   thumbs), so the whole slide stays visible inside the border. */
+.ed-thumb-state {
+  margin-top: -2px;
+  opacity: 0.72;
+  border-style: dashed;
+}
+.ed-thumb-state:hover, .ed-thumb-state.active { opacity: 1; }
+.ed-thumb-state .ed-thumb-num {
+  font-size: 9px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ————— canvas ————— */
+
+.ed-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  background:
+    radial-gradient(circle at 1px 1px, #d5dbe4 1px, transparent 0) 0 0 / 22px 22px,
+    var(--chrome);
+  overflow: hidden;
+  position: relative;
+}
+
+/* scrollable viewport: auto-margins centre the stage when it fits and
+   allow proper scrolling in every direction when zoomed past the window */
+.ed-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  display: flex;
+  /* classic (non-overlay) scrollbars: reserve the gutter so a bar appearing
+     mid-drag can't shrink the client box and shove the centred stage around */
+  scrollbar-gutter: stable both-edges;
+}
+
+.ed-stage {
+  position: relative;
+  flex: none;
+  margin: auto;
+  box-shadow: 0 10px 40px rgb(20 30 45 / 0.18), 0 2px 8px rgb(20 30 45 / 0.10);
+  border-radius: 2px;
+}
+
+/* zoom controls, bottom-end corner of the canvas */
+.ed-zoombar {
+  position: absolute;
+  inset-inline-end: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 6px;
+  box-shadow: 0 4px 14px rgb(20 30 45 / 0.10);
+  z-index: 10;
+}
+.ed-zoombtn {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.ed-zoombtn:hover { background: var(--chrome-2); }
+.ed-zoomlabel { font-size: 11.5px; min-width: 44px; text-align: center; color: var(--muted); }
+
+.ed-stage-scale { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+
+/* hover-set switcher chips, floating above the canvas */
+.ed-setbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  box-shadow: 0 4px 14px rgb(20 30 45 / 0.10);
+  z-index: 10;
+  max-width: calc(100% - 48px);
+  overflow-x: auto;
+}
+.ed-setbar-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ed-setchip {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--chrome);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ed-setchip:hover { background: var(--chrome-2); }
+.ed-setchip.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* ————— slide surface (shared by canvas, thumbs, present) ————— */
+
+.tessera-slide { position: relative; overflow: hidden; }
+
+.tessera-el { position: absolute; contain: layout style; }
+.tessera-el-text .tessera-text-inner {
+  overflow-wrap: break-word;
+  outline: none;
+  cursor: default;
+}
+.ed-stage .tessera-el { cursor: grab; }
+.ed-stage .tessera-el:active { cursor: grabbing; }
+.ed-stage .tessera-editing { cursor: text; }
+.ed-stage .tessera-editing .tessera-text-inner {
+  cursor: text;
+  user-select: text;
+  box-shadow: 0 0 0 1.5px var(--blue);
+  background: rgb(91 141 239 / 0.06);
+  min-height: 1em;
+}
+
+/* ————— properties panel ————— */
+
+.ed-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--chrome);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ed-hint code { font-size: 10.5px; word-break: break-all; }
+
+/* About actions: buttons must read against the white box without hover */
+.ed-about .ed-btn-primary {
+  background: #FF9E8A;
+  color: #0D1B2E;
+  font-weight: 700;
+}
+.ed-about .ed-btn-primary:hover { background: #F07B54; }
+.ed-about .ed-btn:not(.ed-btn-primary) {
+  border-color: var(--line);
+  background: #fff;
+}
+.ed-about .ed-btn:not(.ed-btn-primary):hover { background: var(--chrome-2); }
+
+/* ————— about dialog ————— */
+
+.ed-about-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgb(15 23 36 / 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ed-about {
+  width: 360px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgb(15 23 36 / 0.3);
+  padding: 20px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* tall dialogs (long help, version history) must scroll, not overflow the viewport */
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+/* engagement line back to the site */
+
+.ed-about-fine {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px solid var(--chrome);
+  padding-top: 10px;
+}
+
+/* ————— toast ————— */
+
+.ed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 12px);
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: all 0.25s ease;
+  z-index: 2000;
+  pointer-events: none;
+}
+.ed-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ————— present overlay ————— */
+
+.tessera-present-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+}
+.tessera-present-overlay .reveal,
+.tessera-present-overlay .reveal-viewport {
+  background: #000;
+}
+.tessera-present-overlay .reveal {
+  width: 100%;
+  height: 100%;
+  --r-background-color: #000;
+  --r-main-color: #fff;
+  --r-main-font-size: 32px;
+  --r-link-color: #f7a600;
+  --r-link-color-hover: #ffc23e;
+  --r-selection-background-color: #f7a600;
+  --r-controls-color: rgb(255 255 255 / 0.6);
+  --r-progress-color: #f7a600;
+  --r-overlay-element-bg-color: 255, 255, 255;
+  --r-overlay-element-fg-color: 0, 0, 0;
+}
+.tessera-present-overlay .reveal .slides section { padding: 0; }
+/* Reduced motion (M / speaker toggle / OS prefers-reduced-motion): JS fx are
+   skipped in present.ts; this neutralises CSS-driven motion too — Reveal's
+   slide transitions cut instantly and svg keyframe animations don't play. */
+.tessera-present-overlay.reduce-motion .reveal .slides section { transition: none !important; }
+.tessera-present-overlay.reduce-motion .tessera-el-svg * { animation: none !important; }
+/* dual-screen: one-click permission grant + transient toast */
+
+.tessera-present-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 100000;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font: 500 13px/1.3 system-ui, sans-serif;
+  color: #f2f0ea;
+  background: rgb(18 26 40 / 0.92);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.4);
+  max-width: 80vw;
+  text-align: center;
+}
+.tessera-present-overlay .tessera-el[data-link] { cursor: pointer; }
+.tessera-present-overlay .tessera-el[data-link]:hover {
+  outline: 2.5px solid var(--tessera-accent, #f7a600);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+/* --- live viewer (read-only collaborator) -------------------------------- */
+
+/* --- auto-save: recovery banner, saved tag, version history --------------- */
+.ed-recover {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #16273e;
+  color: #f2f0ea;
+  padding: 10px 14px;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.28);
+  font-size: 13px;
+  max-width: min(92vw, 560px);
+}
+.ed-recover .ed-btn { padding: 5px 12px; }
+.ed-version-box { max-width: 460px; }
+.ed-version-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; max-height: 320px; overflow-y: auto; }
+.ed-version-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  text-align: start;
+  padding: 9px 12px;
+  border: 1px solid var(--line, #e7e1d2);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink, #1e2a3a);
+}
+.ed-version-row:hover { background: var(--chrome-2, #f4f1ea); border-color: #c9d2df; }
+.ed-version-row .vh-tag { font-size: 11px; color: var(--muted, #8a94a4); }
+.ed-version-row .vh-do { font-size: 12px; font-weight: 600; color: #c25a43; }
+
+/* --- visual chart editor -------------------------------------------------- */
+
+.tessera-el-text a[href] {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 0.07em;
+  text-underline-offset: 0.16em;
+  cursor: pointer;
+}
+
+/* inline code spans inside text elements — editor, present and print alike */
+.tessera-el-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+}
+/* a line holding only code is a block (render.ts codeLine) — inline-styled
+   there, so this rule only covers the inline span */
+
+/* arrange kit: one compact row per group — tiny label left, buttons right */
+
+/* review comments: canvas markers, thread popover, thumb badge */
+
+@keyframes ed-cmt-pop {
+  0% { transform: scale(0.3); }
+  55% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.ed-comment-marker.fresh { animation: ed-cmt-pop 0.45s ease-out; }
+
+.ed-comment-layer { position: absolute; inset: 0; pointer-events: none; z-index: 12; }
+.ed-comment-marker {
+  position: absolute;
+  pointer-events: auto;
+  width: 19px;
+  height: 19px;
+  border: none;
+  border-radius: 50% 50% 50% 3px;
+  background: var(--accent);
+  color: #3a2800;
+  font: 700 10px/19px inherit;
+  font-family: inherit;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(20 30 45 / 0.25);
+}
+.ed-comment-marker.resolved { opacity: 0.35; }
+.ed-comment-marker:hover { transform: scale(1.15); }
+
+.ed-comment-pop {
+  position: fixed;
+  z-index: 210;
+  width: 300px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(15 23 36 / 0.18);
+  padding: 12px 14px;
+}
+.ed-comment-me {
+  float: right;
+  border: none;
+  background: none;
+  font: 600 10px/1.4 inherit;
+  font-family: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.ed-comment-me:hover { color: var(--accent-ink); }
+.ed-comment-pop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.ed-comment-pop-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.ed-comment-entries { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.ed-comment-entry b { font-size: 12.5px; }
+.ed-comment-entry .ed-comment-time { font-size: 11px; color: var(--muted); margin-inline-start: 5px; }
+.ed-comment-entry p { margin: 2px 0 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.ed-comment-reply {
+  width: 100%;
+  margin-top: 10px;
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  resize: vertical;
+}
+.ed-comment-pop-foot { display: flex; gap: 6px; margin-top: 8px; }
+.ed-comment-pop-foot .ed-btn { border: 1px solid var(--line); flex: 1; justify-content: center; padding: 5px 6px; font-size: 12px; }
+
+.ed-thumb-badge {
+  position: absolute;
+  bottom: 4px;
+  inset-inline-end: 4px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgb(255 255 255 / 0.92);
+  border-radius: 999px;
+  padding: 3px 5px;
+}
+/* request orbs, the only status display: hollow = waiting, pulsing = the
+   agent works on it, green = done */
+.ed-orbs { display: inline-flex; align-items: center; gap: 3px; }
+.ed-orbs-more { font-size: 9px; font-weight: 600; color: var(--muted); margin-inline-end: 1px; }
+.ed-orb { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; box-shadow: inset 0 0 0 2px var(--accent); background: #fff; }
+.ed-orb[data-s="working"] { background: #2563eb; box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
+.ed-orb[data-s="done"] { background: #2fb36d; box-shadow: none; }
+.ed-thumb-cmt {
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50% 50% 50% 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px #fff;
+}
+
+/* slide-insertion gaps between sidebar thumbnails */
+.ed-insertgap {
+  flex: none;
+  width: 100%;
+  height: 12px;
+  margin: -11px 0; /* overlap the sidebar's flex gap so spacing stays as-is */
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ed-insertgap:hover { opacity: 1; }
+.ed-insertgap::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: #5b8def;
+}
+.ed-insertgap-btn {
+  position: relative;
+  z-index: 1;
+  border: none;
+  background: #5b8def;
+  color: #fff;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* resizable side panels — thin grab strips between panel and canvas */
+.ed-resizer {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background .12s ease .08s;
+}
+.ed-resizer:hover, body.ed-col-resizing .ed-resizer { background: rgb(91 141 239 / 0.45); }
+body.ed-col-resizing, body.ed-thumbcol-resizing { cursor: col-resize; user-select: none; }
+.ed-noanim { transition: none !important; }
+/* against a collapsed panel the strip only carries the reopen chevron */
+.ed-sidebar.ed-collapsed + .ed-resizer { cursor: default; }
+.ed-sidebar.ed-collapsed + .ed-resizer:hover { background: transparent; }
+
+/* collapsible side panels */
+.ed-sidebar { transition: width .18s ease, padding .18s ease; }
+.ed-sidebar.ed-collapsed {
+  width: 0;
+  min-width: 0; /* flex items floor at min-content without this */
+  padding-left: 0;
+  padding-right: 0;
+  border-width: 0;
+  overflow: hidden;
+}
+
+/* interactive states read as secondary in Reveal's overview grid
+   (!important: Reveal positions overview sections with inline styles) */
+.tessera-present-overlay .reveal.overview section[data-tessera-state] {
+  opacity: 0.35 !important;
+  outline: 2px dashed rgb(255 255 255 / 0.35);
+  outline-offset: -2px;
+}
+
+/* PDF export: each linear slide is one exact 1600×900 page */
+
+@media print {
+  #app, #tessera-splash, .tessera-present-overlay, .ed-toast { display: none !important; }
+
+  @page { size: 1600px 900px; margin: 0; }
+
+}
+
+/* moveable accents */
+.moveable-control-box {
+  --moveable-color: var(--blue);
+}
+
+/* ————— speaker view popup ————— */
+.tessera-speaker {
+  margin: 0;
+  background: #14181d;
+  color: #e9edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+/* idle placeholder shown before/after a presentation drives the notes window */
+.sv-idle {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 8vw;
+  box-sizing: border-box;
+}
+.sv-idle-title { font-size: 28px; font-weight: 700; color: #e9edf3; }
+.sv-idle-msg { max-width: 30ch; margin: 0; font-size: 16px; line-height: 1.6; color: #9fb0c3; }
+.sv-top { display: flex; align-items: baseline; gap: 22px; padding: 14px 22px 10px; }
+.sv-timer {
+  font: 700 30px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.sv-timer:hover { color: #f7a600; }
+.sv-clock { font-size: 15px; color: #9fb0c3; }
+.sv-count { font-size: 15px; color: #9fb0c3; font-variant-numeric: tabular-nums; }
+.sv-ctrls { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.sv-btn {
+  width: 34px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid #2b333f;
+  background: #1e242c;
+  color: #cdd6e2;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sv-btn:hover:not([disabled]) { background: #2a323c; color: #fff; }
+.sv-btn[disabled] { opacity: 0.35; cursor: default; }
+.sv-btn.active { background: #f7a600; border-color: #f7a600; color: #14181d; }
+.sv-main { display: flex; gap: 22px; padding: 14px 22px; align-items: flex-start; flex: 1; min-height: 0; }
+.sv-frame {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+  flex: none;
+}
+.sv-frame.end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5b6472;
+  font-size: 14px;
+  background: #1a2029;
+}
+.sv-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.sv-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9fb0c3;
+  margin-bottom: 6px;
+}
+.sv-notes-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sv-notes {
+  flex: 1;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #e9edf3;
+  user-select: text;
+}
+
+/* --- presenter view: thumbnail rail + all-slides grid ----------------- */
+.sv-rail {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  padding: 12px 22px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid #232a33;
+  background: #10141a;
+}
+.sv-thumb {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: #000;
+  cursor: pointer;
+  line-height: 0;
+  overflow: hidden;
+}
+.sv-thumb:hover { border-color: #4a5a72; }
+.sv-thumb.current { border-color: #f7a600; }
+.sv-thumb .sv-frame { box-shadow: none; border-radius: 0; }
+.sv-thumb-n {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: rgb(0 0 0 / 0.62);
+  color: #e9edf3;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+.sv-thumb.current .sv-thumb-n { background: #f7a600; color: #14181d; }
+.sv-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgb(9 12 16 / 0.94);
+  overflow-y: auto;
+  padding: 28px;
+}
+.sv-grid[hidden] { display: none; }
+.sv-grid-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  justify-items: center;
+}
+/* line / curve / connector endpoint handles */
+.ed-le-anchor { transition: r 0.08s ease; }
+.ed-le-anchor:hover { fill: #eaf1ff; }
+
+/* audience blackout — a plain black cover over the slides overlay */
+.tessera-blackout {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: #000;
+}
+.tessera-blackout[hidden] { display: none; }
+
+/* transient confirmation pill in present mode (e.g. Reduced motion on/off) */
+.tessera-present-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  z-index: 61;
+  background: rgb(20 30 45 / 0.82);
+  color: #fff;
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.tessera-present-toast.show { opacity: 1; }
+
+/* the "+N" overflow pill — widens to fit the count, opens the Live panel */
+
+.ed-remote-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+.ed-remote-box {
+  position: absolute;
+  border: 2px solid;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.ed-remote-box.ed-remote-editing {
+  border-style: dashed;
+}
+.ed-remote-tag {
+  position: absolute;
+  top: -22px;
+  left: -2px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  color: #16273e;
+  font: 600 11px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  white-space: nowrap;
+}
+
+/* Save is a split button: [ Save |▾] one visual unit. The caret button is
+   NESTED inside the .ed-dropdown wrapper, so stretch through the wrapper. */
+.ed-split { display: inline-flex; align-items: stretch; }
+.ed-split > .ed-btn:first-child {
+  border-start-start-radius: 8px;
+  border-end-start-radius: 8px;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border: 1px solid var(--line);
+  border-inline-end: none;
+  background: var(--chrome, #f2f4f8);
+}
+.ed-split .ed-dropdown { display: flex; align-items: stretch; }
+.ed-split-caret {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-start-end-radius: 8px;
+  border-end-end-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--chrome, #f2f4f8);
+  padding: 6px 7px;
+}
+.ed-split .ed-btn:hover { background: var(--chrome-2, #e8ebf1); }
+/* a split button with nothing in its menu (Export on a deck without polls)
+   shows as a plain button */
+.ed-split.ed-split-solo > .ed-btn:first-child {
+  border-radius: 8px;
+  border-inline-end: 1px solid var(--line);
+}
+.ed-split.ed-split-solo .ed-dropdown { display: none; }
+.ed-caret { font-size: 10px; line-height: 1; }
+
+/* Live button status dot: always present — grey when dormant (not sharing),
+   amber+pulsing while connecting, green when live. The dot makes the on/off
+   state legible at a glance instead of the button looking inert. */
+
+/* --- responsive topbar: labels give way, never a scrollbar ---------------- */
+.ed-topbar { min-width: 0; }
+.ed-topbar .ed-group { flex-shrink: 0; }
+
+.ed-title { flex: 0 1 220px; min-width: 48px; }
+@media (max-width: 900px) {
+  .ed-savestate > span { display: none; }
+  .ed-topbar { gap: 6px; padding: 8px 8px; }
+}
+
+/* panel collapse chevrons live ON the resizer strips, not in the topbar */
+.ed-resizer { position: relative; }
+.ed-panel-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #5d6b80;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(20, 30, 45, 0.12);
+}
+.ed-panel-toggle:hover { color: var(--ink); border-color: #b9c3d2; }
+/* menus that hang off a topbar control at the END of the bar open toward the
+   bar's start, so they can never overflow the window edge — in either
+   direction (the language menu sets the same anchoring from JS). */
+.ed-save-menu {
+  inset-inline-end: 0;
+  inset-inline-start: auto;
+}
+.ed-save-menu { min-width: 190px; }
+.ed-save-menu .ed-btn { font-size: 12.5px; }
+/* when the adjacent panel is collapsed the chevron pins fully on-screen,
+   docked to the edge like a drawer pull */
+.ed-sidebar.ed-collapsed + .ed-resizer .ed-panel-toggle {
+  inset-inline-start: 0;
+  transform: translateY(-50%);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+/* floating present buttons, bottom-LEFT of the work area (zoombar owns the
+   right corner); side by side so neither ever covers the slide above */
+
+/* ————— password gate (encrypted files) ————— */
+
+.ed-pwgate {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #0D1B2E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(182 193 210 / 0.92);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-align: center;
+}
+.ed-pwcard {
+  max-width: 380px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+}
+.ed-pwmark { font-size: 40px; }
+.ed-pwcard h1 {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.ed-pwcard p { font-size: 14px; line-height: 1.5; }
+.ed-pwcard input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  background: rgb(255 255 255 / 0.06);
+  color: #fff;
+  font-size: 15px;
+  text-align: center;
+}
+.ed-pwcard button {
+  padding: 12px 26px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  color: #0D1B2E;
+  background: linear-gradient(180deg, #FFB29B, #ED8266);
+}
+
+.ed-pwerr { color: #FF8A7A; font-size: 13px; min-height: 18px; }
+
+/* ————— tables ————— */
+.tessera-el-table { overflow: visible; }
+.tessera-el-table .tessera-cell-inner { min-height: 1em; }
+/* editor-only affordances */
+.ed-root .tessera-el-table td { cursor: text; }
+.tessera-col-handle { border-radius: 3px; }
+.tessera-col-handle:hover { background: rgba(94, 118, 153, 0.35); }
+.tessera-el-table.tessera-editing td { cursor: text; }
+
+/* ————— audience polls ————— */
+/* The static parts are inline-styled by renderPollBody (so they survive into
+   print and thumbnails with no stylesheet). What lives here is the LIVE widget
+   present mode adds, plus the editor's double-click-to-edit affordance. */
+.ed-root .tessera-el-poll .tessera-poll-q { cursor: text; }
+.tessera-el-poll.tessera-editing .tessera-poll-q { outline: 2px solid var(--accent, #D97757); outline-offset: 4px; }
+
+.tessera-poll-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+.tessera-poll-count {
+  font-size: 20px;
+  font-weight: 600;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+}
+.tessera-poll-btn {
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  color: inherit;
+  background: transparent;
+  border: 1.5px solid currentColor;
+  border-radius: 10px;
+  padding: 8px 16px;
+  /* colours come from the element's own ink, so one rule works on a light or a
+     dark deck without a second theme-aware branch */
+  opacity: 0.72;
+}
+.tessera-poll-btn:hover:not(:disabled) { opacity: 1; }
+.tessera-poll-btn:disabled { opacity: 0.3; cursor: default; }
+.tessera-poll-btn-primary {
+  border-color: transparent;
+  color: #fff;
+  opacity: 1;
+  margin-left: auto;
+}
+.tessera-poll-btn-primary:disabled { opacity: 0.35; }
+
+.tessera-poll-out {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+}
+.tessera-poll-summary { overflow: auto; min-height: 0; }
+.tessera-poll-summary p { margin: 0 0 0.7em; }
+.tessera-poll-summary p:last-child { margin-bottom: 0; }
+
+.tessera-poll-answers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  min-height: 0;
+  /* Two columns: audience answers are short, and a single column wastes half a
+     16:9 slide while pushing the tail off the bottom. */
+  columns: 2;
+  column-gap: 32px;
+  font-size: 17px;
+}
+.tessera-poll-answers li {
+  break-inside: avoid;
+  margin: 0 0 0.55em;
+  padding-left: 0.9em;
+  text-indent: -0.9em;
+  opacity: 0.86;
+}
+.tessera-poll-answers li::before { content: '— '; opacity: 0.5; }
+
+.tessera-poll-err {
+  margin: 8px 0 0;
+  font-size: 15px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* results: choice tallies and rating distributions, drawn in the element's own
+   ink so one rule set works on a light or a dark deck (same reasoning as the
+   buttons above). Bars are scaled to the leader — see render.renderPollBars. */
+.tessera-poll-results { overflow: auto; min-height: 0; }
+.tessera-poll-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tessera-poll-barrow {
+  display: grid;
+  /* label · bar · count. The label column is fixed so the bars share a
+     baseline: ragged bar starts make two options look different in size. */
+  grid-template-columns: minmax(0, 12em) 1fr auto;
+  align-items: center;
+  gap: 16px;
+  font-size: 22px;
+}
+/* A long distribution — a 0..5 quiz score, a 1..7 rating — has more rows than
+   an options list and would otherwise scroll inside its own box, hiding the
+   top or bottom mark from the room. Denser rows keep the whole shape on the
+   slide, which is the only reason to draw a distribution at all. */
+.tessera-poll-bars.tessera-poll-bars-dense { gap: 7px; }
+.tessera-poll-bars-dense .tessera-poll-barrow { font-size: 18px; gap: 12px; }
+.tessera-poll-barlabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tessera-poll-bartrack {
+  height: 1.5em;
+  border-radius: 6px;
+  /* color-mix, not opacity: `opacity` on the track would fade the FILL inside
+     it too, and the fill is the one thing that must stay at full strength. */
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  position: relative;
+}
+.tessera-poll-barfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 6px;
+  transition: width 0.35s ease-out;
+  min-width: 2px;
+}
+.tessera-poll-barvalue {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+  font-size: 0.82em;
+}
+
+.tessera-poll-average {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.tessera-poll-average-value {
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tessera-poll-average-label {
+  font-size: 19px;
+  opacity: 0.7;
+}
+
+/* ————— RTL chrome: the marks that don't flip themselves ————————————————————
+   Logical properties turn the LAYOUT around on their own. These are the few
+   glyphs that encode a direction in their SHAPE, so they have to be flipped by
+   hand. Every selector here is chrome — none of it can reach a slide, which
+   stays LTR-pinned (see the top of this file).
+
+   The speaker view (.sv-*) is deliberately absent: it is a separate window
+   sitting beside the projected show, and it never carries a dir attribute. */
+
+/* The comment thread's "you are <name>" link rides the far edge of the head. */
+[dir="rtl"] .ed-comment-me { float: left; }
+
+/* --- AI-native fork: [slide list | slide over the ask bar | requests and
+   notes]. The properties panel is not shown. ------------------------------ */
+.ed-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ed-center > .ed-canvas-wrap { flex: 1; min-height: 0; }
+
+/* top bar: title · save state ······ agent · Present ▾ · ⋯ */
+.ed-title { font-weight: 600; }
+/* [cloud Saved v]: the save state is the button; the caret holds copies,
+   history, export, answers and the agent switch */
+.ed-savestate { gap: 6px; font-size: 12.5px; color: var(--ink-2); padding: 5px 10px 5px 9px; }
+.ed-savestate:hover { color: var(--ink); }
+.ed-save-icon { display: inline-flex; color: #2fb36d; }
+.ed-save-icon svg { width: 17px; height: 17px; }
+.ed-savestate[data-state="saving"] .ed-save-icon { color: #8a96a8; animation: ed-pulse 1.2s ease-in-out infinite; }
+.ed-split.ed-save > .ed-savestate[data-state="stuck"] { color: var(--accent-ink); background: #fff3d6; }
+.ed-savestate[data-state="stuck"] .ed-save-icon { color: var(--accent); }
+.ed-save:has(.ed-savestate[data-state="stuck"]) .ed-split-caret { background: #fff3d6; }
+.ed-group-right { gap: 8px; }
+.ed-menu-end { inset-inline-start: auto; inset-inline-end: 0; min-width: 230px; }
+.ed-menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.ed-menu-info { font-size: 12px; line-height: 1.4; color: var(--muted); padding: 6px 9px 8px; max-width: 260px; }
+.ed-save:not(.has-polls) .ed-poll-only { display: none; }
+.ed-present:not(.has-join) .ed-join-only { display: none; }
+.ed-split.ed-present > .ed-btn-primary { font-weight: 600; padding-inline: 12px; border: 0; background: var(--ink); color: #fff; }
+.ed-split.ed-present > .ed-btn-primary svg { width: 13px; height: 13px; }
+.ed-split.ed-present .ed-split-caret { background: var(--ink); color: #fff; border: 0; border-inline-start: 1px solid rgb(255 255 255 / 0.22); }
+.ed-split.ed-present .ed-btn:hover { background: var(--ink-2); }
+@keyframes ed-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .ed-orb, .ed-row-dot::after, .ed-agent-status::before, .ed-editing-chip::before, .ed-save-icon, .ed-req-dot, .ed-thumb-editing::after { animation: none !important; } }
+
+/* the ask bar, under the slide, as wide as the slide area allows */
+.ed-ask { flex: none; padding: 0 18px 14px; display: flex; justify-content: center; }
+.ed-ask-bar {
+  flex: 1; max-width: 760px; display: flex; align-items: flex-end; gap: 8px; cursor: text;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 7px 7px 7px 8px;
+  box-shadow: 0 2px 10px rgb(20 30 45 / 0.07);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ed-ask-bar:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgb(91 141 239 / 0.15); }
+.ed-ask-target {
+  flex: none; align-self: center; display: inline-flex; align-items: center; gap: 4px; max-width: 46%;
+  font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--chrome-2);
+  border-radius: 8px; padding: 4px 8px; white-space: nowrap; cursor: default;
+}
+.ed-ask-target.has-el { background: #fff3d6; color: var(--accent-ink); }
+.ed-ask-el { font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ed-ask-el::before { content: '· '; }
+.ed-ask-drop { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px; opacity: 0.7; }
+.ed-ask-drop:hover { opacity: 1; }
+.ed-ask-input {
+  flex: 1; min-width: 0; resize: none; border: 0; outline: none; background: transparent;
+  font: inherit; font-size: 14px; line-height: 21px; color: var(--ink); padding: 4px 2px; height: 29px;
+  max-height: 140px; user-select: text;
+}
+.ed-ask-send {
+  flex: none; width: 30px; height: 30px; border-radius: 9px; border: 0; cursor: pointer;
+  display: grid; place-items: center; background: var(--ink); color: #fff;
+}
+.ed-ask-send:hover { background: var(--ink-2); }
+.ed-ask-bar:has(.ed-ask-input:placeholder-shown) .ed-ask-send { background: var(--chrome-2); color: #9aa4b2; }
+
+/* requests */
+.ed-reqs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ed-reqs-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 14px; }
+.ed-reqs-empty { margin: 6px 4px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.ed-reqs-empty b { color: var(--ink-2); font-weight: 600; }
+.ed-reqs-more { align-self: flex-start; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; padding: 2px 4px; }
+.ed-reqs-more:hover { color: var(--ink); text-decoration: underline; }
+.ed-reqs-elsewhere {
+  flex: none; border: 0; border-top: 1px solid var(--line); background: var(--chrome); font: inherit;
+  font-size: 12px; color: var(--ink-2); text-align: start; padding: 9px 14px; cursor: pointer;
+}
+.ed-reqs-elsewhere:hover { background: var(--chrome-2); }
+.ed-reqs-elsewhere[hidden] { display: none; }
+.ed-req { position: relative; font-size: 13px; line-height: 1.45; padding: 9px 11px 10px; border-radius: 10px; background: var(--chrome); border: 1px solid transparent; }
+.ed-req.working { background: #fffaf0; border-color: #f5d48a; }
+.ed-req.done { background: #fff; border-color: var(--line); cursor: pointer; }
+.ed-req-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 12px; }
+.ed-req-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px #9aa4b2; }
+.ed-req.working .ed-req-dot { background: var(--accent); box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
+.ed-req.done .ed-req-dot { background: #2fb36d; box-shadow: none; }
+.ed-req-status { font-weight: 600; color: var(--ink-2); }
+.ed-req.working .ed-req-status { color: var(--accent-ink); }
+.ed-req.done .ed-req-status { color: #1d7a47; }
+.ed-req-time { color: var(--muted); }
+.ed-req-time::before { content: '· '; }
+.ed-req-x { margin-inline-start: auto; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; opacity: 0; }
+.ed-req:hover .ed-req-x, .ed-req-x:focus-visible { opacity: 1; }
+.ed-req-x:hover { color: var(--ink); }
+.ed-req-text { white-space: pre-wrap; color: var(--ink); }
+.ed-req-el { display: inline-block; margin-top: 5px; font-size: 11px; font-weight: 600; color: var(--accent-ink); background: #fff3d6; border-radius: 6px; padding: 1px 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-req-reply { margin-top: 8px; padding: 1px 0 1px 10px; border-inline-start: 2px solid #c9d3e0; color: var(--ink); white-space: pre-wrap; }
+.ed-req-reply b { font-weight: 600; color: var(--ink-2); }
+.ed-req.folded { padding-block: 6px; }
+.ed-req.folded .ed-req-head { margin: 0; }
+.ed-req.folded .ed-req-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.ed-req.folded .ed-req-el, .ed-req.folded .ed-req-reply { display: none; }
+
+/* speaker notes, read like prose */
+.ed-notes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ed-notes-input {
+  flex: 1; min-height: 0; display: block; width: 100%; box-sizing: border-box; resize: none;
+  font: inherit; font-size: 14.5px; line-height: 1.6; color: var(--ink);
+  border: 0; outline: none; padding: 14px 18px; background: #fff; user-select: text;
+}
+.ed-notes-input:hover { background: #fcfcfd; }
+.ed-notes-input:focus { background: #fff; box-shadow: inset 0 0 0 2px rgb(91 141 239 / 0.35); }
+.ed-notes-foot { flex: none; font-size: 11.5px; color: var(--muted); padding: 8px 18px 10px; border-top: 1px solid var(--line); }
+
+.ed-join-pop { display: flex; position: fixed; width: 280px; gap: 8px; padding: 12px; }
+.ed-join-pop .ed-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.ed-join-pop input[type=text] {
+  font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.02em;
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+}
+.ed-join-fresh { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
+.ed-join-actions { display: flex; justify-content: space-between; gap: 6px; }
+
+/* --- the phone view (editor/phone.ts): every slide in one vertical scroll,
+   the ask box docked under it, no editing. The desktop DOM stays built and
+   hidden. ------------------------------------------------------------------ */
+.ed-root.ed-phone > .ed-topbar,
+.ed-root.ed-phone > .ed-main { display: none; }
+/* this browser cannot rewrite files / found unsaved changes: nothing to do on a phone */
+body.ed-phone-on .ed-recover { display: none; }
+.ed-phone-view {
+  position: fixed; left: 0; right: 0; top: 0; height: 100%;
+  display: flex; flex-direction: column; background: var(--chrome); z-index: 1;
+  --ed-phone-vh: 100vh;
+}
+.ed-phone-view[hidden] { display: none; }
+.ed-phone-head {
+  flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px;
+  background: #fff; border-bottom: 1px solid var(--line);
+}
+.ed-phone-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-phone-count { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ed-phone-play { flex: none; padding: 8px 10px; }
+.ed-phone-list {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; padding: 4px 12px 16px;
+}
+.ed-phone-card { position: relative; margin: 10px 0 0; }
+.ed-phone-num { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 0 4px 2px; }
+.ed-phone-card.state .ed-phone-num::after { content: ' ·'; }
+.ed-phone-frame {
+  position: relative; width: 100%; aspect-ratio: var(--ed-phone-ratio, 16 / 9); overflow: hidden;
+  background: #fff; border-radius: 6px; outline: 2px solid transparent; outline-offset: 2px;
+  box-shadow: 0 1px 3px rgba(20, 30, 45, 0.12);
+}
+.ed-phone-card.on .ed-phone-frame { outline-color: var(--accent); }
+.ed-phone-card.on .ed-phone-num { color: var(--accent-ink); }
+.ed-phone-surface {
+  position: absolute; left: 0; top: 0; transform-origin: 0 0;
+  transform: scale(var(--ed-phone-scale, 0.3));
+}
+.ed-phone-dock { flex: none; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -2px 8px rgba(20, 30, 45, 0.06); }
+.ed-phone-dock .ed-reqs-list { flex: none; max-height: calc(var(--ed-phone-vh) * 0.26); padding: 8px 12px 4px; }
+.ed-phone-dock .ed-reqs-list:not(:has(.ed-req)) { display: none; }
+.ed-phone-dock .ed-reqs-elsewhere { display: none; }
+.ed-phone-dock .ed-ask { padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.ed-phone-dock .ed-ask-bar { box-shadow: none; }
+/* 16px: iOS zooms the page into any field smaller than that */
+.ed-phone-dock .ed-ask-input { font-size: 16px; }
+
+/* Save a copy…: the one choice it asks (same room or another) */
+.ed-choose h2 { margin: 0; font-size: 16px; }
+.ed-choose p { margin: 0 0 4px; color: var(--ink-2); line-height: 1.45; }
+.ed-choose .ed-btn { justify-content: center; padding: 9px 12px; }
+.ed-choose .ed-choose-cancel { background: none; color: var(--muted); }
+.ed-choose .ed-btn-primary { background: var(--ink); color: #fff; }
+.ed-choose .ed-btn-primary:hover { background: var(--ink-2); }
+
+/* Save menu: the agent switch only where an agent can connect */
+.ed-save:not(.has-agent) .ed-agent-only { display: none; }
+.ed-req-idle { color: #9aa4b2; }
+.ed-req-idle::before { content: '· '; }
+
+/* a slide an agent is changing right now: a ring on its thumbnail, a chip on
+   the canvas (editor.ts wireAgentEditing) */
+.ed-thumb-editing::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 10px; pointer-events: none; z-index: 3;
+  box-shadow: 0 0 0 2px #2fb36d; animation: ed-pulse 1.2s ease-in-out infinite;
+}
+.ed-editing-chip {
+  position: absolute; top: 12px; inset-inline-end: 14px; z-index: 12;
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; color: #1d4ed8;
+  background: #eef3ff; border: 1px solid #d4e0fd; border-radius: 999px; padding: 4px 11px;
+  pointer-events: none;
+}
+.ed-editing-chip::before, .ed-agent-status::before {
+  content: ''; width: 9px; height: 9px; border-radius: 50%; flex: none;
+  border: 2px solid currentColor; border-top-color: transparent; animation: ed-spin 0.9s linear infinite;
+}
+.ed-editing-chip[hidden] { display: none; }
+@keyframes ed-spin { to { transform: rotate(360deg); } }
+/* the top bar: "… working on 2 requests" */
+.ed-agent-status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #1d4ed8; white-space: nowrap; margin-inline-end: 6px; }
+.ed-agent-status[hidden] { display: none; }
+
+/* --- 2026-10-28: the review list ---- */
+/* SLIDE | WHAT SHOULD CHANGE? */
+.ed-review-head {
+  flex: none; display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box;
+  padding: 6px 10px 6px 20px; border-bottom: 1px solid var(--line);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2);
+}
+.ed-review-h1 { flex: none; width: calc(var(--thumbw, 150px) + 22px); }
+.ed-review-h2 { flex: none; white-space: nowrap; }
+.ed-max-hint { display: none; flex: 1; min-width: 0; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); font-size: 12.5px; }
+.ed-sidebar.ed-max .ed-max-hint { display: block; }
+.ed-max-btn { flex: none; margin-inline-start: auto; padding: 5px; color: var(--muted); }
+.ed-max-btn:hover { color: var(--ink); }
+/* narrow (thumbnails only) and maximized: the header keeps only the button */
+.ed-sidebar:not(.ed-review) .ed-review-h1, .ed-sidebar:not(.ed-review) .ed-review-h2,
+.ed-sidebar:not(.ed-review) .ed-review-hint { display: none; }
+/* maximized: the list is the whole area, a grid for reordering */
+.ed-sidebar.ed-max { flex: 1; width: auto; border-inline-end: 0; }
+.ed-sidebar.ed-max ~ .ed-resizer, .ed-sidebar.ed-max ~ .ed-center { display: none; }
+.ed-sidebar.ed-max .ed-slidelist { padding: 16px 20px; }
+.ed-review-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: end; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); white-space: nowrap; }
+.ed-row { position: relative; flex: none; }
+.ed-sidebar.ed-review .ed-slidelist { align-items: stretch; gap: 0; padding: 4px 8px 16px; }
+.ed-sidebar.ed-review .ed-row {
+  display: grid; grid-template-columns: 14px calc(var(--thumbw, 150px) + 4px) minmax(0, 1fr); column-gap: 10px; align-items: start;
+  padding: 10px 8px; border-bottom: 1px solid #eef0f4; border-radius: 6px;
+}
+.ed-sidebar.ed-review .ed-row.active { background: #f7f9fd; }
+.ed-sidebar.ed-review .ed-row.picked { background: #eef3ff; }
+.ed-sidebar.ed-review .ed-thumb-num { display: none; }
+.ed-row-num { font-size: 11px; font-weight: 600; color: #4a5263; padding-top: 2px; text-align: end; }
+.ed-row.active .ed-row-num { color: #1d4ed8; font-weight: 700; }
+.ed-sidebar.ed-review .ed-thumb.active { border-color: #1d4ed8; }
+.ed-sidebar.ed-review .ed-insertgap { margin: -6px 0; }
+.ed-sidebar.ed-review .ed-add-slide { margin-top: 10px; align-self: flex-start; }
+.ed-row.drop-before { box-shadow: 0 -3px 0 0 var(--blue); }
+.ed-row.drop-after { box-shadow: 0 3px 0 0 var(--blue); }
+.ed-grid .ed-row.drop-before { box-shadow: -4px 0 0 0 var(--blue); }
+.ed-grid .ed-row.drop-after { box-shadow: 4px 0 0 0 var(--blue); }
+/* the whole deck: no thumbnail, a small label and comments across the row */
+.ed-sidebar.ed-review .ed-row.ed-row-deck { display: flex; flex-direction: column; gap: 6px; padding-inline-start: 32px; }
+.ed-row-deck-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+.ed-row-deck-label svg { width: 14px; height: 14px; }
+.ed-row-deck .ed-row-ask { min-height: 0; width: 100%; }
+/* the line between thumbnails and comments: drag to trade width */
+.ed-sidebar { position: relative; }
+.ed-col-handle {
+  display: none; position: absolute; top: 0; bottom: 0; z-index: 4; width: 9px; cursor: col-resize;
+  inset-inline-start: calc(var(--thumbw, 150px) + 44px);
+}
+.ed-sidebar.ed-review:not(.ed-max) .ed-col-handle { display: block; }
+.ed-col-handle::after { content: ''; position: absolute; top: 0; bottom: 0; inset-inline-start: 4px; width: 1px; background: transparent; transition: background .12s; }
+.ed-col-handle:hover::after, .ed-col-handle.dragging::after { width: 2px; inset-inline-start: 3.5px; background: var(--blue); }
+/* the comment side of a row */
+.ed-row-ask { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 84px; }
+.ed-row-reqs { display: flex; flex-direction: column; gap: 6px; }
+.ed-row-reqs:empty { display: none; }
+.ed-row-req { font-size: 13.5px; line-height: 1.4; color: var(--ink); }
+.ed-row-head { display: flex; align-items: flex-start; gap: 6px; }
+.ed-row-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.ed-row-req.done .ed-row-text { color: #1a7f4b; }
+/* the status dot before a request (hollow waiting, pulsing working, green
+   done); hovering it shows the agent's reply (.ed-reply-pop) */
+.ed-row-dot { flex: none; position: relative; width: 15px; height: 19px; margin-inline-start: -3px; cursor: default; outline: none; }
+.ed-row-dot::after {
+  content: ''; position: absolute; left: 3px; top: 5px; width: 9px; height: 9px; border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--accent); background: #fff;
+}
+.ed-row-dot[data-s="working"]::after { background: #2563eb; box-shadow: none; animation: ed-pulse 1.2s ease-in-out infinite; }
+.ed-row-dot[data-s="done"]::after { background: #2fb36d; box-shadow: none; }
+.ed-row-dot:hover::after, .ed-row-dot:focus-visible::after { outline: 3px solid rgb(47 179 109 / 0.25); }
+.ed-reply-pop {
+  position: fixed; z-index: 1000; max-width: 340px; box-sizing: border-box; padding: 9px 12px; border-radius: 8px;
+  background: #fff; border: 1px solid var(--line, #e3e6ec); box-shadow: 0 6px 24px rgb(15 23 42 / 0.14);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12.5px; line-height: 1.45; color: #1f2430; pointer-events: none; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ed-reply-pop[hidden] { display: none; }
+.ed-reply-pop-head { font-size: 11px; font-weight: 600; color: #6b7280; }
+.ed-reply-pop-head.done { color: #1a7f4b; }
+.ed-reply-pop-text { margin-top: 4px; }
+.ed-row-x { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: 0; }
+.ed-row-req:hover .ed-row-x, .ed-row-x:focus-visible { opacity: 1; }
+.ed-row-x:hover { color: var(--ink); }
+.ed-row-more { align-self: flex-start; border: 0; background: none; font: inherit; font-size: 11.5px; color: var(--muted); cursor: pointer; padding: 0; }
+.ed-row-more:hover { color: var(--ink); text-decoration: underline; }
+.ed-row-target { align-self: flex-start; font-size: 11px; font-weight: 600; color: var(--accent-ink); background: #fff3d6; border-radius: 6px; padding: 1px 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-row-target[hidden] { display: none; }
+.ed-row-input {
+  width: 100%; box-sizing: border-box; resize: none; border: 0; outline: none; background: transparent;
+  font: inherit; font-size: 13.5px; line-height: 19px; color: var(--ink); padding: 3px 6px; margin-inline-start: -6px;
+  height: 25px; border-radius: 6px; user-select: text;
+}
+.ed-row-input::placeholder { color: #9aa1ad; }
+.ed-row-input:hover { background: rgb(255 255 255 / 0.7); }
+.ed-row-input:focus { background: #fff; box-shadow: 0 0 0 1.5px #9db7f5; }
+/* the grid: the sorter view, for moving many slides at once (orbs only) */
+.ed-sidebar.ed-grid .ed-slidelist { flex-direction: row; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 12px; }
+.ed-sidebar.ed-grid .ed-add-slide { flex-basis: 100%; }
+.ed-sidebar.ed-grid .ed-thumb-state { margin-top: 0; }
+/* the right side: "Slide 3 of 5" ‹ ›, the slide, its speaker notes */
+.ed-slidenav { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 24px 0; }
+.ed-slidenav-label { font-size: 13px; color: var(--ink-2); }
+.ed-slidenav-btns { display: flex; gap: 6px; }
+.ed-slidenav-btn { width: 34px; height: 34px; justify-content: center; border: 1px solid var(--line); background: #fff; font-size: 17px; line-height: 1; padding: 0; }
+.ed-notes-panel {
+  flex: none; height: 200px; margin: 0 24px 16px; display: flex; flex-direction: column; min-height: 0;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; user-select: text;
+}
+.ed-notes-head {
+  flex: none; text-align: start; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); padding: 10px 14px;
+}
+.ed-notes-panel.collapsed { height: auto; }
+.ed-notes-panel.collapsed .ed-notes { display: none; }
+.ed-notes-panel.collapsed .ed-notes-head { border-bottom: 0; }
+.ed-notes-panel .ed-notes-input { padding: 10px 14px; font-size: 14px; line-height: 1.5; }
+.ed-notes-panel .ed-notes-foot { padding: 6px 14px 8px; }
+@media (max-height: 760px) { .ed-notes-panel { height: 150px; } }

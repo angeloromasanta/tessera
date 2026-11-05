@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What is in a call</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;font-family:Manrope,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+
+/* ---- camera -----------------------------------------------------------
+   Everything lives in #world. A step names a rect to frame and the group
+   scales/translates to it, so a "zoom" moves the marks the audience is
+   already looking at instead of drawing bigger copies of them. */
+#world{transform-box:view-box;transform-origin:0 0;
+  transition:transform 1s cubic-bezier(.4,0,.2,1)}
+
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+
+/* ---- motion vocabulary: every arrival comes FROM somewhere ------------- */
+.fromL,.rise,.pop,.fly{transform-box:fill-box;transform-origin:center}
+.fromL{transition:opacity .45s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.fromL:not(.on){transform:translateX(-46px)}
+.rise{transition:opacity .45s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.rise:not(.on){transform:translateY(26px)}
+.pop{transition:opacity .35s ease,transform .55s cubic-bezier(.34,1.3,.5,1)}
+.pop:not(.on){transform:scale(.7)}
+/* .fly — the mark comes out of the thing that produced it: a rules file out
+   of your disk, the model's next step out of the server, a tool result out
+   of the file it read. --dx/--dy is the offset back to that source. */
+.fly{transition:opacity .4s ease,transform .9s cubic-bezier(.22,1,.36,1)}
+.fly:not(.on){transform:translate(var(--dx,0),var(--dy,0)) scale(var(--s0,.5))}
+.stag{opacity:0;transform:scale(.6);transform-box:fill-box;transform-origin:center;
+  transition:opacity .3s ease,transform .5s cubic-bezier(.3,1.4,.5,1)}
+.el.on .stag{opacity:1;transform:scale(1)}
+
+/* ---- marks already on screen that CHANGE with the step -----------------
+   The request does not "appear" larger each turn — the messages block and
+   the Claude Code box around it physically grow to hold it. SVG geometry
+   properties are CSS-animatable, so a step just sets a height. */
+#msgBox,#ccBox{transition:height .85s cubic-bezier(.4,0,.2,1)}
+
+/* the loop is greyed out, not removed, when it stops */
+.el.on.dead{opacity:.34}
+path.dead{stroke:var(--line)}
+
+/* .grow — a wire Claude Code OPENS: it extends out of Claude Code toward the
+   file instead of appearing whole. The origin is a point in the viewBox, set
+   from JS, because a horizontal line has a zero-height fill-box. */
+.grow{transform-box:view-box;
+  transition:opacity .3s ease,transform .6s cubic-bezier(.22,1,.36,1)}
+.grow:not(.on){transform:scaleX(.02)}
+
+/* the file the model asked for, once Claude Code has found it on the disk */
+.el rect{transition:fill .45s ease,stroke .45s ease}
+.el.sel rect{fill:var(--green-tint);stroke:var(--green);stroke-width:2.5}
+#caret{animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ---- type roles: every text takes one of these (see assets/figure.html) */
+.head{font-weight:700;font-size:26px;fill:var(--ink)}           /* box title: Claude Code / Claude */
+.eyebrow,.axis{font-weight:600;font-size:16px;fill:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase}                /* zone / section labels */
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}            /* role name in the transcript */
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}          /* transcript lines, card body */
+/* monospace stays off the role scale but on its size/weight: file names, keys, commands, code */
+.key{font-family:Consolas,'SF Mono',Menlo,monospace;font-weight:700;font-size:20px;fill:var(--accent)}
+.chip,.file,.call{font-family:Consolas,'SF Mono',Menlo,monospace;font-weight:700;font-size:20px;fill:var(--ink)}
+/* the wire is made of data: digits ride the path itself via <textPath> */
+.bits{font-family:Consolas,'SF Mono',Menlo,monospace;font-weight:700;font-size:16px;
+  dominant-baseline:middle;letter-spacing:.08em;opacity:0}
+
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .fromL,.rise,.pop,.fly,.stag{transform:none!important}
+}
+</style></head>
+<body>
+<div id="stage">
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" style="fill:var(--accent)"/></marker>
+    <marker id="arg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" style="fill:var(--green)"/></marker>
+    <marker id="ark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" style="fill:var(--muted)"/></marker>
+    <marker id="arkR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" style="fill:var(--muted)"/></marker>
+    <marker id="argR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" style="fill:var(--green)"/></marker>
+  </defs>
+  <g id="world" data-figcheck="camera">
+    <g id="links"></g><g id="shapes"></g><g id="labels"></g>
+  </g>
+</svg>
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+<script>
+const SVG = 'http://www.w3.org/2000/svg';
+const L = { links: links, shapes: shapes, labels: labels };
+function mk(tag, a, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in a) e.setAttribute(k, a[k]);
+  (parent || L.shapes).appendChild(e); return e;
+}
+function txt(s, a, parent) { const t = mk('text', a, parent || L.labels); t.textContent = s; return t; }
+// Editable words (assets/figure.html): every label carries data-edit=KEY and
+// reads its text through T(), so the deck editor can retype it.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+const lab = (key, s, a, parent) => txt(T(key, s), { ...a, 'data-edit': key }, parent);
+
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+
+// Anything sized from getBBox is re-measured on font load and on the figure's
+// first real size — a frame the deck loads before its slide is shown measures
+// every text as 0 wide.
+const FIT = [];
+function refit() { FIT.forEach(f => f()); }
+// a label edited in the deck changes length: the editor calls this to re-measure
+window.TESSERA_REFIT = refit;
+document.fonts.ready.then(refit);
+document.fonts.addEventListener('loadingdone', refit);
+new ResizeObserver(refit).observe(document.getElementById('fig'));
+
+function chipAround(t, parent, { fill = '#fff', stroke = C.line, padX = 10, padY = 5, rx = 7, queue = true } = {}) {
+  const r = mk('rect', { rx, fill, stroke, 'stroke-width': 1.5 }, parent);
+  parent.insertBefore(r, t);
+  const fit = () => {
+    const b = t.getBBox();
+    Object.entries({ x: b.x - padX, y: b.y - padY, width: b.width + 2 * padX, height: b.height + 2 * padY })
+      .forEach(([k, v]) => r.setAttribute(k, v));
+    return b.width + 2 * padX;
+  };
+  fit(); if (queue) FIT.push(fit);
+  return fit;
+}
+
+/* ---- geometry: two territories and the wire between them ---------------
+   Everything on the left is on the user's machine — their files, Claude Code,
+   and the request Claude Code assembles. Only the model is remote. */
+const LAP = { x: 24, y: 40, w: 640, h: 428 };          // your laptop
+// Sized to what is actually in it — one box. The far side of the wire holds
+// a single node, so a zone as tall and wide as the laptop only drew a lot of
+// empty dashed air and made the model look like the smaller half of the story.
+const SRV = { x: 900, y: 118, w: 340, h: 194 };        // Anthropic's servers
+const NET_X = 708;                                      // the boundary
+const FIL = { x: 40, y: 74, w: 126 };                   // your files
+// the gap between them is the local wire: wide enough to read as a stream
+const CC = { x: 268, y: 74, w: 400 };                   // Claude Code
+const SX = CC.x + 18, SW = CC.w - 36;                   // request strips
+const DESCX = 416;                                      // description column
+const MSGY = 252, LINE0 = 298, PITCH = 28;              // the transcript
+const MODEL = { x: 924, y: 148, w: 292, h: 134 };
+const MODEL_C = [MODEL.x + MODEL.w / 2, MODEL.y + MODEL.h / 2];
+const RULES_C = [FIL.x + FIL.w / 2, 150];   // the CLAUDE.md chip
+const FILES_C = [FIL.x + FIL.w / 2, 206];   // the file the tool read
+const msgH = n => 56 + (n - 1) * PITCH;
+// the box is sized from the transcript it holds, so it grows with the request
+const ccH = n => n ? MSGY + msgH(n) + 16 - CC.y : 188;  // n = transcript lines
+
+/* ---- the two territories ----------------------------------------------- */
+function zone(id, box, key, label, col) {
+  const g = mk('g', { class: 'el', id }, L.shapes);
+  mk('rect', { x: box.x, y: box.y, width: box.w, height: box.h, rx: 18,
+    fill: 'none', stroke: C.line, 'stroke-width': 2, 'stroke-dasharray': '2 7',
+    'stroke-linecap': 'round' }, g);
+  lab(key, label, { class: 'eyebrow', x: box.x + 20, y: box.y - 12, style: `fill:${col}` }, g);
+}
+zone('zLap', LAP, 'zone-laptop', 'YOUR LAPTOP', C.ink);
+zone('zSrv', SRV, 'zone-servers', "ANTHROPIC'S SERVERS", C.accent);
+
+// the boundary the request actually crosses
+const net = mk('g', { class: 'el', id: 'net' }, L.links);
+mk('line', { x1: NET_X, y1: 52, x2: NET_X, y2: 450, stroke: C.line,
+  'stroke-width': 2, 'stroke-dasharray': '6 8' }, net);
+// The label sits in the window between the return wire above it and the
+// bottom of the tightest camera below it — the beat that zooms into the disk
+// still frames the whole word instead of slicing it.
+lab('net', 'THE INTERNET', { class: 'eyebrow', x: 688, y: 310, 'text-anchor': 'middle',
+  transform: 'rotate(-90 688 310)' }, net);
+
+/* ---- your files -------------------------------------------------------- */
+const filesG = mk('g', { class: 'el rise', id: 'files' }, L.labels);
+lab('files', 'FILES', { class: 'eyebrow', x: FIL.x + 8, y: FIL.y + 22 }, filesG);
+{
+  const t = lab('file-rules', 'CLAUDE.md', { class: 'file', x: FIL.x + 8, y: RULES_C[1] }, filesG);
+  chipAround(t, filesG, { fill: '#fff', padX: 8 });
+}
+// its own mark, because a later step selects it: this is the file the model
+// asked for, and Claude Code has to go and find it
+const postG = mk('g', { class: 'el rise', id: 'fPost' }, L.labels);
+{
+  const t = lab('file-posting', 'posting.md', { class: 'file', x: FIL.x + 8, y: FILES_C[1] }, postG);
+  chipAround(t, postG, { fill: '#fff', padX: 8 });
+}
+// written during the run, so it arrives as its own stepped mark
+const newFile = mk('g', { class: 'el pop', id: 'fLetter' }, L.labels);
+{
+  const t = lab('file-letter', 'letter.md', { class: 'file', x: FIL.x + 8, y: 262, style: `fill:${C['green-text']}` }, newFile);
+  chipAround(t, newFile, { fill: C['green-tint'], stroke: C.green, padX: 8 });
+}
+
+/* ---- what you typed ----------------------------------------------------
+   The run starts with a sentence, alone in the middle of the frame, typed out
+   a character at a time. Everything after it is what that one sentence turns
+   into, so it gets the screen to itself before anything else exists. */
+const PROMPT_TEXT = 'Write cover letter for posting.md';
+const PROMPT_C = [640, 240];
+const promptText = () => T('prompt', PROMPT_TEXT);
+const promptG = mk('g', { class: 'el pop', id: 'prompt' }, L.labels);
+const promptT = txt('', { class: 'sub', x: PROMPT_C[0], y: PROMPT_C[1] + 6,
+  'data-figcheck': 'ignore', 'data-edit': 'prompt' }, promptG);
+const promptChev = txt('>', { class: 'key', x: PROMPT_C[0], y: PROMPT_C[1] + 6,
+  'data-no-edit': '' }, promptG);
+const caret = mk('rect', { id: 'caret', width: 2.5, height: 21,
+  y: PROMPT_C[1] - 11, fill: C.accent, 'data-figcheck': 'ignore' }, promptG);
+const promptBg = mk('rect', { rx: 12, fill: '#fff', stroke: C.accent, 'stroke-width': 2.5 }, promptG);
+promptG.insertBefore(promptBg, promptG.firstChild);
+lab('you-type', 'YOU TYPE', { class: 'eyebrow', x: PROMPT_C[0], y: PROMPT_C[1] - 44,
+  'text-anchor': 'middle' }, promptG);
+{
+  // The card is sized to the FINISHED sentence, so it does not grow as the
+  // characters land — only the caret moves.
+  const PAD = 22, CHEV = 24;
+  const fit = () => {
+    const keep = promptT.textContent;
+    promptT.textContent = promptText();
+    const w = promptT.getComputedTextLength();
+    const x0 = PROMPT_C[0] - (w + CHEV) / 2;
+    promptChev.setAttribute('x', x0);
+    promptT.setAttribute('x', x0 + CHEV);
+    Object.entries({ x: x0 - PAD, y: PROMPT_C[1] - 26, width: w + CHEV + 2 * PAD, height: 52 })
+      .forEach(([k, v]) => promptBg.setAttribute(k, v));
+    promptT.textContent = keep;
+    moveCaret();
+  };
+  fit(); FIT.push(fit);
+}
+function moveCaret() {
+  caret.setAttribute('x', +promptT.getAttribute('x') + promptT.getComputedTextLength() + 3);
+}
+let typer = null;
+// While it types, the sentence is a stream of glyphs, not a label: with
+// data-edit on it the editor's bridge would snap an edited sentence back to
+// whole after every character. It becomes editable again once it is typed.
+function promptEditable(on) {
+  if (on) { promptT.setAttribute('data-edit', 'prompt'); promptT.removeAttribute('data-no-edit'); }
+  else { promptT.removeAttribute('data-edit'); promptT.setAttribute('data-no-edit', ''); }
+}
+function typePrompt(run) {
+  clearInterval(typer); typer = null;
+  const done = () => { promptEditable(true); promptT.textContent = promptText(); moveCaret(); caret.style.opacity = 0; };
+  if (!run || REDUCE) return done();
+  caret.style.opacity = '';
+  const words = promptText();
+  promptEditable(false);
+  let k = 0; promptT.textContent = ''; moveCaret();
+  typer = setInterval(() => {
+    promptT.textContent = words.slice(0, ++k); moveCaret();
+    if (k >= words.length) { clearInterval(typer); typer = null; promptEditable(true); }
+  }, 45);
+}
+
+/* ---- Claude Code: it owns the request ---------------------------------- */
+const ccG = mk('g', { class: 'el rise', id: 'cc' }, L.shapes);
+const ccBox = mk('rect', { id: 'ccBox', x: CC.x, y: CC.y, width: CC.w, height: ccH(0),
+  rx: 16, fill: '#fff', stroke: C.accent, 'stroke-width': 2.5 }, ccG);
+lab('cc', 'Claude Code', { class: 'head', x: SX, y: CC.y + 34 }, ccG);
+
+const STRIPS = [
+  { id: 'bSys', key: 'system', y: 126, desc: 'its own instructions' },
+  { id: 'bMem', key: 'CLAUDE.md', y: 168, desc: 'your rules, as context', from: RULES_C },
+  { id: 'bTools', key: 'tools', y: 210, chips: ['Read', 'Write', 'Bash', '…'] },
+];
+STRIPS.forEach(b => {
+  const g = mk('g', { class: 'el ' + (b.from ? 'fly' : 'fromL'), id: b.id }, L.labels);
+  if (b.from) {
+    g.style.setProperty('--dx', (b.from[0] - SX) + 'px');
+    g.style.setProperty('--dy', (b.from[1] - (b.y + 22)) + 'px');
+  }
+  mk('rect', { x: SX, y: b.y, width: SW, height: 36, rx: 9, fill: C.tint }, g);
+  lab(b.id, b.key, { class: 'key', x: SX + 14, y: b.y + 24 }, g);
+  if (b.desc) lab(b.id + '-desc', b.desc, { class: 'sub', x: DESCX, y: b.y + 24 }, g);
+  else {
+    const row = b.chips.map((c, k) => {
+      const cg = mk('g', { class: 'stag' }, g);
+      cg.style.transitionDelay = (90 + k * 60) + 'ms';
+      const t = lab('tool-' + (c === '…' ? 'more' : c), c, { class: 'chip', x: 0, y: b.y + 24 }, cg);
+      return [t, chipAround(t, cg, { queue: false, padX: 8 })];
+    });
+    const layRow = () => {
+      let cx = DESCX;
+      row.forEach(([t, fit]) => { t.setAttribute('x', cx); cx += fit() + 9; });
+    };
+    layRow(); FIT.push(layRow);
+  }
+});
+
+// messages: the strip that grows, and the box around it with it
+const msgG = mk('g', { class: 'el rise', id: 'bMsg' }, L.shapes);
+const msgBox = mk('rect', { id: 'msgBox', x: SX, y: MSGY, width: SW, height: msgH(1),
+  rx: 9, fill: C.tint }, msgG);
+lab('bMsg', 'messages', { class: 'key', x: SX + 14, y: MSGY + 22 }, msgG);
+
+const ROLE = { you: [C.ink, 'you'], claude: [C.accent, 'Claude'], result: [C.green, 'result'] };
+// A tool call names one of the tools listed two strips up, so it is drawn as
+// that same pill: the audience matches `Read` in the transcript to `Read` in the
+// tools row without being told they are the same thing.
+const LINES = [
+  ['you',    'sub',  'Cover letter for posting.md',   PROMPT_C],
+  ['claude', 'call', ['Read',  '"posting.md"'],       MODEL_C],
+  ['result', 'sub',  '"Marketing intern, Barcelona"', FILES_C],
+  ['claude', 'call', ['Write', '"letter.md", …'],     MODEL_C],
+  ['claude', 'sub',  'Done — it is in letter.md.',    MODEL_C],
+];
+const BODYX = SX + 110;
+LINES.forEach(([role, cls, s, src], k) => {
+  const y = LINE0 + k * PITCH, roleX = SX + 14;
+  const g = mk('g', { class: 'el fly', id: 'm' + k }, L.labels);
+  const [sx, sy] = src || [FIL.x - 40, y];
+  g.style.setProperty('--dx', (sx - roleX) + 'px');
+  g.style.setProperty('--dy', (sy - y) + 'px');
+  const [col, name] = ROLE[role];
+  lab('m' + k + '-role', name, { class: 'lbl', x: roleX, y, style: `fill:${col}` }, g);
+  if (cls === 'call') {
+    const [tool, arg] = s;
+    const t = lab('m' + k + '-tool', tool, { class: 'chip', x: BODYX, y }, g);
+    const fitTool = chipAround(t, g, { queue: false, padX: 8 });
+    const a = lab('m' + k + '-arg', arg, { class: 'call', x: BODYX, y }, g);
+    const lay = () => a.setAttribute('x', BODYX + fitTool() + 10);
+    lay(); FIT.push(lay);
+  } else lab('m' + k, s, { class: cls, x: BODYX, y }, g);
+});
+
+/* ---- the model, and only the model, is remote -------------------------- */
+const mdG = mk('g', { class: 'el fromL', id: 'model' }, L.labels);
+mk('rect', { x: MODEL.x, y: MODEL.y, width: MODEL.w, height: MODEL.h, rx: 16,
+  fill: '#fff', stroke: C.accent, 'stroke-width': 2.5 }, mdG);
+lab('model', 'Claude', { class: 'head', x: MODEL.x + 24, y: MODEL.y + 46 }, mdG);
+{
+  const t = txt('', { class: 'sub', x: MODEL.x + 24, y: MODEL.y + 78 }, mdG);
+  ['reads all of it,', 'picks the next step'].forEach((line, k) => {
+    const key = 'model-' + (k + 1);   // one key per line: model-1, model-2
+    const sp = mk('tspan', { x: MODEL.x + 24, dy: k ? 22 : 0, 'data-edit': key }, t); sp.textContent = T(key, line);
+  });
+}
+
+/* ---- the wires --------------------------------------------------------- */
+// Two paths per wire: the visible rail, and an inset invisible one the digits
+// ride, so the stream never runs under the arrowhead or into a box edge.
+function wire(id, x0, x1, y, marker, back, rail) {
+  const a = { class: 'el', id, d: `M${x0},${y} L${x1},${y}`, stroke: C.line,
+    'stroke-width': 1.5, fill: 'none', 'stroke-dasharray': '3 6' };
+  a[back ? 'marker-start' : 'marker-end'] = `url(#${marker})`;
+  const p = mk('path', a, L.links);
+  if (rail) mk('path', { id: id + 'R', d: `M${x0 + 13},${y} L${x1 - 13},${y}`, fill: 'none' }, L.links);
+  return p;
+}
+const FR = FIL.x + FIL.w + 6, CL = CC.x - 8, CR = CC.x + CC.w + 8, ML = MODEL.x - 8;
+// Local: Claude Code touches your own disk. No stream rides these — moving a
+// file on the machine you are sitting at is not a thing that goes anywhere.
+// They EXTEND out of Claude Code instead, which is what "it goes and looks" is.
+const wRead  = wire('wRead',  FR, CL, FILES_C[1], 'ark');
+const wWrite = wire('wWrite', FR, CL, 262, 'arkR', true);
+[[wRead, FILES_C[1]], [wWrite, 262]].forEach(([w, y]) => {
+  w.classList.add('grow');
+  w.style.transformOrigin = `${CL}px ${y}px`;   // the Claude Code end
+});
+// remote: the whole request crosses the internet, and the next step comes back
+const wOut = wire('wOut', CR, ML, 180, 'ar', false, true);
+const wIn  = wire('wIn',  CR, ML, 232, 'argR', true, true);
+
+/* ---- binary riding the wires ------------------------------------------
+   A <textPath> whose startOffset the ticker advances: the digits ARE the
+   wire, so "data is moving" needs no packet shape at all. One pattern length
+   per cycle, so the stream loops seamlessly. */
+const BITS = [];
+const PAT = '0110100111010010';
+function bitstream(ch, pathEl, color, period, dir = 1) {
+  const rail = document.getElementById(pathEl.id + 'R');
+  const len = rail.getTotalLength();
+  const t = mk('text', { class: 'bits', fill: color, 'data-figcheck': 'ignore', 'data-no-edit': '' }, L.labels);
+  const tp = document.createElementNS(SVG, 'textPath');
+  tp.setAttribute('href', '#' + rail.id);
+  tp.textContent = PAT.repeat(Math.ceil(len / 60) + 3);
+  t.appendChild(tp);
+  const rec = { ch, node: t, tp, period, dir, on: false, vis: 0, pitch: 160 };
+  const fit = () => { rec.pitch = t.getComputedTextLength() / tp.textContent.length * PAT.length; };
+  fit(); FIT.push(fit);
+  BITS.push(rec);
+}
+bitstream('net', wOut, C.accent, 2600);
+bitstream('net', wIn, C.green, 2600, -1);
+
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let lastT = performance.now();
+function tick(now) {
+  const dt = Math.min(64, now - lastT); lastT = now;
+  for (const b of BITS) {
+    b.vis += ((b.on ? 1 : 0) - b.vis) * Math.min(1, dt / 160);
+    b.node.style.opacity = b.vis.toFixed(3);
+    if (b.vis < .01) continue;
+    const u = REDUCE ? 0 : (now / b.period) % 1;
+    // both directions stay within [-pitch, 0], where the overfilled string
+    // still covers the whole wire, so the stream never shows a gap
+    b.tp.setAttribute('startOffset', (b.pitch * (b.dir > 0 ? u - 1 : -u)).toFixed(2));
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---- steps: a camera, a set of marks, how many lines the request holds,
+        and which wires are carrying data --------------------------------- */
+const FULL = [0, 0, 1280, 480];
+// Name the marks the beat is about; the rect is computed, matched to the
+// frame's aspect. A rect typed as four numbers is how the subject of a beat
+// ends up just outside it.
+// The transcript is still growing when the camera is computed, so each framing
+// is given the height the messages block is heading for, not its height now.
+const MSGRECT = n => [SX, MSGY, SW, msgH(n)];
+const CAM_PROMPT = () => camFit(['prompt']);                          // the sentence
+const CAM_CC = s => camFit(['files', 'fPost', 'bSys'], 26, MSGRECT(s.n));
+const CAM_FILES = s => camFit(['files', 'fPost'], 26, MSGRECT(s.n));  // the disk
+
+// what exists on your machine before anything is sent
+const laptop = ['zLap', 'files', 'fPost', 'cc'];
+// the request Claude Code assembled out of your sentence
+const packed = [...laptop, 'bSys', 'bMem', 'bTools', 'bMsg', 'm0'];
+// the far side, once the request has crossed
+const remote = [...packed, 'zSrv', 'net', 'model', 'wOut', 'wIn'];
+// the model asked for a file, and Claude Code went and found it
+const found = [...remote, 'm1', 'wRead', 'm2'];
+
+const steps = [
+  { on: [],                          cam: FULL,        n: 0, live: [] },
+  // 1. one sentence, typed, alone
+  { on: ['prompt'],                  cam: CAM_PROMPT,  n: 0, live: [], type: true },
+  // 2. it lands in Claude Code, which packs its own instructions, your tools
+  //    and your CLAUDE.md — flown in off the disk — around it
+  { on: packed,                      cam: CAM_CC,      n: 1, live: [] },
+  // 3. the whole of that crosses the internet. This is the only hop that is
+  //    a hop at all, so it is the only place a stream runs.
+  { on: remote,                      cam: FULL,        n: 1, live: ['net'] },
+  // 4. what comes back is not an answer: it is "read posting.md first"
+  { on: [...remote, 'm1'],           cam: FULL,        n: 2, live: ['net'] },
+  // 5. Claude Code opens a wire to your own disk and finds the file
+  { on: found, sel: ['fPost'],       cam: CAM_FILES,   n: 3, live: [] },
+  // 6. the request — bigger by what it read — goes over again, all of it
+  { on: found,                       cam: FULL,        n: 3, live: ['net'] },
+  // 7. this time the model sends back the letter, and Claude Code writes it
+  { on: [...found, 'm3', 'wWrite', 'fLetter'],
+    cam: FULL, n: 4, live: ['net'] },
+  // 8. no tool call comes back: the loop stops, and the stillness is the point
+  { on: [...found, 'm3', 'wWrite', 'fLetter', 'm4'],
+    cam: FULL, n: 5, live: [], dead: ['wOut', 'wIn', 'wRead', 'wWrite'] },
+];
+
+/* ---- engine ----------------------------------------------------------- */
+const world = document.getElementById('world');
+// `extra` is a rect given as numbers, for a mark whose size the step is in the
+// middle of animating: getBBox would measure the height it is passing through,
+// not the one it is heading for, and the frame would close in on a box that is
+// about to be taller than it.
+function camFit(ids, pad = 26, extra) {
+  const bs = ids.map(id => document.getElementById(id)).filter(Boolean)
+    .map(e => { try { return e.getBBox(); } catch (err) { return null; } }).filter(Boolean);
+  if (extra) bs.push({ x: extra[0], y: extra[1], width: extra[2], height: extra[3] });
+  if (!bs.length) return FULL;
+  let x0 = Math.min(...bs.map(b => b.x)) - pad,
+      y0 = Math.min(...bs.map(b => b.y)) - pad,
+      w = Math.max(...bs.map(b => b.x + b.width)) + pad - x0,
+      h = Math.max(...bs.map(b => b.y + b.height)) + pad - y0;
+  const A = 1280 / 480;                      // grow the short side to the frame
+  if (w / h < A) { const n = h * A; x0 -= (n - w) / 2; w = n; }
+  else           { const n = w / A; y0 -= (n - h) / 2; h = n; }
+  return [x0, y0, w, h];
+}
+function camTo([x, y, w, h]) {
+  const s = Math.min(1280 / w, 480 / h, 3.2);
+  world.style.transform =
+    `translate(${(640 - s * (x + w / 2)).toFixed(2)}px,${(240 - s * (y + h / 2)).toFixed(2)}px) scale(${s.toFixed(4)})`;
+}
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  refit();
+  const s = steps[i];
+  els.forEach(e => {
+    e.classList.toggle('on', s.on.includes(e.id));
+    e.classList.toggle('dead', (s.dead || []).includes(e.id));
+    e.classList.toggle('sel', (s.sel || []).includes(e.id));
+  });
+  BITS.forEach(b => { b.on = s.live.includes(b.ch); });
+  typePrompt(!!s.type);
+  ccBox.style.height = ccH(s.n) + 'px';
+  if (s.n) msgBox.style.height = msgH(s.n) + 'px';
+  camTo(typeof s.cam === 'function' ? s.cam(s) : s.cam);
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent = i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

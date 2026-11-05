@@ -1,0 +1,44 @@
+// The poll service on Cloudflare Workers Free: https://join.<your-subdomain>.workers.dev
+// (`npm run setup` deploys it and writes the address to .env; docs/server-setup.md).
+// Keep `name` and the Durable Object class: renaming either starts a new, empty
+// service (the old one keeps its data, unreachable by the decks that moved).
+//
+// Free means it cannot bill: past a daily limit requests fail (429/1027), they
+// are never charged. Keep it that way — no R2 bucket, no paid add-on, and the
+// account stays on Workers Free. See README.md, "Limits".
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "join",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+
+  // The join page: index.html for every path that is not a file (a join code),
+  // served without waking the Worker. Only /api/* runs code.
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // One Durable Object per poll ("c:CODE") and per join code ("s:CODE"): its
+  // answers, images and state in SQLite, and the WebSockets that hear about
+  // changes. SQLite-backed objects are the only kind on the Free plan.
+  "durable_objects": {
+    "bindings": [{ "name": "SPACE", "class_name": "Space" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Space"] }],
+
+  "observability": { "enabled": true }
+
+  // Secrets (never in this file): LECTURER_PASSWORD, OPENROUTER_API_KEY, set by
+  // `npm run setup` or by hand:
+  //   npx wrangler secret put LECTURER_PASSWORD
+  //   npx wrangler secret put OPENROUTER_API_KEY
+  // Optional settings (secrets or "vars"): PUBLIC_ORIGIN, HELP_CONTEXT,
+  // REMIX_STYLE, the *_MODEL, *_MAX_PER_DAY and *_OPEN_HOURS caps (README.md).
+  // Locally: .dev.vars (gitignored).
+}

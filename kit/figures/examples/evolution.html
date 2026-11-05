@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Variation, selection, retention</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+  /* figure-local: colour itself IS the trait under selection here — a family
+     of hues drifting from divergent starts toward the surviving green
+     design. Not brand tokens; declared once, for this figure's marks only. */
+  --evo-blue:#3F72B8;         /* b4 — an early blue-lineage variant */
+  --evo-amber-dark:#C68A22;   /* c1 — amber lineage drifting darker */
+  --evo-green-light:#55A86E;  /* c3, d1, d4 — green lineage converging */
+  --evo-green-pale:#8CC39D;   /* c4 — green lineage, paler */
+  --evo-green-deep:#3F9A5C;   /* d2 — green lineage, deeper */
+  --evo-green-mid:#6FB585;    /* d3 — green lineage, mid tone */
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset .7s cubic-bezier(.35,0,.25,1),opacity .3s}
+.draw.on{stroke-dashoffset:0}
+/* a ball is born at its parent's position and grows into its own */
+.sp{transform:translate(var(--dx),var(--dy)) scale(.3);
+  transform-box:fill-box;transform-origin:center;
+  transition:transform .75s cubic-bezier(.34,1.16,.5,1),opacity .45s,fill .55s}
+.sp.on{transform:translate(0,0) scale(1)}
+/* selection: what did not survive stays on screen, greyed and shrunken */
+.el.on.dead{opacity:.34}
+.sp.on.dead{transform:translate(0,0) scale(.55)}
+circle.dead{fill:var(--line)}
+circle.sel{stroke:var(--ink);stroke-width:3}
+/* ---- type scale: every text takes ONE of these roles (see figure.html) -- */
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.eyebrow,.axis{font-weight:600;font-size:16px;fill:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase}
+/* the cycle legend: a persistent eyebrow-scale label, dim until its phase */
+.ph{font-weight:600;font-size:16px;letter-spacing:.12em;fill:var(--rule);
+  transition:fill .35s}
+.ph.sel{fill:var(--ink)}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <!-- the cycle, always on screen; the active phase lights up -->
+  <text data-edit="phv" class="ph" id="phv" x="150" y="462">VARIATION</text>
+  <text data-edit="phar1" class="ph" id="phar1" x="298" y="462">→</text>
+  <text data-edit="phs" class="ph" id="phs" x="330" y="462">SELECTION</text>
+  <text data-edit="phar2" class="ph" id="phar2" x="480" y="462">→</text>
+  <text data-edit="phr" class="ph" id="phr" x="512" y="462">RETENTION</text>
+  <!-- generated marks are appended here -->
+</svg>
+
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+
+/* ---- the population: one ancestor, three rounds of five ---------------- */
+const COL = [130, 440, 750, 1060];        // one column per generation
+const SVG = 'http://www.w3.org/2000/svg';
+const fig = document.getElementById('fig');
+function mk(tag, attrs, txt) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  fig.appendChild(e);
+  return e;
+}
+// Editable words (assets/figure.html): every label carries data-edit=KEY and
+// reads its text through T(), so the deck editor can retype it.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+const label = (key, attrs, words) => mk('text', { ...attrs, 'data-edit': key }, T(key, words));
+
+// id, column, y, radius, colour, parent — the colour is the trait under
+// selection, and the surviving lineage drains the variety out of it
+const POP = [
+  ['a0', 0, 240, 27, C.accent, null],
+  ['b0', 1, 100, 18, C.coral, 'a0'],
+  ['b1', 1, 170, 26, C.amber, 'a0'],
+  ['b2', 1, 240, 22, C.accent, 'a0'],
+  ['b3', 1, 310, 20, C.green, 'a0'],
+  ['b4', 1, 380, 16, C['evo-blue'], 'a0'],
+  ['c0', 2, 100, 24, C.amber, 'b1'],
+  ['c1', 2, 170, 19, C['evo-amber-dark'], 'b1'],
+  ['c2', 2, 240, 22, C.green, 'b3'],
+  ['c3', 2, 310, 27, C['evo-green-light'], 'b3'],
+  ['c4', 2, 380, 17, C['evo-green-pale'], 'b3'],
+  ['d0', 3, 100, 22, C.green, 'c2'],
+  ['d1', 3, 170, 29, C['evo-green-light'], 'c3'],
+  ['d2', 3, 240, 24, C['evo-green-deep'], 'c3'],
+  ['d3', 3, 310, 20, C['evo-green-mid'], 'c2'],
+  ['d4', 3, 380, 25, C['evo-green-light'], 'c3'],
+];
+const at = {};
+POP.forEach(([id, col, y, r, c, p]) => { at[id] = { x: COL[col], y, r, c, p }; });
+
+// lineage lines first, so the balls sit on top of them
+for (const [id, , , , , p] of POP) {
+  if (!p) continue;
+  const a = at[p], b = at[id];
+  mk('line', { class: 'el draw', id: 'l' + id, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+    stroke: C.line, 'stroke-width': 1.5 });
+}
+/* ---- the closing frame: the line that actually got passed on ----------- */
+{
+  const chain = ['a0', 'b3', 'c3', 'd1'];
+  const d = chain.map((k, n) => (n ? 'L' : 'M') + at[k].x + ',' + at[k].y).join(' ');
+  mk('path', { class: 'el draw', id: 'trace', d, fill: 'none', stroke: C.green,
+    'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+}
+
+for (const [id] of POP) {
+  const b = at[id], a = b.p ? at[b.p] : b;
+  mk('circle', { class: 'el sp', id, cx: b.x, cy: b.y, r: b.r, fill: b.c,
+    style: `--dx:${(a.x - b.x).toFixed(0)}px;--dy:${(a.y - b.y).toFixed(0)}px` });
+}
+
+// column headers
+[['h0', 0, 'ONE ANCESTOR'], ['h1', 1, 'ROUND 1'], ['h2', 2, 'ROUND 2'],
+ ['h3', 3, 'ROUND 3']].forEach(([id, col, t]) =>
+  label(id, { class: 'el axis', id, x: COL[col], y: 44, 'text-anchor': 'middle' }, t));
+
+label('domt', { class: 'el lbl', id: 'domt', x: 1102, y: 177, style: `fill:${C['green-text']}` },
+  'dominant design');
+label('count', { class: 'el sub', id: 'count', x: 1215, y: 462, 'text-anchor': 'end' },
+  '15 variants tried · 1 design kept');
+
+/* ---- steps ------------------------------------------------------------- */
+const G = n => POP.filter(p => p[1] === n).flatMap(p => [p[0], 'l' + p[0]]);
+const base = ['a0', 'h0'];
+const g1 = [...base, ...G(1), 'h1'];
+const g2 = [...g1, ...G(2), 'h2'];
+const g3 = [...g2, ...G(3), 'h3'];
+const D = ids => ids.flatMap(id => [id, 'l' + id]);   // a dead ball dims its line
+const dead1 = D(['b0', 'b2', 'b4']);
+const dead2 = [...dead1, ...D(['c0', 'c1', 'c4'])];
+const dead3 = [...dead2, ...D(['d0', 'd2', 'd3', 'd4'])];
+const sel1 = ['b1', 'b3'];
+const sel2 = [...sel1, 'c2', 'c3'];
+const sel3 = [...sel2, 'd1'];
+
+// on: ids visible · dead: selected against · sel: carried forward
+// The narration lives in the slide's speaker notes, one line per click.
+const steps = [
+  { on: base },
+  { on: g1, sel: ['phv'] },
+  { on: g1, dead: dead1, sel: [...sel1, 'phs'] },
+  { on: g2, dead: dead1, sel: [...sel1, 'phv'] },
+  { on: g2, dead: dead2, sel: [...sel2, 'phs'] },
+  { on: g3, dead: dead2, sel: [...sel2, 'phv'] },
+  { on: g3, dead: dead3, sel: [...sel3, 'phs'] },
+  { on: [...g3, 'trace', 'domt', 'count'], dead: dead3,
+    sel: [...sel3, 'phr'] },
+];
+
+/* ---- engine ------------------------------------------------------------ */
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();
+  p.style.strokeDasharray = L + ' ' + L;
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el, .ph')];
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  const s = steps[i];
+  els.forEach(e => {
+    e.classList.toggle('on', s.on.includes(e.id));
+    e.classList.toggle('dead', (s.dead || []).includes(e.id));
+    e.classList.toggle('sel', (s.sel || []).includes(e.id));
+  });
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+// keys stop at either end so the deck moves on (see assets/figure.html)
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

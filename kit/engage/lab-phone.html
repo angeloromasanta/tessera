@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- asks the join page for the whole screen: no card, no question header -->
+<meta name="tessera-activity" content="full">
+<title>Lab</title>
+<!-- Lab slide: phone side (engage). The deck ships this page to every
+     phone as the `activity` of the hidden poll under the lab.html embed.
+     make_lab.py rewrites the CONFIG block below and the lab-context tag;
+     the server reads the helper's context from that tag, never from the phone.
+     Status: POST /api/answer {code, text: {"v":1,"pid","st"}, question:"Lab check-in"},
+     only when the status changes; pid is made once per page load.
+     Helper: POST /api/help {code, mode:"ask"|"next", question?, image?, history?}.
+     Photos (camera or gallery) are shrunk on the phone (1280 px long side, JPEG ~0.75), never stored.
+     No storage, no CDN, no fonts (sandboxed iframe, opaque origin).
+     Test from disk: open with ?fake (or without TESSERA_ACTIVITY): canned answers.
+     Its strings are the screen's: the deck publishes this page with the screen
+     embed's reworded labels in front (TESSERA_EMBED.texts, same keys as lab.html:
+     do, tip, types.N.0, types.N.1), and TX() lets them win over CONFIG. The
+     lab-context tag (the helper's brief) keeps the CONFIG wording. -->
+<script type="application/json" id="lab-context">{"id":"skill","heading":"Lab 1","title":"Make a skill","minutes":20,"do":"Make the skill you just named.","types":[["1 · Tell it the steps","Write me a skill called [name].\nSteps:\n1 [...]\n2 [...]\n3 [...]"],["2 · Do the task once, then","Save what we just did as a skill called [name]."],["3 · Adapt an existing one","Check this skill in [website]. Adapt it."]],"tip":"Then test it: run your skill on a new input.","context":"Goal: every student creates one skill in their AI tool for a task they repeat, then runs it once on a new input. Success: the skill shows up in the tool's skill list and produces a useful result on the new input. Students may use any AI chat tool; if one has no skills feature, a saved project or custom instruction is an acceptable fallback. Common problems: the tool writes a document instead of saving a skill (ask it to save it as a skill), the skill is too vague (add concrete steps and an example), and free-tier limits (wait a minute or switch tool)."}</script>
+<style>
+:root{--ink:#1A2326;--blue:#0F6B73;--muted:#5A6467;--panel:#F1F5F5;--line:#D7DEDF;--lost:#D63A3F;--work:#E8A33D;--done:#2E9E6A;--soft:#E2F0F1}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#fff;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+body{padding:14px 14px 28px;max-width:560px;margin:0 auto;font-size:17px;line-height:1.45}
+button{font:inherit;color:inherit;cursor:pointer;border-radius:0}
+#fake{font-size:12px;font-weight:700;color:#8E5F00;background:#FFF6E3;padding:6px 10px;margin-bottom:12px;display:none}
+#eyebrow{font-size:13px;font-weight:700;letter-spacing:.1em;color:var(--blue);text-transform:uppercase}
+h1{font-size:27px;font-weight:800;line-height:1.2;margin:4px 0 14px;letter-spacing:-.01em}
+h2{font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+section{margin-top:22px}
+/* the task */
+details{background:var(--panel);border-left:3px solid var(--blue)}
+summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:12px 12px;font-weight:800;font-size:17px;min-height:52px;cursor:pointer}
+summary::-webkit-details-marker{display:none}
+summary .chev{width:10px;height:10px;border-right:2.5px solid var(--blue);border-bottom:2.5px solid var(--blue);transform:rotate(45deg);margin:-4px 4px 0 0;transition:transform .2s}
+details[open] summary .chev{transform:rotate(-135deg);margin-top:4px}
+.task{padding:0 10px 14px}
+.do{font-size:17px;font-weight:600;margin-bottom:12px}
+.ptype{font-size:14px;font-weight:700;color:var(--blue);margin:14px 0 6px}
+.ptype:first-child{margin-top:0}
+.pbox{background:#fff;border:1.5px solid var(--line);display:flow-root}
+.ptext{padding:9px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word;user-select:text;-webkit-user-select:text}
+mark{background:#FFE9B8;color:var(--ink);padding:0 2px;font-weight:700}
+.copied{font-size:12px;color:var(--muted);margin-top:4px}
+.copied:empty{display:none}
+.copy{float:right;margin:5px 5px 4px 8px;border:1.5px solid var(--blue);background:#fff;color:var(--blue);font-size:13px;font-weight:700;padding:0 12px;min-height:36px;min-width:66px}
+.copy:active{background:var(--soft)}
+.tip{margin-top:14px;font-size:16px;color:var(--muted)}
+.tip b{color:var(--ink)}
+/* status */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.seg button{min-height:72px;border:2px solid var(--line);background:#fff;font-size:16px;font-weight:700;line-height:1.2;padding:8px 6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;transition:background .15s,border-color .15s,transform .1s}
+.seg button:active{transform:scale(.97)}
+.seg .dot{width:12px;height:12px;border-radius:50%;background:var(--c)}
+.seg button.on{background:var(--c);border-color:var(--c);color:#fff}
+.seg button.on .dot{background:#fff}
+.seg button[data-st=working].on{color:var(--ink)}
+.seg button[data-st=working].on .dot{background:var(--ink)}
+#stmsg{font-size:13px;color:var(--muted);margin-top:8px;min-height:20px;display:flex;align-items:center;gap:8px}
+#stmsg.err{color:var(--lost);font-weight:700}
+#stmsg button{border:1.5px solid var(--lost);background:#fff;color:var(--lost);font-size:13px;font-weight:700;padding:4px 10px}
+/* next ideas */
+#ideas{display:none}
+.idea{border:1.5px solid var(--line);border-top:4px solid var(--done);padding:13px 13px 12px;margin-bottom:10px}
+.idea .t{font-weight:800;font-size:17px;line-height:1.25}
+.idea .w{font-size:15px;color:var(--muted);margin:4px 0 10px}
+.more{width:100%;min-height:48px;border:1.5px solid var(--blue);background:#fff;color:var(--blue);font-weight:700;font-size:15px;margin-top:2px}
+.more:disabled{opacity:.4}
+.think{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:15px;padding:14px;background:var(--panel)}
+/* helper */
+#ask .card{border:1.5px solid var(--line);background:var(--panel)}
+#thread{padding:10px 10px 0}
+#thread:empty{display:none}
+.q,.a,.e{max-width:92%;padding:10px 11px;margin-bottom:10px;font-size:16px;line-height:1.45;word-break:break-word}
+.q{margin-left:auto;width:fit-content;background:var(--blue);color:#fff}
+.q img{display:block;max-width:160px;max-height:160px;margin-bottom:6px;border:2px solid rgba(255,255,255,.5)}
+.a{background:#fff;border:1.5px solid var(--line)}
+.e{background:#FDECEC;color:#A42328;font-weight:600;border:1.5px solid #F3C4C6}
+.a b{font-weight:800}
+.chip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;background:var(--soft);color:var(--blue);padding:1px 5px;white-space:pre-wrap}
+.code{background:var(--panel);border:1.5px solid var(--line);margin:8px 0;display:flow-root}
+.code .ptext{padding:9px 10px;font-size:14px}
+.code+.copied{margin:-4px 0 8px}
+.typing{display:inline-flex;gap:5px;padding:14px 14px}
+.typing i,.think i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:b 1.1s infinite ease-in-out}
+.think span{display:inline-flex;gap:5px}
+.typing i:nth-child(2),.think i:nth-child(2){animation-delay:.15s}
+.typing i:nth-child(3),.think i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+.compose{padding:10px}
+textarea{width:100%;min-height:84px;max-height:220px;resize:none;font:inherit;font-size:17px;line-height:1.4;padding:11px 12px;border:1.5px solid #C7CFD1;border-radius:0;background:#fff;color:var(--ink);display:block}
+textarea:focus{outline:none;border-color:var(--blue)}
+#prev{display:none;align-items:center;gap:10px;margin-top:10px}
+#prev img{width:64px;height:64px;object-fit:cover;border:1.5px solid var(--line);background:#fff}
+#prev span{font-size:13px;color:var(--muted);flex:1}
+#rm{border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:700;padding:8px 12px;min-height:40px;color:var(--muted)}
+.bar{display:flex;gap:8px;margin-top:10px}
+.bar input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.pick{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:7px;min-height:50px;padding:0 13px;border:1.5px solid var(--blue);background:#fff;color:var(--blue);font-weight:700;font-size:15px;cursor:pointer}
+.pick:active{background:var(--soft)}
+/* a laptop has no camera to hand: only the upload */
+@media (hover:hover) and (pointer:fine){#snap{display:none}}
+#send{flex:1;min-height:50px;border:0;background:var(--blue);color:#fff;font-weight:800;font-size:16px}
+#send:disabled{opacity:.35}
+#send:not(:disabled):active{transform:scale(.98)}
+#imgmsg{font-size:13px;color:var(--muted);margin-top:6px;min-height:0}
+#imgmsg.err{color:var(--lost);font-weight:700}
+footer{margin-top:22px;font-size:12px;line-height:1.45;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+</style></head>
+<body>
+<div id="fake">Test mode: answers are canned, nothing is sent.</div>
+<div id="eyebrow"></div>
+<h1 id="title"></h1>
+<details id="taskbox" open><summary>The task<span class="chev"></span></summary><div class="task" id="task"></div></details>
+
+<section id="where">
+  <h2>Where are you?</h2>
+  <div class="seg" id="seg">
+    <button data-st="lost" style="--c:var(--lost)"><span class="dot"></span>Lost</button>
+    <button data-st="working" style="--c:var(--work)"><span class="dot"></span>Working on it</button>
+    <button data-st="finished" style="--c:var(--done)"><span class="dot"></span>Finished</button>
+  </div>
+  <div id="stmsg"></div>
+</section>
+
+<section id="ideas">
+  <h2>Three next steps</h2>
+  <div id="ideabox"></div>
+</section>
+
+<section id="ask">
+  <h2>Ask the lab helper</h2>
+  <div class="card">
+    <div id="thread"></div>
+    <div class="compose">
+      <textarea id="msg" maxlength="800" placeholder="Stuck? Ask anything about this lab."></textarea>
+      <div id="prev"><img alt="Your photo"><span>Photo attached</span><button id="rm" type="button">Remove</button></div>
+      <div id="imgmsg"></div>
+      <div class="bar">
+        <input type="file" id="cam" accept="image/*" capture="environment">
+        <input type="file" id="file" accept="image/*">
+        <label for="cam" id="snap" class="pick"><span aria-hidden="true">📷</span>Camera</label>
+        <label for="file" id="upload" class="pick"><span aria-hidden="true">🖼️</span>Upload</label>
+        <button id="send" type="button" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>Photos go to an AI model to answer you and are not stored. Never photograph a password.</footer>
+
+<script>
+const CONFIG = /*CONFIG*/{"id":"skill","heading":"Lab 1","title":"Make a skill","minutes":20,"do":"Make the skill you just named.","types":[["1 · Tell it the steps","Write me a skill called [name].\nSteps:\n1 [...]\n2 [...]\n3 [...]"],["2 · Do the task once, then","Save what we just did as a skill called [name]."],["3 · Adapt an existing one","Check this skill in [website]. Adapt it."]],"tip":"Then test it: run your skill on a new input.","context":"Goal: every student creates one skill in their AI tool for a task they repeat, then runs it once on a new input. Success: the skill shows up in the tool's skill list and produces a useful result on the new input. Students may use any AI chat tool; if one has no skills feature, a saved project or custom instruction is an acceptable fallback. Common problems: the tool writes a document instead of saving a skill (ask it to save it as a skill), the skill is too vague (add concrete steps and an example), and free-tier limits (wait a minute or switch tool)."}/*END*/;
+/* the deck's reworded labels (TESSERA_EMBED.texts, put in front of this page
+   when it is published) win over CONFIG; same keys as the screen */
+const TX = (k, d) => { const E = window.TESSERA_EMBED, T = E && E.texts;
+  d = d == null ? '' : d;
+  return E && typeof E.text === 'function' ? E.text(k, d) : T && Object.prototype.hasOwnProperty.call(T, k) ? T[k] : d; };
+const HOST = window.TESSERA_ACTIVITY || null;
+const FAKE = !HOST || new URLSearchParams(location.search).has('fake');
+const CODE = (HOST && HOST.code) || '';
+const PID = Array.from({ length: 8 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.random() * 36 | 0]).join('');
+// the status names: the slide's wording when it was reworded there (room.lost, room.working, room.finished)
+const LABEL = { lost: TX('room.lost', 'Lost'), working: TX('room.working', 'Working on it'), finished: TX('room.finished', 'Finished') };
+document.querySelectorAll('.seg button[data-st]').forEach(b => { b.lastChild.textContent = LABEL[b.dataset.st]; });
+const LOST_HINT = "What's going wrong? Type it, or take a photo of your screen.";
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function el(tag, cls, parent, text) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  if (text != null) e.textContent = text; if (parent) parent.appendChild(e); return e;
+}
+if (FAKE) $('fake').style.display = 'block';
+
+/* ---------- the task ---------- */
+const HEADING = TX('heading', CONFIG.heading), TITLE = TX('title', CONFIG.title);
+$('eyebrow').textContent = [HEADING, CONFIG.minutes ? CONFIG.minutes + ' min' : ''].filter(Boolean).join(' · ');
+$('title').textContent = TITLE;
+document.title = HEADING || TITLE || 'Lab';
+
+// a copyable block: the text, highlighted placeholders, and a Copy button
+function copyBox(text, cls, highlight) {
+  const wrap = document.createDocumentFragment(), box = el('div', cls, wrap);
+  const b = el('button', 'copy', box, 'Copy'), t = el('div', 'ptext', box), note = el('div', 'copied', wrap);
+  t.innerHTML = highlight ? esc(text).replace(/\[[^\]\n]{0,60}\]/g, m => '<mark>' + m + '</mark>') : esc(text);
+  b.type = 'button'; b.setAttribute('aria-label', 'Copy this prompt');
+  b.onclick = () => copy(text, t, note, b);
+  return wrap;
+}
+async function copy(text, node, note, btn) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+  if (!ok) {
+    try {
+      const ta = el('textarea', '', document.body); ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+      ta.select(); ok = document.execCommand('copy'); ta.remove();
+    } catch (e) {}
+  }
+  if (ok) { btn.textContent = 'Copied'; note.textContent = ''; setTimeout(() => { btn.textContent = 'Copy'; }, 1600); return; }
+  // clipboard blocked: select the text so a long-press copies it
+  const sel = window.getSelection(); sel.removeAllRanges();
+  const r = document.createRange(); r.selectNodeContents(node); sel.addRange(r);
+  note.textContent = 'Selected: long-press to copy';
+}
+(function task() {
+  const box = $('task');
+  const doT = TX('do', CONFIG.do), tip = TX('tip', CONFIG.tip);
+  if (doT) el('div', 'do', box, doT);
+  const steps = Array.isArray(CONFIG.steps) ? CONFIG.steps : [];
+  steps.forEach((s, k) => el('div', 'do', box, (k + 1) + '. ' + TX('steps.' + k, s)));
+  const types = Array.isArray(CONFIG.types) ? CONFIG.types : [];
+  types.forEach((t, k) => {
+    const label = TX('types.' + k + '.0', t[0]), prompt = TX('types.' + k + '.1', t[1]);
+    if (types.length > 1 || label) el('div', 'ptype', box, label || '');
+    box.appendChild(copyBox(prompt || '', 'pbox', true));   // Copy copies the reworded prompt
+  });
+  if (tip) el('div', 'tip', box, tip);
+  if (!box.children.length) $('taskbox').style.display = 'none';
+})();
+
+/* ---------- the server, or canned answers in test mode ---------- */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+async function fakeApi(path, body) {
+  if (path === '/api/answer') { await wait(300); return { ok: true }; }
+  if (body.mode === 'next') {
+    await wait(800);
+    return { ideas: [
+      { title: 'Give your skill a second input', why: 'A skill that works twice is a skill you will reuse.', prompt: 'Run the [name] skill on this new input: [paste it here].' },
+      { title: 'Add an example of a great result', why: 'One worked example sharpens every future answer.', prompt: 'Add this to the [name] skill as an example of a perfect output: [paste it].' },
+      { title: 'Make it ask before it starts', why: 'Two questions up front stop it guessing what you meant.', prompt: 'Change the [name] skill so it first asks me two questions about the input.' }
+    ] };
+  }
+  await wait(1200);
+  return { answer: 'It looks like the tool wrote a **document**, not a skill. Ask it to save it properly:\n\n```\nSave this as a skill called [name], so I can run it again later.\n```\n\nThen check it shows up in your skills list. If you are on a free plan, type `/skills` to see which ones it can use.' };
+}
+async function api(path, body) {
+  if (FAKE) return fakeApi(path, body);
+  let r;
+  try {
+    r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  } catch (e) { throw new Error('No connection. Check your Wi-Fi and try again.'); }
+  let d = {};
+  try { d = await r.json(); } catch (e) {}
+  if (!r.ok || (d && d.error)) throw new Error((d && d.error) || 'Something went wrong (' + r.status + '). Try again.');
+  return d || {};
+}
+
+/* ---------- where are you? ---------- */
+let sentSt = null, wantSt = null, posting = false;
+const segBtns = [...document.querySelectorAll('#seg button')];
+function paintSeg() { for (const b of segBtns) { b.classList.toggle('on', b.dataset.st === wantSt); b.setAttribute('aria-pressed', b.dataset.st === wantSt); } }
+function stSay(msg, err) {
+  const m = $('stmsg'); m.className = err ? 'err' : ''; m.textContent = msg;
+  if (err) { const b = el('button', '', m, 'Retry'); b.type = 'button'; b.onclick = postStatus; }
+}
+async function postStatus() {
+  if (posting || wantSt === sentSt) return;
+  posting = true; const st = wantSt; stSay('Sending…');
+  try {
+    await api('/api/answer', { code: CODE, text: JSON.stringify({ v: 1, pid: PID, st }), question: 'Lab check-in' });
+    sentSt = st;
+    stSay(wantSt === st ? '✓ Sent. The screen counts you as “' + LABEL[st] + '”.' : 'Sending…');
+  } catch (e) { stSay('Not sent: ' + e.message, true); }
+  posting = false;
+  if (sentSt === st && wantSt !== sentSt) postStatus();   // tapped again while sending
+}
+for (const b of segBtns) b.onclick = () => {
+  const st = b.dataset.st;
+  wantSt = st; paintSeg(); postStatus();
+  if (st === 'lost') {
+    const m = $('msg'); m.placeholder = LOST_HINT;
+    $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try { m.focus({ preventScroll: true }); } catch (e) { m.focus(); }
+  } else if (st === 'finished') {
+    showIdeas(false);
+  }
+};
+
+/* ---------- three next steps ---------- */
+let ideasAsked = false, ideasBusy = false, shownTitles = [];
+function textTurns() { return turns.slice(-6).map(t => ({ role: t.role, text: String(t.text).slice(0, 1500) })); }
+async function showIdeas(more) {
+  const sec = $('ideas'), box = $('ideabox');
+  sec.style.display = 'block';
+  if (!more) setTimeout(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  if ((ideasAsked && !more) || ideasBusy) return;
+  ideasAsked = true; ideasBusy = true;
+  box.textContent = '';
+  const th = el('div', 'think', box); th.innerHTML = '<span><i></i><i></i><i></i></span>Thinking of three next steps…';
+  let history = textTurns();
+  const req = { code: CODE, mode: 'next', history };
+  if (more && shownTitles.length) req.question = ('I already have these ideas, give me three different ones: ' + shownTitles.join('; ')).slice(0, 790);
+  try {
+    const d = await api('/api/help', req);
+    const ideas = Array.isArray(d.ideas) ? d.ideas.slice(0, 3) : [];
+    if (!ideas.length) throw new Error('No ideas came back. Try again.');
+    box.textContent = '';
+    for (const it of ideas) {
+      const c = el('div', 'idea', box);
+      el('div', 't', c, it.title || '');
+      if (it.why) el('div', 'w', c, it.why);
+      if (it.prompt) c.appendChild(copyBox(it.prompt, 'pbox', true));
+      if (it.title) shownTitles.push(it.title);
+    }
+    shownTitles = shownTitles.slice(-9);
+    const b = el('button', 'more', box, 'Give me 3 more'); b.type = 'button';
+    b.onclick = () => showIdeas(true);
+  } catch (e) {
+    box.textContent = '';
+    el('div', 'e', box, e.message).style.maxWidth = '100%';
+    const b = el('button', 'more', box, 'Try again'); b.type = 'button';
+    b.onclick = () => { ideasAsked = false; showIdeas(true); };
+  }
+  ideasBusy = false;
+}
+
+/* ---------- the helper ---------- */
+const turns = [];          // text-only history: {role, text}
+let photo = '', asking = false;
+const msg = $('msg'), send = $('send'), thread = $('thread');
+function canSend() { send.disabled = asking || (!msg.value.trim() && !photo); }
+function grow() { msg.style.height = 'auto'; msg.style.height = Math.min(220, Math.max(84, msg.scrollHeight + 3)) + 'px'; }
+msg.addEventListener('input', () => { grow(); canSend(); });
+
+// photo: shrink on the phone, respecting the camera's orientation
+function readFile(file) {
+  return new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => no(new Error('read')); fr.readAsDataURL(file); });
+}
+function loadImg(src) {
+  return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('image')); im.src = src; });
+}
+async function decode(file) {
+  if (window.createImageBitmap) {
+    try { const b = await createImageBitmap(file, { imageOrientation: 'from-image' }); return { src: b, w: b.width, h: b.height }; } catch (e) {}
+  }
+  const im = await loadImg(await readFile(file));
+  return { src: im, w: im.naturalWidth, h: im.naturalHeight };
+}
+async function shrink(file) {
+  const im = await decode(file);
+  if (!im.w || !im.h) throw new Error('empty');
+  let out = '';
+  for (const [max, q] of [[1280, .75], [1024, .68], [800, .6]]) {
+    const k = Math.min(1, max / Math.max(im.w, im.h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(im.w * k)); c.height = Math.max(1, Math.round(im.h * k));
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(im.src, 0, 0, c.width, c.height);
+    out = c.toDataURL('image/jpeg', q);
+    if (out.length <= 1500000) break;
+  }
+  if (im.src.close) im.src.close();
+  return out;
+}
+function setPhoto(url) {
+  photo = url || '';
+  $('prev').style.display = photo ? 'flex' : 'none';
+  if (photo) $('prev').querySelector('img').src = photo;
+  canSend();
+}
+// Camera opens the phone's camera (capture), Upload the gallery: same path after
+for (const id of ['cam', 'file']) $(id).addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const m = $('imgmsg'); m.className = ''; m.textContent = 'Preparing the photo…';
+  try { setPhoto(await shrink(f)); m.textContent = ''; }
+  catch (err) { m.className = 'err'; m.textContent = 'This picture could not be read. Try a screenshot or another photo.'; }
+});
+$('rm').onclick = () => setPhoto('');
+
+// answer text -> safe html: fences become copyable blocks, `x` chips, **x** bold
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`\n]+)`/g, '<code class="chip">$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/\n/g, '<br>');
+}
+function render(text, into) {
+  const parts = String(text).split(/```[^\n`]*\n?([\s\S]*?)(?:```|$)/);
+  parts.forEach((p, i) => {
+    if (i % 2) { into.appendChild(copyBox(p.replace(/\n+$/, ''), 'code', true)); return; }
+    const s = p.replace(/^\n+|\n+$/g, '');
+    if (s) { const d = el('div', '', into); d.innerHTML = inline(s); }
+  });
+}
+function bubble(cls) { const b = el('div', cls, thread); return b; }
+function toBottom(node) { node.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+
+send.onclick = async () => {
+  const q = msg.value.trim().slice(0, 800), img = photo;
+  if (asking || (!q && !img)) return;
+  asking = true;
+  const qb = bubble('q');
+  if (img) { const i = el('img', '', qb); i.src = img; i.alt = 'Your photo'; }
+  if (q) el('div', '', qb, q);
+  const history = textTurns();
+  msg.value = ''; setPhoto(''); grow(); canSend();
+  const typing = bubble('a typing'); typing.innerHTML = '<i></i><i></i><i></i>';
+  toBottom(typing);
+  const body = { code: CODE, mode: 'ask' };
+  if (q) body.question = q;
+  if (img) body.image = img;
+  if (history.length) body.history = history;
+  try {
+    const d = await api('/api/help', body);
+    typing.remove();
+    const a = bubble('a'); render(d.answer || '(No answer came back.)', a);
+    turns.push({ role: 'user', text: q || '(sent a photo of the screen)' }, { role: 'assistant', text: String(d.answer || '') });
+    toBottom(a);
+  } catch (e) {
+    typing.remove();
+    const b = bubble('e'); b.textContent = e.message;
+    // give the question back so Send retries it
+    if (!msg.value) { msg.value = q; grow(); }
+    if (!photo && img) setPhoto(img);
+    toBottom(b);
+  }
+  asking = false; canSend();
+};
+canSend();
+</script>
+</body></html>

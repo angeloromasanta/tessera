@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FIGURE TITLE</title>
+<style>
+/* The deck's text font. embed_font.py swaps url(MANROPE) for the deck's own
+   woff2; opened raw, the page falls back to the system font (figcheck: error). */
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+/* ---- camera ------------------------------------------------------------
+   Every mark lives in #world. A step can name a rect to frame, and the group
+   scales and translates to it — so a "zoom" moves the marks the audience is
+   already looking at, instead of drawing bigger copies somewhere else.
+   Leave every step's cam at FULL and this costs nothing. */
+#world{transform-box:view-box;transform-origin:0 0;
+  transition:transform 1s cubic-bezier(.4,0,.2,1)}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+/* a path with class="el draw" draws itself — its length is measured below */
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset 1s cubic-bezier(.35,0,.25,1),opacity .25s}
+.draw.on{stroke-dashoffset:0}
+/* ---- motion vocabulary ------------------------------------------------
+   Opacity is the fallback, never the effect. Add one of these beside .el and
+   the mark ARRIVES from somewhere instead of materialising: class="el rise".
+   Stagger a family with style.transitionDelay and it lands as a wave.      */
+.rise,.fall,.fromL,.fromR,.pop,.fly{
+  transition:opacity .4s ease, transform .6s cubic-bezier(.22,1,.36,1)}
+.rise:not(.on){transform:translateY(22px)}
+.fall:not(.on){transform:translateY(-22px)}
+.fromL:not(.on){transform:translateX(-34px)}
+.fromR:not(.on){transform:translateX(34px)}
+.pop,.fly{transform-box:fill-box;transform-origin:center}
+.pop:not(.on){transform:scale(.72)}
+/* .fly — a mark that comes OUT of a specific place. Per element, set --dx/--dy
+   to the offset from its final position back to where it starts, so a family
+   can burst out of one point, or out of the shape it is replacing. */
+.fly{transition:transform .85s cubic-bezier(.22,1,.36,1),opacity .3s ease}
+.fly:not(.on){transform:translate(var(--dx,0),var(--dy,0)) scale(var(--s0,.12))}
+/* loops that never stop: a flow line that marches, a ring that breathes */
+.march{stroke-dasharray:10 8;animation:march 1.1s linear infinite}
+@keyframes march{to{stroke-dashoffset:-18}}
+.breathe{animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.5}}
+/* ---- pose: WHERE a mark is in this step -------------------------------
+   The `on` list can only say enter and exit, which is why a figure built out
+   of it fades. `pose` says where a mark sits, how big it is and how it is
+   turned, per step — so a mark can travel across the picture, swell in place,
+   or rearrange with its family, and the browser tweens it.
+     pose: { seat3: {s: 2.4}, chip: {x: 180, y: -40} }
+   x/y are OFFSETS in viewBox units from where the mark was authored; s is
+   scale about its own centre; r is degrees. The engine only touches elements
+   some step actually poses, so a figure that uses none pays nothing. */
+.posed{transform-box:fill-box;transform-origin:center;
+  transition:opacity .45s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+.el.on.posed{transform:translate(var(--tx,0),var(--ty,0))
+  scale(var(--sc,1)) rotate(var(--rot,0deg))}
+/* ---- the same marks, a different meaning ------------------------------
+   Three lists the engine applies beside `on`, so a step can RE-READ what is
+   already on screen instead of adding to it. Override the colours per figure.
+     dim   the crowd a highlight was picked out of — still there, out of focus
+     dead  it failed / it stopped, and leaving it grey is the point
+     sel   it was chosen                                              */
+.el.on.dim{opacity:.22}
+.el.on.dead{opacity:.34}
+circle.dead,rect.dead,path.dead[fill]:not([fill="none"]){fill:var(--line)}
+path.dead,line.dead,polyline.dead{stroke:var(--line)}
+.sel{stroke:var(--ink);stroke-width:3}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .rise,.fall,.fromL,.fromR,.pop,.fly{transform:none!important}
+}
+/* ---- type scale: every text takes ONE of these roles ---------------------
+   viewBox units: 1280 wide in a ~1224px frame, 1 unit ~ 1 slide px.
+   Floor 18 for anything the room must read, 16 absolute (figcheck enforces 16).
+   No slide title in a figure: the deck's title element carries it.
+   Trap: a fill in a class beats a fill ATTRIBUTE on a <text>. For white text on
+   a dark card, add class "on-dark" (or set style="fill:…"), not fill="#fff". */
+.head{font-weight:700;font-size:26px;fill:var(--ink)}          /* column / group / step name */
+.eyebrow,.axis{font-weight:600;font-size:16px;fill:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase}               /* under a head, axis ends, legend */
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}           /* card title, mark label */
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}         /* card body */
+.callout{font-weight:700;font-size:20px;fill:var(--accent)}    /* the takeaway line */
+.big{font-weight:700;font-size:52px;fill:var(--ink)}           /* a headline number */
+.on-dark{fill:#fff}  .on-dark.sub{fill-opacity:.85}
+/* cards: tint fill, rx 8, no stroke; a 5px left bar marks the card's family */
+.card{fill:var(--tint)}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+
+<!-- The viewBox aspect must match the frame the slide gives the figure, or the
+     figure letterboxes and throws away width. With a title: on the slide,
+     1280x480. Full-bleed (no title:), 1280x700.
+
+     Every mark is present from the start and carries class="el" + a stable id.
+     The engine only toggles .on, so the browser tweens between states.
+     Anything that must never fade (an axis, a frame) simply omits .el.
+
+     A step where everything simply fades in is a wasted step. Give each
+     arriving mark a direction from the motion vocabulary above — class="el
+     rise", "el fromL", "el fly" — and stagger a family with transitionDelay.
+     See "Motion rules" in docs/figures.md.
+
+     Three layers, in paint order: links (lines, arrows) under shapes (boxes,
+     dots) under labels. A line then never paints over a label, and a white
+     pill on a line hides the line behind its text.
+
+     EDITABLE TEXT. The deck editor lets a person double-click any label in
+     the figure and retype it. For that, every visible label carries
+     data-edit="KEY" on the node that holds the text itself (the <text>, the
+     <tspan>, the HTML element; plain text only, no child elements). KEY is
+     stable: a rebuilt figure keeps it, because the edits are stored in the
+     deck under that key, never in this page. JS-built labels read their
+     words through T(KEY, 'default') (txt() and pill() below do it). Text that
+     is not a label (a live counter, a clock) carries data-no-edit instead.
+     Never draw a label on a canvas: canvas text cannot be edited. -->
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6"
+            orient="auto"><path d="M0,1.2 L9,5 L0,8.8 z" style="fill:var(--accent)"/></marker>
+  </defs>
+  <g id="world" data-figcheck="camera">
+    <g id="links">
+      <!-- example marks — replace -->
+      <line x1="118" y1="422" x2="1215" y2="422" style="stroke:var(--line)" stroke-width="2"/>
+      <path class="el draw" id="c1" d="M140,408 C 420,392 700,150 1180,104"
+            fill="none" style="stroke:var(--accent)" stroke-width="5" stroke-linecap="round"/>
+    </g>
+    <g id="shapes">
+      <circle class="el" id="a1" cx="1180" cy="104" r="10" style="fill:var(--amber)"/>
+    </g>
+    <g id="labels">
+      <!-- a static label: data-edit on the <text> that holds the words -->
+      <text class="axis" data-edit="axis-x" x="1215" y="452" text-anchor="end">Time</text>
+    </g>
+  </g>
+</svg>
+
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+// Keep the geometry in constants (or a small layout table you build marks from)
+// rather than scattered literals. Every figure gets rescaled at least once, and
+// a rescale should be one edit instead of a rewrite.
+const SVG = 'http://www.w3.org/2000/svg';
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+const layer = { links: document.getElementById('links'),
+                shapes: document.getElementById('shapes'),
+                labels: document.getElementById('labels') };
+
+// mk('rect', {class: 'el', id: 'b1', x: 100, y: 80, width: 200, height: 60}, layer.shapes)
+function mk(tag, attrs, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  (parent || layer.shapes).appendChild(e);
+  return e;
+}
+
+// Editable words. T(KEY, default) returns the person's wording for KEY when the
+// deck has one (TESSERA_EMBED.text), else the default; opened on its own (a
+// browser tab, figcheck, shoot) the page simply shows the defaults.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+// A label the editor can retype: an SVG <text> with data-edit=KEY, words from T().
+//   txt('n1', 'Lower prices', {class: 'lbl', x: 300, y: 120, 'text-anchor': 'middle'})
+// One key per line of a two-line label ('n2-1', 'n2-2'). A key repeated on two
+// nodes is one label shown twice: an edit changes both.
+function txt(key, text, attrs, parent = layer.labels) {
+  const t = mk('text', { ...attrs, 'data-edit': key }, parent);
+  t.textContent = T(key, text);
+  return t;
+}
+
+// Anything sized from getBBox MUST be re-measured later, never measured once:
+//  - the deck loads a figure's frame before its slide is visible, and a hidden
+//    page measures every text as 0 wide (chips collapse onto each other);
+//  - an @font-face font may not be decoded yet, so text is measured too narrow.
+// Both only show when clicking quickly into the slide in the show. So every
+// measuring function goes into FIT, which re-runs on font load, on the first real
+// size of the figure, and on every step.
+// A label edited in the deck changes length too: the editor calls TESSERA_REFIT
+// after every edit, so a pill grows around its new words.
+const FIT = [];
+function refit() { FIT.forEach(f => f()); }
+window.TESSERA_REFIT = refit;
+document.fonts.ready.then(refit);
+document.fonts.addEventListener('loadingdone', refit);
+new ResizeObserver(refit).observe(document.getElementById('fig'));
+
+// A label in an opaque white rounded pill, sized from the text's own getBBox,
+// so no width is ever typed by hand. (x, y) is the text anchor/baseline.
+// Returns the <g class="el" id=…>, which a step names as one id. The words are
+// editable under the key `id` (pass {key} to use another).
+function pill(id, text, x, y, { anchor = 'middle', color = C.ink, cls = 'lbl',
+                                 padX = 12, padY = 5, parent = layer.labels, key = id } = {}) {
+  const g = mk('g', { class: 'el', id }, parent);
+  const r = mk('rect', { fill: '#fff', stroke: color, 'stroke-width': 2 }, g);
+  const t = txt(key, text, { class: cls, x, y, 'text-anchor': anchor, style: `fill:${color}` }, g);
+  const fit = () => {
+    const b = t.getBBox();
+    const h = b.height + 2 * padY;
+    r.setAttribute('x', b.x - padX); r.setAttribute('y', b.y - padY);
+    r.setAttribute('width', b.width + 2 * padX); r.setAttribute('height', h);
+    r.setAttribute('rx', h / 2);
+  };
+  fit(); FIT.push(fit);
+  return g;
+}
+
+pill('t1', 'LABEL', 1180, 72, { anchor: 'end' });     // example — replace
+
+/* ---- helpers for pose --------------------------------------------------
+   All three exist so no offset, delay or scale is typed by hand: the figure
+   stays correct after a rescale, which is the edit every figure gets. */
+
+// "These few of the many matter." Swells the named marks in place; pair it
+// with dim: [the crowd] and you have a zoom that introduces NO new marks.
+//   { on: […], pose: spotlight(HEROES, 2.4), dim: ['crowd'] }
+const spotlight = (ids, s = 2.4) => Object.fromEntries(ids.map(id => [id, { s }]));
+
+// Lands one mark's centre on another's. Pass it as a FUNCTION in a pose so it
+// measures at step time, after the fonts land:  pose: { chip: () => onto('chip','slot') }
+function onto(id, toId) {
+  const a = document.getElementById(id), b = document.getElementById(toId);
+  if (!a || !b) return {};
+  try {
+    const p = a.getBBox(), q = b.getBBox();
+    return { x: +(q.x + q.width / 2 - p.x - p.width / 2).toFixed(1),
+             y: +(q.y + q.height / 2 - p.y - p.height / 2).toFixed(1) };
+  } catch (err) { return {}; }
+}
+
+// Eight marks appearing together is one event; 40 ms apart it is a wave the
+// eye follows. The delay belongs to the element, so it works backwards too.
+function stagger(ids, ms = 40, base = 0) {
+  ids.forEach((id, k) => {
+    const e = typeof id === 'string' ? document.getElementById(id) : id;
+    if (e) e.style.transitionDelay = (base + k * ms) + 'ms';
+  });
+}
+
+/* ---- the camera --------------------------------------------------------
+   camTo() frames a rect. camFit() BUILDS that rect from the marks the beat is
+   about, matched to the frame's aspect — which is the part worth not doing by
+   hand: a rect whose aspect differs from the frame's silently leaves margin,
+   and a zoom typed as four numbers is how the subject ends up cropped out.
+   Pass `cam: () => camFit([...])` so it measures at step time, after fonts. */
+const VBW = 1280, VBH = 480;
+const FULL = [0, 0, VBW, VBH];
+const world = document.getElementById('world');
+
+function camFit(ids, pad = 26) {
+  const bs = ids.map(id => document.getElementById(id)).filter(Boolean)
+    .map(e => { try { return e.getBBox(); } catch (err) { return null; } }).filter(Boolean);
+  if (!bs.length) return FULL;
+  let x0 = Math.min(...bs.map(b => b.x)) - pad,
+      y0 = Math.min(...bs.map(b => b.y)) - pad,
+      w = Math.max(...bs.map(b => b.x + b.width)) + pad - x0,
+      h = Math.max(...bs.map(b => b.y + b.height)) + pad - y0;
+  const A = VBW / VBH;                       // grow the short side to the frame
+  if (w / h < A) { const n = h * A; x0 -= (n - w) / 2; w = n; }
+  else           { const n = w / A; y0 -= (n - h) / 2; h = n; }
+  return [x0, y0, w, h];
+}
+function camTo(rect) {
+  const [x, y, w, h] = rect;
+  const s = Math.min(VBW / w, VBH / h, 3.2);
+  world.style.transform = `translate(${(VBW / 2 - s * (x + w / 2)).toFixed(2)}px,`
+    + `${(VBH / 2 - s * (y + h / 2)).toFixed(2)}px) scale(${s.toFixed(4)})`;
+}
+
+// State 0 is what shows ON LOAD, before any click: keep it empty (or just the
+// frame that never fades), so the first click brings in the first idea.
+// N states = N-1 clicks; notes: carries one line per state, the first spoken
+// on load. An id that stays in consecutive steps stays on screen — that is the
+// whole animation model. Build each step from the previous one plus what
+// enters, minus what leaves. The narration belongs in notes:, not on the figure.
+//
+// A step is not just a list of ids — a figure built only out of `on` can say
+// nothing but "another thing appeared", and figcheck warns (fade-only) on any
+// step like that. Each field below expresses a different kind of change:
+//
+//   on    ids visible in this state
+//   pose  WHERE those marks are: {id: {x, y, s, r}} — travel, swell, rearrange.
+//         A value may be a function, measured at step time: {id: () => onto('a','b')}
+//   cam   the rect to frame — the same picture NEARER, when nothing rearranges
+//   dim / dead / sel   the same marks, re-read: out of focus, failed, chosen
+//   do    (s) => {…} escape hatch for anything else that changes rather than
+//         enters — a box height, a counter, which flows are running
+const steps = [
+  { on: [], cam: FULL },
+  { on: ["c1", "a1"], cam: FULL },
+  // The mark that was ALREADY THERE swells, and the curve it sat on recedes.
+  // Nothing new is drawn for the zoom — that is what makes it a zoom and not
+  // a second picture. (A spotlight poses marks already on screen: an entering
+  // mark gets its direction from rise/fromL/fly instead.)
+  { on: ["c1", "a1", "t1"], pose: spotlight(["a1"], 2.2), dim: ["c1"] },
+];
+
+/* ---- engine: nothing below needs editing ----------------------------- */
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();                 // self-measuring, so no magic
+  p.style.strokeDasharray = L + ' ' + L;        // dash numbers to maintain
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+// Only marks some step actually poses get .posed, so nothing else can change
+// behaviour — in particular a mark carrying its own transform attribute.
+const POSED = new Set();
+steps.forEach(s => Object.keys(s.pose || {}).forEach(id => POSED.add(id)));
+POSED.forEach(id => document.getElementById(id)?.classList.add('posed'));
+function setPose(e, p) {
+  e.style.setProperty('--tx', (p.x || 0) + 'px');   // px in SVG CSS = 1 viewBox unit
+  e.style.setProperty('--ty', (p.y || 0) + 'px');
+  e.style.setProperty('--sc', p.s == null ? 1 : p.s);
+  e.style.setProperty('--rot', (p.r || 0) + 'deg');
+}
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  refit();
+  const s = steps[i];
+  els.forEach(e => {
+    e.classList.toggle('on', s.on.includes(e.id));
+    for (const k of ['dim', 'dead', 'sel'])
+      e.classList.toggle(k, (s[k] || []).includes(e.id));
+    if (POSED.has(e.id)) {
+      const p = (s.pose || {})[e.id];
+      setPose(e, (typeof p === 'function' ? p() : p) || {});
+    }
+  });
+  if (s.do) s.do(s);
+  camTo(typeof s.cam === 'function' ? s.cam() : (s.cam || FULL));
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// A click steps. On the deck's edit canvas the deck itself tells a click on a
+// label from a double-click (which edits it): no guard is needed here.
+document.getElementById('stage').addEventListener('click', () => go(i + 1));
+// Keys step the build and STOP at either end, leaving the key unhandled: in a
+// deck that is what moves the show to the next (or previous) slide, like
+// PowerPoint animations. TESSERA_STEPPED tells the deck to offer this page its
+// arrow keys first. A click still wraps back to the start.
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

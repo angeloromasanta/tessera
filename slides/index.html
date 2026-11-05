@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The editor UI is light-only. Declaring it opts out of Chrome-on-
+         Android's auto-darkening (which force-inverts pages and breaks form
+         controls) and keeps native <select>/<input> rendering light on
+         dark-mode phones. -->
+    <meta name="color-scheme" content="only light" />
+    <meta name="generator" content="tessera" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='6' fill='%2316273E'/%3E%3Crect x='6' y='6' width='6' height='20' rx='2' fill='%235E7699'/%3E%3Crect x='14' y='6' width='12' height='9' rx='2' fill='%23FF9E8A'/%3E%3Crect x='14' y='17' width='12' height='9' rx='2' fill='%23F0EBE0'/%3E%3C/svg%3E" />
+    <title>Tessera</title>
+    <!--
+      NOTICE — Tessera
+      MIT License
+      @COPYRIGHT@
+      Full license text: the LICENSE file in the source tree.
+      Third-party notices: THIRD_PARTY_NOTICES.md in the source tree.
+
+      This file also embeds the following open-source libraries, whose licenses
+      require that these notices accompany copies (every saved deck document
+      carries this block):
+
+      reveal.js — Copyright (C) Hakim El Hattab and contributors — MIT License
+      moveable, selecto and their @daybrush/@scena/@egjs/@cfcs modules —
+        Copyright (c) Daybrush (Younkue Choi) — MIT License
+      Fraunces typeface — Copyright 2020 The Fraunces Project Authors
+        (github.com/undercasetype/Fraunces) — SIL Open Font License 1.1
+      Instrument Sans typeface — Copyright 2022 The Instrument Sans Project
+        Authors (github.com/Instrument/instrument-sans) — SIL Open Font
+        License 1.1 (openfontlicense.org). Both fonts are embedded as
+        document assets in decks that use them and remain under the OFL.
+
+      MIT License: Permission is hereby granted, free of charge, to any person
+      obtaining a copy of this software and associated documentation files (the
+      "Software"), to deal in the Software without restriction, including
+      without limitation the rights to use, copy, modify, merge, publish,
+      distribute, sublicense, and/or sell copies of the Software, and to permit
+      persons to whom the Software is furnished to do so, subject to the
+      following conditions: The above copyright notice and this permission
+      notice shall be included in all copies or substantial portions of the
+      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+      EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+      IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+      CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+      TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+      SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+    -->
+    <!--
+      The deck's document data lives in the script block below. The runtime replaces its
+      contents on every save, so this one file is both the app and the document.
+      An empty block means "boot with the starter deck".
+    -->
+    <script type="application/tessera+json" id="tessera-doc"></script>
+  </head>
+  <body>
+    <!-- splash: pure CSS, paints before the bundle parses; main.ts dismisses it -->
+    <div id="tessera-splash" aria-hidden="true">
+      <div class="bs-bar"><i></i></div>
+    </div>
+    <style>
+#tessera-splash{position:fixed;inset:0;z-index:9999;display:grid;place-content:center;justify-items:center;gap:26px;background:#f5f7fa;pointer-events:none;transition:opacity .5s ease;animation:bsAuto .6s ease 9s both}
+#tessera-splash.done{opacity:0}
+.bs-bar{width:124px;height:2px;border-radius:1px;background:rgba(30,42,58,.12);overflow:hidden;animation:bsUp .5s ease .85s both}
+.bs-bar i{display:block;width:44%;height:100%;border-radius:1px;background:linear-gradient(90deg,#ff9e8a,#ffbca8);animation:bsScan 1.1s cubic-bezier(.45,0,.55,1) 1s infinite alternate}
+@keyframes bsUp{from{opacity:0;transform:translateY(10px)}}
+@keyframes bsScan{from{transform:translateX(-30%)}to{transform:translateX(210%)}}
+@keyframes bsAuto{to{opacity:0;visibility:hidden}}
+@media (prefers-reduced-motion:reduce){#tessera-splash,#tessera-splash *{animation-duration:.01ms;animation-delay:0ms;animation-iteration-count:1}}
+    </style>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

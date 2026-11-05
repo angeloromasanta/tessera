@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="tessera-game">
+<meta name="tessera-activity" content="full">
+<title>The group pot</title>
+<!--
+  The group pot, PHONE half (the activity page), on the game SDK (injected by the join
+  page because of <meta name="tessera-game">). Screen half and the full contract:
+  pot-screen.html (top comment).
+  - joins by itself with the join page's name (TESSERA_ACTIVITY.name); no name: a name form.
+  - picked teams: sends the move 'team' (1..teams) from registration on; randomized: the
+    screen places it. Placed = me.private has a team (t).
+  - a round: the move 'c<state.b>' = contribution 0..floor(private.p), mode last, once;
+    a closed round is refused by the server (shown as "This round is closed").
+  - reads only state {ph, round, b, lock, set} and its own private {t, p, lc, lr, z, mate,
+    cls, pot, paid}; never anyone else's numbers. Kicked: me.kicked, "Join again" = g.join().
+  CONFIG (make_game.py fills it with the GAME.json "phone" keys): kicker, team, round,
+  phoneText.*; TESSERA_EMBED.texts (the screen's wording, put here by the deck) wins.
+  No storage, no CDN, no web font.
+-->
+<style>
+:root{--navy:#0D2A2F;--blue:#0F6B73;--ink:#1A2326;--muted:#5A6467;--line:#D7DEDF;--tint:#F1F5F5;--blue-tint:#E2F0F1;
+  --go:#2B7041;--bad:#A83A20}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#fff;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+body{padding:16px 16px 30px;max-width:480px;margin:0 auto}
+#kick{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--blue);text-transform:uppercase}
+#rules{font-size:13px;line-height:1.4;color:var(--muted);margin-top:4px}
+.card{margin-top:14px;padding:14px;border-radius:14px;background:var(--tint)}
+#info{display:none}
+#info .nm{font-size:18px;font-weight:800}
+#info .row{display:flex;justify-content:space-between;font-size:15px;color:var(--muted);margin-top:4px}
+#info .row b{color:var(--ink);font-variant-numeric:tabular-nums}
+h2{font-size:22px;font-weight:800;line-height:1.25}
+p{font-size:15px;line-height:1.45;color:var(--muted)}
+.v{display:none}
+input[type=text],select{width:100%;height:50px;margin-top:12px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font-size:17px;font-family:inherit;color:var(--ink);background:#fff}
+button.main{display:block;width:100%;margin-top:14px;height:54px;border:0;border-radius:14px;background:var(--blue);color:#fff;font-size:18px;font-weight:800;font-family:inherit}
+button.main:disabled{background:var(--line)}
+button.link{border:0;background:none;color:var(--blue);font:inherit;font-size:15px;font-weight:700;margin-top:10px;text-decoration:underline;cursor:pointer}
+.small{font-size:12px;color:var(--muted);margin-top:8px}
+#status{margin-top:10px;font-size:14px;min-height:1.3em;color:var(--muted)}
+#status.err{color:var(--bad);font-weight:700}
+#cur{font-size:15px;color:var(--muted);margin-top:6px}
+#cur b{color:var(--ink)}
+.lab{font-size:15px;margin-top:14px}
+.lab b{font-size:30px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums}
+.rng{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:14px;color:var(--muted)}
+input[type=range]{flex:1;height:40px;accent-color:var(--blue)}
+.pm{display:flex;gap:10px;margin-top:4px}
+.pm button{flex:1;height:44px;border-radius:12px;border:1.5px solid var(--line);background:#fff;color:var(--blue);font-size:22px;font-weight:700;font-family:inherit}
+.sent{margin-top:14px;font-size:17px;font-weight:700;color:var(--go)}
+.chg{font-size:20px;font-weight:800;margin-top:8px}
+.chg.up{color:var(--go)} .chg.down{color:var(--bad)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.grid>div{background:#fff;border-radius:10px;padding:10px}
+.grid .t{font-size:13px;color:var(--muted)}
+.grid .n{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.grid .wide{grid-column:span 2;background:var(--blue-tint)}
+.grid .wide .n{font-size:28px;font-weight:800}
+.refund{margin-top:10px;font-size:14px;font-weight:700;color:var(--bad)}
+</style>
+</head>
+<body>
+<div id="kick"></div>
+<div id="rules"></div>
+<div class="card" id="info"><div class="nm" id="i-name"></div>
+  <div class="row"><span id="i-tl"></span><b id="i-team"></b></div>
+  <div class="row"><span id="i-pl"></span><b id="i-pts"></b></div></div>
+
+<div class="card v" id="v-wait"><h2 id="w-h"></h2><p id="w-p" style="margin-top:6px"></p><button class="link" id="w-chg" style="display:none"></button></div>
+
+<div class="card v" id="v-form">
+  <h2 id="f-h"></h2>
+  <p id="f-hint" style="margin-top:4px"></p>
+  <input type="text" id="nm" maxlength="60" autocomplete="name">
+  <select id="team"></select>
+  <button class="main" id="go"></button>
+</div>
+
+<div class="card v" id="v-vote">
+  <h2 id="r-h"></h2>
+  <div id="cur"><span id="r-cl"></span> <b id="r-pts"></b></div>
+  <div id="r-form">
+    <div class="lab"><span id="r-ask"></span> <b id="r-c">0</b></div>
+    <div class="rng"><span>0</span><input type="range" id="r-s" min="0" max="0" step="1" value="0"><span id="r-max">0</span></div>
+    <div class="pm"><button id="r-m" aria-label="less">−</button><button id="r-p" aria-label="more">+</button></div>
+    <button class="main" id="send"></button>
+  </div>
+  <div class="sent" id="r-sent"></div>
+</div>
+
+<div class="card v" id="v-res">
+  <h2 id="x-h"></h2>
+  <div class="chg" id="x-chg"></div>
+  <div class="grid">
+    <div><div class="t" id="x-tm"></div><div class="n" id="x-mine"></div></div>
+    <div id="x-matebox"><div class="t" id="x-tt"></div><div class="n" id="x-mate"></div></div>
+    <div><div class="t" id="x-tc"></div><div class="n" id="x-class"></div></div>
+    <div><div class="t" id="x-tp"></div><div class="n" id="x-pot"></div></div>
+    <div class="wide"><div class="t" id="x-to"></div><div class="n" id="x-money"></div></div>
+  </div>
+  <div class="refund" id="x-ref"></div>
+  <p style="margin-top:10px;font-size:14px" id="x-next"></p>
+</div>
+<div id="status"></div>
+
+<script>
+'use strict';
+const BASE = {
+  kicker: 'The group pot', team: 'Team', round: 'Round',
+  phoneText: {
+    rules: 'Each round, put some of your points in your team\'s pot. The pot is ×{mult} and split equally among everyone in your team. Points carry over.',
+    rulesAon: 'All or nothing: the pot pays out only if your team puts in at least half of what it could.',
+    name: 'Name', points: 'Points',
+    waitSetup: 'Please wait for the game to start...', connecting: 'Connecting…',
+    register: 'Register', namePh: 'Your name', join: 'Join', pickTeam: 'Pick your team.',
+    joining: 'Joining…', joiningHint: 'The screen adds you in a few seconds.',
+    waitReg: 'Waiting for all players to join...', inTeam: 'You are in', changeTeam: 'Change team',
+    current: 'Your current points:', ask: 'How much would you like to contribute?', submit: 'Submit points',
+    sent: 'Points sent! Waiting for other players...', closed: 'The round is closed. Results in a moment.',
+    lateClosed: 'This round is closed.', results: 'results',
+    change: 'Round change:', pointsWord: 'points', reset: 'Scores were reset', late: 'You joined after this round.',
+    mine: 'Your contribution', mate: 'Teammate avg contribution', cls: 'Class avg contribution',
+    pot: 'Team pot (raw)', money: 'Your current money',
+    refund: 'All or nothing: your team did not reach half, so everyone got their points back.',
+    waitNext: 'Waiting for next round...',
+    removed: 'The lecturer removed you from the game. Join again if that was a mistake.', again: 'Join again',
+  },
+};
+const CFG_IN = /*CONFIG*/null/*CONFIG*/ || {};
+const CONFIG = Object.assign({}, BASE, CFG_IN, { phoneText: Object.assign({}, BASE.phoneText, CFG_IN.phoneText || {}) });
+const TEXTS = (window.TESSERA_EMBED && window.TESSERA_EMBED.texts) || {};   // the screen's wording, put here by the deck
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const T = (k) => (has(TEXTS, k) ? TEXTS[k] : CONFIG[k]);
+const P = (k) => (has(TEXTS, 'phoneText.' + k) ? TEXTS['phoneText.' + k] : CONFIG.phoneText[k]);
+const HOST = window.TESSERA_ACTIVITY || {};
+const $ = (id) => document.getElementById(id);
+const f1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
+const PH = ['setup', 'registration', 'voting', 'results'];
+$('kick').textContent = T('kicker');
+
+function say(t, err) { $('status').textContent = t || ''; $('status').className = err ? 'err' : ''; }
+function show(id) { for (const v of document.querySelectorAll('.v')) v.style.display = v.id === id ? 'block' : 'none'; }
+function wait(h, p, chg) { show('v-wait'); $('w-h').textContent = h; $('w-p').textContent = p || ''; $('w-chg').style.display = chg ? 'inline' : 'none'; }
+
+if (!window.TesseraGame) {
+  wait('This page runs inside the join page (the game SDK is not loaded).');
+} else {
+  start();
+}
+
+function start() {
+  const g = TesseraGame.connect({ role: 'phone', tick: window.POT_TICK });
+  if (g.sample) g.join(HOST.name || 'Sample player').catch(() => {});
+  const t0 = Date.now();
+  let picked = '', changing = false, busy = false, cval = 0, ballot = '', sentErr = '';
+  $('nm').value = HOST.name || '';
+  $('nm').placeholder = P('namePh');
+  $('w-chg').textContent = P('changeTeam');
+
+  const norm = (s) => { s = s || {}; return { ph: PH.includes(s.ph) ? s.ph : 'setup', round: Math.max(1, s.round | 0), b: Math.max(1, s.b | 0),
+    lock: !!s.lock, set: Object.assign({ teams: 3, mult: 2, rand: false, aon: false }, s.set || {}) }; };
+  function teamsSelect(n) {
+    const sel = $('team');
+    if (sel.options.length !== n) {
+      const v = sel.value; sel.innerHTML = '';
+      for (let i = 1; i <= n; i++) { const o = document.createElement('option'); o.value = i; o.textContent = T('team') + ' ' + i; sel.appendChild(o); }
+      if (v && v <= n) sel.value = v;
+    }
+  }
+  function setC(x) { const mx = +$('r-s').max; cval = Math.max(0, Math.min(mx, Math.round(x))); $('r-s').value = cval; $('r-c').textContent = cval; }
+  $('r-s').addEventListener('input', (e) => setC(+e.target.value));
+  $('r-m').onclick = () => setC(cval - 1);
+  $('r-p').onclick = () => setC(cval + 1);
+
+  async function join() {                     // the form: a name (when the join page gave none) and, picked teams, a team
+    if (busy) return;
+    const S = norm(g.state), me = g.me || {};
+    busy = true; say(P('joining'));
+    try {
+      if (!me.joined || me.kicked) {
+        const n = $('nm').value.replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (!n) { busy = false; say(''); return; }
+        await g.join(n);
+      }
+      if (!S.set.rand && S.ph !== 'setup') { await g.move('team', +$('team').value || 1); picked = g.epoch; changing = false; }
+      say('');
+    } catch (e) { say((e.closed ? P('lateClosed') : e.message) + '', true); }
+    busy = false; draw();
+  }
+  $('go').onclick = join;
+  $('nm').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+  $('w-chg').onclick = () => { changing = true; draw(); };
+  $('send').onclick = async () => {
+    const S = norm(g.state);
+    if (busy) return;
+    busy = true; $('send').disabled = true; say('…');
+    try { await g.move('c' + S.b, cval); sentErr = ''; say(''); }
+    catch (e) { if (e.closed) sentErr = P('lateClosed'); say(e.closed ? sentErr : e.message, true); }
+    busy = false; $('send').disabled = false; draw();
+  };
+
+  function draw() {
+    const S = norm(g.state), me = g.me || {}, pv = me.private && me.private.t ? me.private : null;
+    $('rules').textContent = g.state === undefined ? '' : P('rules').replace('{mult}', f1(Number(S.set.mult) || 0)) + (S.set.aon ? ' ' + P('rulesAon') : '');
+    $('info').style.display = pv && !me.kicked ? 'block' : 'none';
+    if (pv) {
+      $('i-name').textContent = P('name') + ': ' + (me.name || '');
+      $('i-tl').textContent = T('team'); $('i-team').textContent = pv.t;
+      $('i-pl').textContent = P('points'); $('i-pts').textContent = f1(pv.p);
+    }
+    if (g.state === undefined) return wait(P('connecting'));
+    if (me.kicked || (!me.joined && !(HOST.name && Date.now() - t0 < 4000 && !$('status').textContent))) {
+      if (me.kicked && $('status').className !== 'err') say(P('removed'), true);
+      return form(S, true);
+    }
+    if (!me.joined) return wait(P('joining'), P('joiningHint'));
+    if (S.ph === 'setup') return wait(P('waitSetup'));
+    if (!pv) {
+      if (!S.set.rand && picked !== g.epoch) return form(S, false);
+      return wait(P('joining'), P('joiningHint'));
+    }
+    if (S.ph === 'registration' && changing && !S.set.rand) return form(S, false);
+    if (S.ph === 'registration') return wait(P('waitReg'), `${P('inTeam')} ${T('team')} ${pv.t}.`, !S.set.rand);
+    if (S.ph === 'voting') {
+      show('v-vote');
+      $('r-h').textContent = T('round') + ' ' + S.round;
+      $('r-cl').textContent = P('current'); $('r-pts').textContent = f1(pv.p);
+      $('r-ask').textContent = P('ask'); $('send').textContent = P('submit');
+      const mx = Math.floor(pv.p + 1e-9), key = g.epoch + ':' + S.b, done = !!(me.moves && me.moves['c' + S.b]);
+      if (ballot !== key) { ballot = key; sentErr = ''; $('r-s').max = mx; $('r-max').textContent = mx; setC(0); if ($('status').className === 'err') say(''); }
+      else if (+$('r-s').max !== mx) { $('r-s').max = mx; $('r-max').textContent = mx; setC(cval); }
+      const closed = S.lock || !!sentErr;
+      $('r-form').style.display = done || closed ? 'none' : 'block';
+      $('r-sent').style.display = done || closed ? 'block' : 'none';
+      $('r-sent').textContent = done ? P('sent') : closed ? (sentErr || P('closed')) : '';
+      return;
+    }
+    // results: the original student results card
+    show('v-res');
+    $('x-h').textContent = `${T('round')} ${S.round} ${P('results')}`;
+    const ch = $('x-chg'), lc = typeof pv.lc === 'number' ? pv.lc : 0;
+    if (typeof pv.lr === 'number') { ch.textContent = `${P('change')} ${pv.lr >= 0 ? '+' : ''}${f1(pv.lr)} ${P('pointsWord')}`; ch.className = 'chg ' + (pv.lr >= 0 ? 'up' : 'down'); }
+    else { ch.textContent = pv.z ? P('reset') : P('late'); ch.className = 'chg'; }
+    $('x-tm').textContent = P('mine'); $('x-mine').textContent = f1(lc);
+    $('x-tt').textContent = P('mate'); $('x-matebox').style.display = pv.mate === null || pv.mate === undefined ? 'none' : 'block';
+    $('x-mate').textContent = typeof pv.mate === 'number' ? f1(pv.mate) : '';
+    $('x-tc').textContent = P('cls'); $('x-class').textContent = f1(pv.cls || 0);
+    $('x-tp').textContent = P('pot'); $('x-pot').textContent = f1(pv.pot || 0);
+    $('x-to').textContent = P('money'); $('x-money').textContent = f1(pv.p) + ' pts';
+    $('x-ref').textContent = S.set.aon && pv.paid === false ? P('refund') : '';
+    $('x-next').textContent = P('waitNext');
+  }
+  function form(S, needName) {
+    show('v-form');
+    const me = g.me || {};
+    const pick = !S.set.rand && S.ph !== 'setup';
+    $('f-h').textContent = me.kicked ? P('again') : pick && !needName ? P('pickTeam') : P('register');
+    $('nm').style.display = needName ? 'block' : 'none';
+    if (needName && !$('nm').value && me.name) $('nm').value = me.name;
+    $('team').style.display = pick ? 'block' : 'none';
+    teamsSelect(Math.max(1, S.set.teams | 0));
+    $('f-hint').textContent = '';
+    $('go').textContent = me.kicked ? P('again') : P('join');
+    $('go').disabled = busy;
+  }
+  g.onState(() => draw());
+  g.onMe(() => draw());
+  setInterval(draw, 1000);
+}
+</script>
+</body>
+</html>

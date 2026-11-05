@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guess the number</title>
+<meta name="figcheck-allow" content="state0 still fade-only coverage">
+<!-- Guess the number: screen side (engage). A full-bleed 1280x720 embed
+     over a hidden `activity` poll on the same slide, whose phone page is
+     guess-phone.html. Built per question by make_guess.py, which replaces the
+     CONFIG block below: never edit a generated copy, edit the questions file.
+     States: 0 collecting (a count and an unsorted pile: nobody sees a guess,
+               so nobody anchors on the room)
+             1 the spread: every guess on the axis, the room's median, the
+               middle half; guesses are closed from here on
+             2 the study's number, how far the room was, who was close
+     One number (CFG.truth) or several (CFG.items, 2 to 4, one row each on a
+     shared axis: room next to study, row by row). CFG.given: reference values
+     known from the start, on the axis from state 0.
+     Each answer's text is JSON {v, d}: v a number, or {key: number} with
+     items. The latest per device counts.
+     Text is measured with a canvas (an SVG measures 0 while the embed's frame
+     is not laid out) and wrapped: nothing here is a hard-coded line count.
+     Live it needs the lecturer key (answers[] is locked). It writes the step
+     into bucket CODE+"q" so the phones close when the spread is shown.
+     Opened with no TESSERA_EMBED (editor poster, shoot.py, figcheck) it plays
+     sample guesses through the same parser: the offline rehearsal.
+     No wifi: type a number (items: 40,18) and press Enter to add a guess. -->
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+:root{
+  --ink:#1A2326; --accent:#0F6B73; --muted:#5A6467; --faint:#A7AFB1;
+  --line:#C7CFD1; --rule:#D7DEDF; --tint:#F1F5F5; --blue-tint:#E2F0F1;
+  --amber:#BF831A; --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457; --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A; --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;font-family:Manrope,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}
+#stage{height:100%;cursor:pointer;user-select:none;-webkit-user-select:none}
+svg{width:100%;height:100%;display:block}
+.kick{font-weight:700;font-size:16px;fill:var(--accent);letter-spacing:.1em;text-transform:uppercase}
+.q{font-weight:700;font-size:34px;fill:var(--ink)}
+.setup{font-weight:500;font-size:20px;fill:var(--muted)}
+.ans{font-weight:700;font-size:24px;fill:var(--green-text)}
+.src{font-weight:500;font-size:16px;fill:var(--muted)}
+.join{font-weight:600;font-size:18px;fill:var(--muted)}
+.host{font-weight:700;font-size:18px;fill:var(--ink)}
+.code{font-weight:800;font-size:30px;fill:var(--accent);letter-spacing:.06em}
+.note{font-weight:700;font-size:18px;fill:var(--coral-text)}
+.big{font-weight:800;font-size:96px;fill:var(--accent)}
+.biglab{font-weight:600;font-size:22px;fill:var(--muted)}
+.tick{font-weight:600;font-size:18px;fill:var(--muted)}
+.pole{font-weight:700;font-size:16px;fill:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+/* the transparent box over a wrapped block that makes it editable (editBox) */
+.edit{color:transparent;overflow:hidden;white-space:pre-wrap}
+.off .edit,.off [data-edit]{pointer-events:none}   /* a hidden block is not the one double-clicked */
+.slab{font-weight:700;font-size:16px;fill:var(--muted);letter-spacing:.1em}
+.sval{font-weight:800;font-size:54px;fill:var(--ink)}
+.sline{font-weight:600;font-size:20px;fill:var(--muted)}
+.verdict{font-weight:700;font-size:22px;fill:var(--ink)}
+.tag{font-weight:700;font-size:16px;fill:var(--ink);letter-spacing:.08em}
+.pill{font-weight:800;font-size:26px;fill:#fff}
+.hint{font-weight:500;font-size:16px;fill:var(--faint)}
+.rlab{font-weight:700;font-size:20px;fill:var(--ink)}
+.rval{font-weight:800;font-size:28px;fill:var(--ink)}
+.tval{font-weight:800;font-size:28px;fill:var(--green-text)}
+.rsub{font-weight:600;font-size:18px;fill:var(--muted)}
+.gap{font-weight:700;font-size:18px;fill:var(--coral-text)}
+.gap.ok{fill:var(--green-text)}
+.given{font-weight:700;font-size:18px;fill:var(--amber-text);paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+.green{fill:var(--green-text)}
+.el{transition:opacity .5s, transform .7s cubic-bezier(.22,1,.36,1)}
+.off{opacity:0}
+#ans.off{transform:translateY(14px)}
+.dot{transition:transform 1s cubic-bezier(.22,1,.36,1), fill .5s, opacity .4s, r .6s}
+#truth{transition:opacity .4s, transform .9s cubic-bezier(.34,1.4,.64,1)}
+#truth.off{transform:translateY(-60px)}
+svg.multi #truth.off{transform:none}
+#band{transition:opacity .6s}
+/* several numbers: the markers grow out of each row's baseline, the gap is
+   drawn from the room to the study, the study's number slides in */
+.grow{transition:transform .8s cubic-bezier(.34,1.4,.64,1)}
+.off .grow{transform:scaleY(0)}
+.growx{transition:transform .6s cubic-bezier(.22,1,.36,1)}
+.off .growx{transform:scaleX(0)}
+.slide{transition:transform .7s cubic-bezier(.22,1,.36,1)}
+.off .slide{transform:translateX(70px)}
+.gl,.gt{transition:transform .8s cubic-bezier(.22,1,.36,1)}
+</style></head>
+<body>
+<div id="stage">
+<svg id="fig" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid meet">
+  <g id="text"></g>
+  <g id="join" class="el"></g>
+  <g id="stats" class="el off" data-figcheck="ignore"></g>
+  <g id="grid" class="el off" data-figcheck="ignore"></g>
+  <g id="axis"></g>
+  <g id="rows"></g>
+  <rect id="band" class="off" data-figcheck="ignore" fill="#E2F0F1"/>
+  <g id="bands" class="el off" data-figcheck="ignore"></g>
+  <g id="count" class="el" data-figcheck="ignore"></g>
+  <g id="dots" data-figcheck="ignore"></g>
+  <g id="median" class="el off" data-figcheck="ignore"></g>
+  <g id="given" data-figcheck="ignore"></g>
+  <g id="truth" class="off" data-figcheck="ignore"></g>
+  <text id="hint" class="hint" x="640" y="682" text-anchor="middle" data-figcheck="ignore"></text>
+</svg>
+</div>
+<script>
+const CFG = /*CONFIG*/{
+  "id": "sample",
+  "question": "How much less time did professionals need for a writing task when they used ChatGPT?",
+  "setup": "453 professionals, writing tasks taken from their own jobs. Half of them got ChatGPT.",
+  "unit": "%", "min": 0, "max": 100, "step": 1, "ticks": [0, 25, 50, 75, 100],
+  "signed": false, "low": "", "high": "",
+  "truth": 40, "tol": 5,
+  "answer": "40% less time. The texts were also rated 18% better.",
+  "source": "Noy & Zhang, Science, 2023",
+  "sample": 22
+}/*END*/;
+
+const SVG = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+function mk(tag, a, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in a) e.setAttribute(k, a[k]);
+  parent.appendChild(e); return e;
+}
+function txt(s, a, parent) { const t = mk('text', a, parent); t.textContent = s; return t; }
+
+/* ---- editable text (the deck's EMBED_TEXT_BRIDGE) -------------------------------
+   CFG holds the defaults; the deck's overrides (the embed's `texts`, reworded
+   by double-click on the edit canvas) win, and reach the phone page too. KEY
+   is the CONFIG field: question, setup, answer, source, low, high, kicker,
+   items.N.label, given.N.label. A one-line label carries data-edit=KEY itself;
+   a wrapped block is drawn line by line, so a transparent box over it holds
+   the whole string instead (editBox). After an edit the bridge calls
+   TESSERA_REFIT, which re-wraps everything from TX. */
+const TX = (k, d) => { const E = window.TESSERA_EMBED;
+  return E && typeof E.text === 'function' ? E.text(k, d == null ? '' : d) : (d == null ? '' : d); };
+
+/* ---- measuring and wrapping text ------------------------------------------
+   A canvas, not getComputedTextLength: inside the deck the frame can be built
+   before it is laid out, and an SVG then measures every string as 0 wide. */
+const FAM = "Manrope,-apple-system,'Segoe UI',Roboto,Arial,sans-serif";
+const pen = document.createElement('canvas').getContext('2d');
+function tw(s, size, weight, track) {
+  s = String(s); let w = 0;
+  try { pen.font = weight + ' ' + size + 'px ' + FAM; w = pen.measureText(s).width; } catch (e) {}
+  if (!(w > 0)) w = s.length * size * .56;            // no canvas: an honest estimate
+  return w * 1.02 + (track || 0) * size * s.length;
+}
+function lines(str, size, weight, maxW) {
+  const out = []; let line = '';
+  for (const w of String(str).split(/\s+/).filter(Boolean)) {
+    const t = line ? line + ' ' + w : w;
+    if (line && tw(t, size, weight) > maxW) { out.push(line); line = w; } else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+/* the largest of `sizes` at which the text takes at most maxLines */
+function fit(str, sizes, weight, maxW, maxLines) {
+  let r = { size: sizes[0], lines: [], text: str || '' };
+  if (!str) return r;
+  for (const size of sizes) { r = { size, lines: lines(str, size, weight, maxW), text: str }; if (r.lines.length <= maxLines) break; }
+  return r;
+}
+function block(f, cls, x, y, lh, parent, anchor, key, weight) {
+  const t = mk('text', { class: cls, x, y }, parent);
+  if (anchor) t.setAttribute('text-anchor', anchor);
+  t.style.fontSize = f.size + 'px';
+  f.lines.forEach((l, k) => { mk('tspan', { x, y: y + k * lh }, t).textContent = l; });
+  if (key && f.lines.length) editBox(key, f, x, y, lh, weight || 700, parent);
+  return t;
+}
+/* a wrapped block's edit target: its whole string, transparent, over its lines */
+function editBox(key, f, x, y, lh, weight, parent) {
+  const w = Math.max(40, ...f.lines.map(l => tw(l, f.size, weight))) + 8;
+  const h = (f.lines.length - 1) * lh + f.size * 1.3, top = y - f.size * 1.02;
+  const fo = mk('foreignObject', { x: x - 4, y: top, width: w, height: h, 'data-figcheck': 'ignore' }, parent);
+  const d = document.createElement('div');
+  d.className = 'edit'; d.setAttribute('data-edit', key); d.textContent = f.text;
+  d.style.cssText = 'width:' + w + 'px;height:' + h + 'px;font:' + weight + ' ' + f.size + 'px ' + FAM + ';line-height:' + lh + 'px';
+  fo.appendChild(d); return fo;
+}
+
+/* ---- numbers ------------------------------------------------------------- */
+const MIN = +CFG.min, MAX = +CFG.max, UNIT = CFG.unit || '';
+const STEP = +CFG.step || 1;
+const DEC = Math.max(1, (String(STEP).split('.')[1] || '').length);
+const MULTI = Array.isArray(CFG.items) && CFG.items.length > 1;
+const pair = t => Array.isArray(t) ? t.map(Number) : [+t, +t];
+const ROWS = (MULTI ? CFG.items : [{ key: 'v', label: '', truth: CFG.truth }]).map(it => {
+  const tr = pair(it.truth);
+  return { key: String(it.key), label: it.label || '', color: it.color || '#0F6B73', tr, mid: (tr[0] + tr[1]) / 2, range: tr[0] !== tr[1] };
+});
+const N = ROWS.length;
+const TOL = CFG.tol != null ? +CFG.tol : (MAX - MIN) * .05;
+const WHOLE = Number.isInteger(STEP);
+const round = v => +(+v).toFixed(DEC);
+const rnd0 = v => WHOLE ? Math.round(v) : round(v);     // a statistic of whole guesses reads as a whole number
+const fmt = v => { v = round(v);
+  return (v < 0 ? '−' + Math.abs(v) : (CFG.signed && v > 0 ? '+' : '') + v) + UNIT; };
+const span = (a, b) => (a < 0 || b < 0 || CFG.signed) ? fmt(a) + ' to ' + fmt(b) : round(a) + ' to ' + fmt(b);
+const WORD = UNIT === '%' ? ' points' : (UNIT ? UNIT : '');
+const by = n => n + (UNIT === '%' && n === 1 ? ' point' : WORD);          // 1 point, 12 points, 3h
+const clampV = v => Math.min(MAX, Math.max(MIN, v));
+const GIVEN = (CFG.given || []).filter(g => g && isFinite(+g.value));
+
+/* ---- geometry (viewBox 1280x720; the slide's logo sits top left, its
+        footer below y=658). plan() fills G from the measured text. ---------- */
+const LX = 56, RX = 1224;
+const QR = { x: 1092, y: 92, s: 132 };
+const RC1 = 1118, RC2 = RX;       // several numbers: the ROOM and STUDY columns end here
+const G = { X0: 110, X1: 1170, AX: 590 };
+const px = v => G.X0 + (clampV(v) - MIN) / (MAX - MIN) * (G.X1 - G.X0);
+
+/* ---- where the answers come from ---------------------------------------- */
+const EMB = window.TESSERA_EMBED && window.TESSERA_EMBED.poll;
+const LIVE = !!EMB;
+const SERVICE = ((EMB && EMB.service) || '').replace(/\/+$/, '');   // the deck's poll service; none: 'unreachable'
+const PREV = EMB && EMB.previous;
+const CODE = (PREV && PREV.kind === 'activity' && PREV.code) || '';
+const CTRL = CODE ? CODE.slice(0, 11) + 'q' : '';
+const JOIN = (PREV && PREV.join) || (EMB && EMB.session) || CODE;
+const KEY = (EMB && EMB.lecturer) || '';
+const HOSTNAME = SERVICE.replace(/^https?:\/\//, '');
+
+const raw = new Map();            // answer id -> {v: [one per row, null = none], d, at}
+let total = 0, note = '', frozen = null;
+const num = x => (x === null || x === '' || x === undefined || !isFinite(+x)) ? null : clampV(+x);
+function ingest(answers) {
+  for (const a of answers) {
+    if (raw.has(a.id)) continue;
+    try {
+      const o = JSON.parse(a.text);
+      let v;
+      if (MULTI) { if (!o.v || typeof o.v !== 'object') continue; v = ROWS.map(r => num(o.v[r.key])); }
+      else { if (typeof o.v === 'object') continue; v = [num(o.v)]; }
+      if (v.every(x => x === null)) continue;
+      raw.set(a.id, { v, d: String(o.d || a.id), at: a.at || '' });
+    } catch (e) { /* not ours */ }
+  }
+}
+/* latest guess per device, in order of arrival */
+function guesses() {
+  if (frozen) return frozen;
+  const by = new Map();
+  for (const [id, g] of raw) { const o = by.get(g.d); if (!o || g.at >= o.at) by.set(g.d, { ...g, id }); }
+  return [...by.values()];
+}
+const quant = (s, p) => { const k = (s.length - 1) * p, f = Math.floor(k), c = Math.ceil(k);
+  return s[f] + (s[c] - s[f]) * (k - f); };
+const isClose = (v, row) => v >= row.tr[0] - TOL && v <= row.tr[1] + TOL;
+function stats(gs, k) {
+  const row = ROWS[k], s = gs.map(g => g.v[k]).filter(v => v !== null).sort((a, b) => a - b);
+  if (!s.length) return null;
+  return { n: s.length, lo: s[0], hi: s[s.length - 1], med: quant(s, .5), q1: quant(s, .25), q3: quant(s, .75),
+    close: s.filter(v => isClose(v, row)).length };
+}
+/* how far the room's median is from the study's number */
+function gapOf(st, row) {
+  const d = st.med < row.tr[0] ? st.med - row.tr[0] : st.med > row.tr[1] ? st.med - row.tr[1] : 0;
+  return { d, off: rnd0(Math.abs(d)) || round(Math.abs(d)), close: Math.abs(d) <= TOL / 2 };
+}
+
+/* ---- the plan: wrap the text, then give what is left to the plot ---------- */
+function plan() {
+  /* the join block is right-aligned to the QR: the question stays left of it */
+  const jw = Math.max(tw('Guess on your phone', 18, 600), tw(HOSTNAME, 18, 700),
+    LIVE ? tw(JOIN, 30, 800, .06) : tw('sample guesses', 18, 600));
+  G.joinL = QR.x - 20 - jw;
+  G.W0 = G.joinL - 40 - LX;                    // question and setup, in every state
+  G.WA = MULTI ? RX - LX : G.W0;               // the answer: the stats sit top right when there is one number
+  G.q = fit(TX('question', CFG.question), [34, 32, 30, 28, 26], 700, G.W0, 3);
+  G.qlh = Math.round(G.q.size * 1.3);
+  G.setup = fit(TX('setup', CFG.setup), [20, 19, 18], 500, G.W0, 2);
+  G.ans = fit(TX('answer', CFG.answer), [24, 22, 20], 700, G.WA, 2);
+  G.qy = 164;
+  const below = G.qy + G.q.lines.length * G.qlh;             // the baseline a fourth line would have
+  G.setupY = below - 4; G.ansY = below - 2;
+  const b0 = G.setup.lines.length ? G.setupY + (G.setup.lines.length - 1) * 28 + 8 : below - G.qlh + 12;
+  G.srcY = G.ansY + Math.max(1, G.ans.lines.length) * 32 - 6;
+  const b2 = TX('source', CFG.source) ? G.srcY + 6 : G.srcY - 18;
+  const bottom = Math.max(b0, b2);
+
+  if (!MULTI) {
+    G.X0 = 110; G.X1 = 1170; G.AX = 590;
+    /* the truth's flag stands 52 above the plot: keep it clear of the answer */
+    const top = Math.min(480, Math.max(412, b2 + 62, b0 + 36));
+    G.plotTop = top; G.head = 30;
+    G.rows = [{ top, base: G.AX }];
+    G.pile = { x: 500, y: (top + G.AX) / 2 - 9 };
+  } else {
+    /* rows: label | lane on the shared axis | room, study */
+    G.lab = ROWS.map((r, k) => fit(TX('items.' + k + '.label', r.label), [20, 19, 18], 700, 270, 2));
+    const size = Math.min(...G.lab.map(f => f.size));
+    G.lab = ROWS.map((r, k) => { const s = TX('items.' + k + '.label', r.label), f = { size, lines: lines(s, size, 700, 270), text: s };
+      f.w = Math.max(0, ...f.lines.map(l => tw(l, size, 700))); return f; });
+    const lw = Math.max(120, ...G.lab.map(f => f.w));
+    G.X0 = LX + lw + 44; G.X1 = 1000;
+    G.AX = (TX('low', CFG.low) || TX('high', CFG.high)) ? 590 : 600;
+    const foot = G.AX - 14;                                  // the last row's baseline
+    G.rowH = Math.max(40, Math.min(104, (foot - (bottom + 42)) / N));
+    G.plotTop = foot - N * G.rowH; G.head = 4;
+    G.rows = ROWS.map((r, k) => ({ top: G.plotTop + k * G.rowH + 12, base: G.plotTop + (k + 1) * G.rowH }));
+    G.vs = G.rowH < 56 ? 24 : 28;
+    G.sub = G.rowH >= 64;                                    // room for a second line under the numbers
+    G.pile = { x: (G.X0 + G.X1) / 2 - 90, y: G.plotTop + (foot - G.plotTop) * .45 };
+  }
+  /* a reference value's label stands on the axis in state 0: move the pile away from it */
+  if (GIVEN.length) {
+    const w = G.X1 - G.X0, off = G.pile.x - (MULTI ? (G.X0 + G.X1) / 2 : 575);
+    let best = null;
+    for (const c of [G.X0 + w * .5, G.X0 + w * .26, G.X0 + w * .74]) {
+      const d = Math.min(...GIVEN.map(g => Math.abs(px(+g.value) - c)));
+      if (!best || d > best.d + 1) best = { c, d };
+    }
+    G.pile.x = best.c + off;
+  }
+}
+
+/* ---- static: the question, the axis, the rows, the join block ------------- */
+const text = $('text');
+const kick = txt(TX('kicker', 'Guess the number'), { class: 'kick', x: LX, y: 118, 'data-edit': 'kicker' }, text);
+let setupEl, ansEl;
+function drawText() {
+  [...text.children].forEach(c => { if (c !== kick) c.remove(); });
+  block(G.q, 'q', LX, G.qy, G.qlh, text, '', 'question', 700);
+  setupEl = mk('g', { class: 'el' }, text);
+  block(G.setup, 'setup', LX, G.setupY, 28, setupEl, '', 'setup', 500);
+  ansEl = mk('g', { id: 'ans', class: 'el off' }, text);
+  block(G.ans, 'ans', LX, G.ansY, 32, ansEl, '', 'answer', 700);
+  const src = TX('source', CFG.source);
+  if (src) txt(src, { class: 'src', x: LX, y: G.srcY, 'data-edit': 'source' }, ansEl);
+}
+const axis = $('axis'), grid = $('grid'), rowsG = $('rows');
+function drawAxis() {
+  axis.textContent = ''; grid.textContent = ''; rowsG.textContent = '';
+  const { X0, X1, AX } = G, ticks = CFG.ticks || [MIN, (MIN + MAX) / 2, MAX];
+  mk('line', { x1: X0 - 20, y1: AX, x2: X1 + 20, y2: AX, stroke: '#1A2326', 'stroke-width': 2 }, axis);
+  ticks.forEach(t => {
+    mk('line', { x1: px(t), y1: AX, x2: px(t), y2: AX + 8, stroke: '#1A2326', 'stroke-width': 2 }, axis);
+    txt(fmt(t), { class: 'tick', x: px(t), y: AX + 30, 'text-anchor': 'middle' }, axis);
+  });
+  const low = TX('low', CFG.low), high = TX('high', CFG.high);
+  if (low) txt(low, { class: 'pole', x: X0 - 20, y: AX + 58, 'data-edit': 'low' }, axis);
+  if (high) txt(high, { class: 'pole', x: X1 + 20, y: AX + 58, 'text-anchor': 'end', 'data-edit': 'high' }, axis);
+  const zero = MIN < 0 && MAX > 0;
+  if (!MULTI) {
+    if (zero) mk('line', { x1: px(0), y1: G.plotTop - 6, x2: px(0), y2: AX, stroke: '#C7CFD1', 'stroke-width': 2, 'stroke-dasharray': '3 6' }, grid);
+    return;
+  }
+  /* the shared axis: every tick runs up through all rows */
+  ticks.forEach(t => { if (!(zero && +t === 0))
+    mk('line', { x1: px(t), y1: G.plotTop + 6, x2: px(t), y2: AX, stroke: '#D7DEDF', 'stroke-width': 1.5 }, grid); });
+  if (zero) mk('line', { x1: px(0), y1: G.plotTop + 6, x2: px(0), y2: AX, stroke: '#A7AFB1', 'stroke-width': 2, 'stroke-dasharray': '3 6' }, grid);
+  ROWS.forEach((row, k) => {
+    const R = G.rows[k], f = G.lab[k], lh = f.size + 4, mid = (R.top + R.base) / 2;
+    if (k < N - 1) mk('line', { x1: X0 - 20, y1: R.base, x2: X1 + 20, y2: R.base, stroke: '#D7DEDF', 'stroke-width': 1.5 }, grid);
+    block(f, 'rlab', LX, mid - (f.lines.length - 1) * lh / 2 + f.size * .36, lh, rowsG, '', 'items.' + k + '.label', 700);
+  });
+}
+
+const joinG = $('join');
+function drawJoin() {
+  joinG.textContent = '';
+  if (LIVE && JOIN) {
+    const im = mk('image', { x: QR.x, y: QR.y, width: QR.s, height: QR.s }, joinG);
+    im.setAttribute('href', SERVICE + '/api/qr?c=' + encodeURIComponent(JOIN) + '&fg=131d41');
+  } else {
+    mk('rect', { x: QR.x, y: QR.y, width: QR.s, height: QR.s, fill: '#F1F5F5', stroke: '#D7DEDF', 'stroke-width': 2 }, joinG);
+    txt('QR', { class: 'join', x: QR.x + QR.s / 2, y: QR.y + QR.s / 2 + 6, 'text-anchor': 'middle' }, joinG);
+  }
+  const tx = QR.x - 20;
+  txt('Guess on your phone', { class: 'join', x: tx, y: QR.y + 36, 'text-anchor': 'end' }, joinG);
+  txt(HOSTNAME, { class: 'host', x: tx, y: QR.y + 64, 'text-anchor': 'end' }, joinG);
+  txt(LIVE ? JOIN : 'sample guesses', { class: LIVE ? 'code' : 'join', x: tx, y: QR.y + 104, 'text-anchor': 'end' }, joinG);
+  /* the notice lives in the join block's own column, under the QR: never over the question */
+  if (note) block({ size: 18, lines: lines(note, 18, 700, RX - G.joinL) }, 'note', RX, QR.y + QR.s + 30, 24, joinG, 'end');
+}
+
+/* ---- reference values known from the start (CFG.given) -------------------- */
+const givenG = $('given'); let givenEls = [];
+function buildGiven() {
+  givenG.textContent = ''; givenEls = [];
+  GIVEN.forEach(gv => {
+    const x = px(+gv.value), top = MULTI ? G.plotTop + 4 : G.plotTop + 6;
+    const key = 'given.' + (CFG.given || []).indexOf(gv) + '.label', name = TX(key, gv.label || '');
+    const label = (name ? name + ': ' : '') + fmt(+gv.value), w = tw(label, 18, 700);
+    const line = mk('line', { class: 'gl', x1: x, y1: top, x2: x, y2: G.AX, stroke: '#8E5F00', 'stroke-width': 2.5 }, givenG);
+    line.style.transformOrigin = x + 'px ' + G.AX + 'px';
+    let tx = x, ty = G.plotTop - 8, anchor = 'middle';
+    if (MULTI) tx = Math.min(G.X1 + 20 - w / 2, Math.max(G.X0 - 20 + w / 2, x));
+    else {                        // one number: beside its line, on the side away from the study's flag
+      const left = x - 10 - w > G.X0 - 20 && (ROWS[0].mid > +gv.value || x + 10 + w > G.X1 + 20);
+      anchor = left ? 'end' : 'start'; tx = left ? x - 10 : x + 10; ty = top + 16;
+    }
+    const t = mk('text', { class: 'given gt', x: tx, y: ty, 'text-anchor': anchor }, givenG);
+    if (name) { mk('tspan', { 'data-edit': key }, t).textContent = name; t.appendChild(document.createTextNode(': ' + fmt(+gv.value))); }
+    else t.textContent = label;
+    givenEls.push({ line, t, s0: 24 / (G.AX - top), dy: G.AX - 34 - ty });
+  });
+}
+/* state 0: a short mark on the axis; from the spread on it runs up through the plot */
+function stateGiven() {
+  for (const e of givenEls) {
+    e.line.style.transform = i === 0 ? 'scaleY(' + e.s0 + ')' : '';
+    e.t.style.transform = i === 0 ? 'translateY(' + e.dy + 'px)' : '';
+  }
+}
+
+/* ---- the count (state 0) -------------------------------------------------- */
+const countG = $('count');
+const bigEl = txt('0', { class: 'big' }, countG);
+const bigLab = txt('guesses in', { class: 'biglab' }, countG);
+function placeCount() {
+  bigEl.setAttribute('x', G.pile.x + 150); bigEl.setAttribute('y', G.pile.y + 30);
+  bigLab.setAttribute('x', G.pile.x + 154); bigLab.setAttribute('y', G.pile.y + 66);
+}
+
+/* ---- the dots: one per guess and row --------------------------------------- */
+const dotsG = $('dots'), dotEls = new Map();
+const place = (el, x, y) => { el.style.transform = `translate(${x}px,${y}px)`; };
+/* where each guess sits in its row: stacked in columns one dot wide */
+function layout(gs) {
+  const least = !MULTI ? 3 : N > 3 ? 5 : 6;    // rows: a dot stays readable, a stack too tall for its row is squeezed instead
+  for (let r = MULTI ? 9 : 11; r >= least; r -= .5) {
+    const pos = new Map(); let ok = true;
+    ROWS.forEach((row, k) => {
+      const R = G.rows[k], cols = new Map(), at = []; let tall = 0;
+      for (const g of gs.filter(g => g.v[k] !== null).sort((a, b) => a.v[k] - b.v[k])) {
+        const c = Math.round((px(g.v[k]) - G.X0) / (2 * r)), n = cols.get(c) || 0;
+        cols.set(c, n + 1); tall = Math.max(tall, n + 1);
+        at.push([g.d + '|' + k, c, n]);
+      }
+      const room = R.base - R.top - G.head;
+      let dy = 2 * r;
+      if (tall * dy > room) { ok = false; if (tall > 1) dy = Math.max(2, (room - 2 * r) / (tall - 1)); }
+      for (const [id, c, n] of at) pos.set(id, { x: G.X0 + c * 2 * r, y: R.base - 4 - r - n * dy });
+    });
+    if (ok || r === least) return { r, pos };
+  }
+}
+function drawDots() {
+  const gs = guesses(), spread = i >= 1;
+  const lay = spread ? layout(gs) : null, live = new Set();
+  gs.forEach((g, n) => ROWS.forEach((row, k) => {
+    if (g.v[k] === null) return;
+    const id = g.d + '|' + k; live.add(id);
+    let el = dotEls.get(id);
+    if (!el) {
+      el = mk('circle', { class: 'dot', r: 7, fill: '#A7AFB1', stroke: '#fff', 'stroke-width': 1.5 }, dotsG);
+      el.style.transition = 'none'; place(el, QR.x + QR.s / 2, QR.y + QR.s / 2); el.style.opacity = 0;
+      dotEls.set(id, el); el.getBoundingClientRect(); el.style.transition = '';
+    }
+    el.style.opacity = 1;
+    if (spread) {
+      const p = lay.pos.get(id);
+      el.style.transitionDelay = Math.min(n * 18, 900) + k * 90 + 'ms';
+      el.setAttribute('r', lay.r - .5);
+      el.setAttribute('fill', i >= 2 ? (isClose(g.v[k], row) ? '#3B9457' : '#C7CFD1') : row.color);
+      place(el, p.x, p.y);
+    } else {                      // the pile: a sunflower, in order of arrival, says nothing about the value
+      const a = n * 2.39996, rr = 9.5 * Math.sqrt(n + .5);
+      el.style.transitionDelay = '0ms';
+      el.setAttribute('r', 7); el.setAttribute('fill', '#A7AFB1');
+      place(el, G.pile.x + Math.cos(a) * rr, G.pile.y + Math.sin(a) * rr);
+    }
+  }));
+  for (const [id, el] of dotEls) if (!live.has(id)) { el.remove(); dotEls.delete(id); }
+  const n = gs.length;
+  const shown = n || total;       // the key is missing: still count what came in
+  bigEl.textContent = shown; bigLab.textContent = shown === 1 ? 'guess in' : 'guesses in';
+  kick.textContent = 'GUESS THE NUMBER' + (i >= 1 && n ? ` · ${n} GUESS${n === 1 ? '' : 'ES'}` :
+    (!raw.size && total ? ` · ${total} ANSWERS IN` : ''));
+  (MULTI ? marksMulti : marksOne)(gs);
+  /* the marks were rebuilt in the state they had: only now switch, so they travel */
+  medG.getBoundingClientRect();
+  const show = i >= 1 && n > 0;
+  medG.classList.toggle('off', !show); band.classList.toggle('off', !show || MULTI);
+  bandsG.classList.toggle('off', !show); statsG.classList.toggle('off', !show || MULTI);
+  truthG.classList.toggle('off', !(i >= 2));
+}
+
+/* ---- median, middle half, the study's number ------------------------------ */
+const medG = $('median'), truthG = $('truth'), band = $('band'), bandsG = $('bands'), statsG = $('stats');
+function marksOne(gs) {
+  medG.textContent = ''; truthG.textContent = ''; statsG.textContent = '';
+  const st = stats(gs, 0), row = ROWS[0], TR = row.tr, TOP = G.plotTop, AX = G.AX, X0 = G.X0, X1 = G.X1;
+  if (st) {
+    const bx = px(st.q1), bw = Math.max(2, px(st.q3) - px(st.q1));
+    band.setAttribute('x', bx); band.setAttribute('y', TOP); band.setAttribute('width', bw); band.setAttribute('height', AX - TOP);
+    const mx = px(st.med);
+    mk('line', { x1: mx, y1: TOP - 2, x2: mx, y2: AX, stroke: '#1A2326', 'stroke-width': 3, 'stroke-dasharray': '2 7', 'stroke-linecap': 'round' }, medG);
+    const edge = (TX('low', CFG.low) || TX('high', CFG.high)) ? 190 : 40;      // keep clear of the pole labels
+    mk('path', { d: `M${mx - 8},${AX + 46} L${mx + 8},${AX + 46} L${mx},${AX + 36} Z`, fill: '#1A2326' }, medG);
+    txt('ROOM', { class: 'tag', x: Math.min(X1 - edge, Math.max(X0 + edge, mx)), y: AX + 64, 'text-anchor': 'middle' }, medG);
+    txt('ROOM MEDIAN', { class: 'slab', x: RX, y: 112, 'text-anchor': 'end' }, statsG);
+    txt(fmt(rnd0(st.med)), { class: 'sval', x: RX, y: 166, 'text-anchor': 'end' }, statsG);
+    txt('Half of you: ' + span(rnd0(st.q1), rnd0(st.q3)), { class: 'sline', x: RX, y: 198, 'text-anchor': 'end' }, statsG);
+    txt('Lowest ' + fmt(st.lo) + ' · highest ' + fmt(st.hi), { class: 'sline', x: RX, y: 226, 'text-anchor': 'end' }, statsG);
+    if (i >= 2) {
+      const g = gapOf(st, row);
+      const v = g.close ? (g.off ? 'The room was close: off by ' + by(g.off) : 'The room was right')
+        : 'The room was ' + by(g.off) + (g.d > 0 ? ' too high' : ' too low');
+      txt(v, { class: 'verdict', x: RX, y: 266, 'text-anchor': 'end' }, statsG);
+      txt(st.close + ' of ' + st.n + ' within ' + round(TOL) + WORD, { class: 'sline green', x: RX, y: 294, 'text-anchor': 'end' }, statsG);
+    }
+  }
+  /* the study's number: a band if it is a range, a flag on top */
+  const a = px(TR[0]), b = px(TR[1]), cx = (a + b) / 2;
+  if (row.range) mk('rect', { x: a, y: TOP - 8, width: b - a, height: AX - TOP + 8, fill: '#3B9457', 'fill-opacity': .18 }, truthG);
+  mk('line', { x1: cx, y1: TOP - 8, x2: cx, y2: AX, stroke: '#2B7041', 'stroke-width': row.range ? 0 : 4, 'stroke-linecap': 'round' }, truthG);
+  const label = row.range ? span(TR[0], TR[1]) : fmt(TR[0]);
+  const w = label.length * 16 + 34, lx = Math.min(X1 + 20 - w / 2, Math.max(X0 - 20 + w / 2, cx));
+  mk('rect', { x: lx - w / 2, y: TOP - 52, width: w, height: 44, rx: 22, fill: '#2B7041' }, truthG);
+  txt(label, { class: 'pill', x: lx, y: TOP - 21, 'text-anchor': 'middle' }, truthG);
+  const right = lx + w / 2 + 120 < X1 + 20;
+  txt('THE STUDY', { class: 'tag green', x: right ? lx + w / 2 + 12 : lx - w / 2 - 12, y: TOP - 24,
+    'text-anchor': right ? 'start' : 'end' }, truthG);
+}
+/* several numbers: per row the room's median and middle half, then the
+   study's number beside it and the gap between the two */
+function marksMulti(gs) {
+  medG.textContent = ''; truthG.textContent = ''; bandsG.textContent = '';
+  const hy = G.plotTop - 8;
+  txt('ROOM', { class: 'slab', x: RC1, y: hy, 'text-anchor': 'end' }, medG);
+  txt('STUDY', { class: 'slab green slide', x: RC2, y: hy, 'text-anchor': 'end' }, truthG);
+  const fitted = (s, cls, x, y, parent) => {            // a value in its 96-wide column
+    const t = txt(s, { class: cls, x, y, 'text-anchor': 'end' }, parent);
+    t.style.fontSize = Math.max(18, Math.min(G.vs, Math.floor(G.vs * 96 / tw(s, G.vs, 800)))) + 'px';
+    return t;
+  };
+  ROWS.forEach((row, k) => {
+    const R = G.rows[k], st = stats(gs, k), mid = (R.top + R.base) / 2, top = R.top - 4;
+    const vy = G.sub ? mid + 2 : mid + G.vs * .36;
+    const a = px(row.tr[0]), b = px(row.tr[1]), cx = (a + b) / 2;
+    let mx = null;
+    if (st) {
+      mx = px(st.med);
+      mk('rect', { x: px(st.q1), y: R.top, width: Math.max(2, px(st.q3) - px(st.q1)), height: R.base - R.top, fill: '#E2F0F1' }, bandsG);
+      const m = mk('g', { class: 'grow' }, medG);
+      m.style.transformOrigin = mx + 'px ' + R.base + 'px'; m.style.transitionDelay = 300 + k * 120 + 'ms';
+      mk('line', { x1: mx, y1: top, x2: mx, y2: R.base, stroke: '#1A2326', 'stroke-width': 3, 'stroke-dasharray': '2 7', 'stroke-linecap': 'round' }, m);
+      fitted(fmt(rnd0(st.med)), 'rval', RC1, vy, medG);
+      if (G.sub && i < 2) txt('half: ' + span(rnd0(st.q1), rnd0(st.q3)), { class: 'rsub', x: RC2, y: vy + 26, 'text-anchor': 'end' }, medG);
+    }
+    /* the gap first in the tree, so the two markers sit on top of its ends */
+    if (st && Math.abs(cx - mx) > 4) {
+      const c = mk('g', { class: 'growx' }, truthG);
+      c.style.transformOrigin = mx + 'px ' + top + 'px'; c.style.transitionDelay = 500 + k * 150 + 'ms';
+      mk('line', { x1: mx, y1: top, x2: cx, y2: top, stroke: '#D2553A', 'stroke-width': 4 }, c);
+    }
+    const t = mk('g', { class: 'grow' }, truthG);
+    t.style.transformOrigin = cx + 'px ' + R.base + 'px'; t.style.transitionDelay = k * 150 + 'ms';
+    if (row.range) mk('rect', { x: a, y: top, width: b - a, height: R.base - top, fill: '#3B9457', 'fill-opacity': .22 }, t);
+    mk('line', { x1: cx, y1: top, x2: cx, y2: R.base, stroke: '#2B7041', 'stroke-width': 4, 'stroke-linecap': 'round' }, t);
+    mk('circle', { cx, cy: top, r: 7, fill: '#2B7041', stroke: '#fff', 'stroke-width': 2 }, t);
+    fitted(row.range ? span(row.tr[0], row.tr[1]) : fmt(row.tr[0]), 'tval slide', RC2, vy, truthG)
+      .style.transitionDelay = 150 + k * 150 + 'ms';
+    if (st && G.sub && i >= 2) {
+      const g = gapOf(st, row);
+      const s = g.close ? (g.off ? 'close: off by ' + by(g.off) : 'spot on') : by(g.off) + (g.d > 0 ? ' too high' : ' too low');
+      txt(s, { class: 'gap slide' + (g.close ? ' ok' : ''), x: RC2, y: vy + 26, 'text-anchor': 'end' }, truthG)
+        .style.transitionDelay = 300 + k * 150 + 'ms';
+    }
+  });
+}
+
+/* ---- steps ---------------------------------------------------------------- */
+const HINTS = ['click to show the spread', MULTI ? 'click for the study’s numbers' : 'click for the study’s number', 'click to restart'];
+const steps = [0, 1, 2];          // figcheck and shoot.py read this
+let i = 0, typed = '';
+function draw() {
+  setupEl.classList.toggle('off', i >= 2); ansEl.classList.toggle('off', i < 2);
+  joinG.classList.toggle('off', i >= 1); countG.classList.toggle('off', i >= 1);
+  grid.classList.toggle('off', i < 1);
+  $('hint').textContent = typed ? 'adding ' + typed + ' (Enter)' : HINTS[i];
+  stateGiven();
+  drawDots();
+}
+/* everything that depends on measured text: at load, when the font arrives,
+   when the frame gets its size */
+function relayout() {
+  plan(); drawText(); drawAxis(); drawJoin(); buildGiven(); placeCount(); draw();
+}
+window.TESSERA_REFIT = relayout;    // a label reworded on the edit canvas: re-wrap from TX
+function go(n) {
+  n = (n + steps.length) % steps.length;
+  if (n >= 1 && !frozen) frozen = guesses();      // closed: late guesses do not move the picture
+  if (n === 0) frozen = null;
+  i = n; draw(); publishStep();
+}
+/* on the edit canvas a click on a label is half of a double-click (rewording it), not a step */
+const onLabel = e => !!(window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest && e.target.closest('[data-edit]'));
+$('stage').addEventListener('click', e => { if (!onLabel(e)) go(i + 1); });
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  if ((/^[0-9.\-]$/.test(e.key) || (MULTI && e.key === ',' && typed)) && i === 0) { typed += e.key; draw(); e.preventDefault(); return; }
+  if (typed && e.key === 'Enter') {               // a guess by hand: no wifi, or a show of hands
+    const vs = typed.split(',').map(parseFloat), id = 'hand' + Math.random().toString(36).slice(2); typed = '';
+    if (vs.length >= N && vs.slice(0, N).every(isFinite)) {
+      const v = MULTI ? Object.fromEntries(ROWS.map((r, k) => [r.key, vs[k]])) : vs[0];
+      ingest([{ id, at: new Date().toISOString(), text: JSON.stringify({ v, d: id }) }]);
+    }
+    draw(); e.preventDefault(); return;
+  }
+  if (typed && (e.key === 'Escape' || e.key === 'Backspace')) { typed = typed.slice(0, e.key === 'Escape' ? 0 : -1); draw(); e.preventDefault(); return; }
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < 2) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+
+/* ---- live: read the bucket, close the phones at the reveal ---------------- */
+/* The lecturer key goes as x-tessera-lecturer. A poll service from before the rename lists
+   only its old header name in CORS, so its preflight fails: a request carrying the key that
+   fails on the network is sent once more under that name. */
+const OLD_LECTURER_HEADER = 'x-bento-lecturer'; // decks written before the rename / the old service only allow this name
+async function lfetch(url, opts = {}) {
+  try { return await fetch(url, opts); }
+  catch (err) {
+    const h = Object.assign({}, opts.headers || {});
+    if (!h['x-tessera-lecturer'] || (err && err.name === 'AbortError')) throw err;
+    h[OLD_LECTURER_HEADER] = h['x-tessera-lecturer']; delete h['x-tessera-lecturer'];
+    return fetch(url, Object.assign({}, opts, { headers: h }));
+  }
+}
+let pubT = 0;
+function publishStep() {
+  if (!LIVE || !KEY || !CTRL) return;
+  clearTimeout(pubT);
+  pubT = setTimeout(() => lfetch(SERVICE + '/api/poll', { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-tessera-lecturer': KEY },
+    body: JSON.stringify({ code: CTRL, html: JSON.stringify({ step: i, at: Date.now() }) }) }).catch(() => {}), 250);
+}
+const HAND = MULTI ? 'type ' + N + ' numbers with commas, Enter' : 'type a number, Enter';
+async function pull() {
+  if (frozen || document.hidden) return;          // every read is billed: none once closed or unseen
+  const was = note;
+  try {
+    const r = await lfetch(`${SERVICE}/api/poll?c=${encodeURIComponent(CODE)}`,
+      { cache: 'no-store', headers: KEY ? { 'x-tessera-lecturer': KEY } : {} });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    total = d.count || 0;
+    note = d.answersWithheld ? 'Guesses hidden: enter the lecturer key in the deck' : '';
+    ingest(d.answers || []);
+  } catch (e) { note = 'Poll service unreachable: ' + HAND; }
+  if (note !== was) drawJoin();
+  if (!frozen) drawDots();
+}
+
+/* ---- offline: sample guesses through the same parser ----------------------- */
+function sample() {
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const sd = (MAX - MIN) * .14, grain = STEP >= 5 ? STEP : STEP * 5, out = [];
+  const mids = ROWS.map((row, k) => {
+    const s = Array.isArray(CFG.sample) ? CFG.sample[k] : CFG.sample;
+    return s != null ? +s : row.mid + (MAX - MIN) * (row.mid > (MIN + MAX) / 2 ? -.2 : .2);
+  });
+  for (let n = 0; n < 38; n++) {
+    const vs = mids.map(mid => {
+      const z = (rnd() + rnd() + rnd() + rnd() - 2) * 1.7;
+      let v = mid + z * sd; if (n % 9 === 4) v = MIN + rnd() * (MAX - MIN);
+      return round(Math.round(v / grain) * grain);
+    });
+    const v = MULTI ? Object.fromEntries(ROWS.map((r, k) => [r.key, vs[k]])) : vs[0];
+    out.push({ id: 'demo' + n, at: String(1000 + n), text: JSON.stringify({ v, d: 'dev' + n }) });
+  }
+  return out;
+}
+
+if (MULTI) $('fig').classList.add('multi');
+if (!LIVE) ingest(sample());
+relayout();
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(relayout);
+let sizeT = 0;
+addEventListener('resize', () => { clearTimeout(sizeT); sizeT = setTimeout(relayout, 120); });
+if (LIVE && CODE) { publishStep(); pull(); setInterval(pull, 2500); addEventListener('visibilitychange', () => { if (!document.hidden) pull(); }); }
+</script>
+</body></html>

@@ -1,0 +1,7 @@
+{
+  "_": "Decks written before the rename use these names: the browser-side ones tools/legacy.py does not hold (export_deck.py and live/serve.py hand them to nav.js and live/sync.js).",
+  "api": "bento",
+  "overlayClass": "bento-present-overlay",
+  "requestEvent": "bento-request",
+  "navId": "bento-export-nav"
+}

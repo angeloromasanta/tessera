@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guess the number</title>
+<!-- Guess the number: phone side (engage). The deck ships this page to
+     every phone as the `activity` of the hidden poll under the guess.html
+     embed. Built per question by make_guess.py, which replaces the CONFIG
+     block: it never contains the study's number.
+     One number: posts {"v":number,"d":device,"score":1}. Several (CFG.items):
+     one slider each, one Send, posts {"v":{key:number,...},"d":device,"score":1}.
+     A second Send replaces the first (the screen keeps the latest per device).
+     Every slider starts at a random place and shows "?" until it is touched,
+     so the page suggests no value. CFG.given are reference values everybody
+     may know from the start.
+     Closes when the screen shows the spread: the screen embed writes
+     {"step":k} into the html of bucket CODE+"q"; this page reads it every 3 s.
+     No storage, no CDN, no fonts (sandboxed).
+     Its strings are the screen's: the deck publishes this page with the
+     screen embed's reworded labels in front (TESSERA_EMBED.texts, same keys as
+     guess.html), and TX() lets them win over CONFIG. -->
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#fff;color:#1A2326;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+body{padding:6px 4px 12px}
+#kick{font-size:12px;font-weight:700;letter-spacing:.1em;color:#0F6B73;text-transform:uppercase}
+#q{font-size:19px;font-weight:800;line-height:1.3;margin:6px 0 4px}
+#setup{font-size:14px;line-height:1.4;color:#5A6467}
+#given{font-size:14px;font-weight:700;line-height:1.4;color:#8E5F00;margin-top:6px}
+.val{font-size:68px;font-weight:800;text-align:center;color:#0F6B73;margin:18px 0 2px;font-variant-numeric:tabular-nums;line-height:1.1}
+.val.none{color:#C7CFD1}
+.row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.row button{flex:0 0 46px;height:46px;border-radius:50%;border:1.5px solid #D7DEDF;background:#fff;color:#0F6B73;font-size:24px;font-weight:700;font-family:inherit}
+.row button:active{background:#E2F0F1}
+input[type=range]{flex:1;min-width:0;height:46px;accent-color:#A7AFB1}
+input[type=range].on{accent-color:#0F6B73}
+#ends{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#5A6467;padding:0 58px;letter-spacing:.04em}
+#poles{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#A7AFB1;padding:2px 58px 0;letter-spacing:.08em;text-transform:uppercase}
+/* several numbers: a compact block per item, label left, value right */
+.item{margin-top:14px;padding-top:12px;border-top:1.5px solid #E2F0F1}
+.item .head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.item .lab{font-size:16px;font-weight:700;line-height:1.25}
+.item .val{font-size:30px;margin:0;text-align:right;flex:0 0 auto}
+.item .row{margin-top:2px}
+#send{display:block;width:100%;margin-top:18px;height:54px;border:0;border-radius:14px;background:#0F6B73;color:#fff;font-size:18px;font-weight:800;font-family:inherit}
+#send:disabled{background:#D7DEDF;color:#fff}
+#send:active{transform:scale(.98)}
+#status{font-size:14px;margin-top:12px;min-height:1.4em;color:#5A6467;text-align:center}
+#status.ok{color:#2B7041;font-weight:700}
+#status.err{color:#A83A20;font-weight:700}
+</style></head>
+<body>
+<div id="kick">Guess the number</div>
+<div id="q"></div>
+<div id="setup"></div>
+<div id="given"></div>
+<div id="items"></div>
+<div id="ends"><span id="lo"></span><span id="hi"></span></div>
+<div id="poles"><span id="plo"></span><span id="phi"></span></div>
+<button id="send" disabled>Send my guess</button>
+<div id="status"></div>
+<script>
+const CFG = /*CONFIG*/{
+  "id": "sample",
+  "question": "How much less time did professionals need for a writing task when they used ChatGPT?",
+  "setup": "453 professionals, writing tasks taken from their own jobs. Half of them got ChatGPT.",
+  "unit": "%", "min": 0, "max": 100, "step": 1, "signed": false, "low": "", "high": ""
+}/*END*/;
+/* the deck's reworded labels (TESSERA_EMBED.texts, put in front of this page
+   when it is published) win over CONFIG; same keys as the screen */
+const TX = (k, d) => { const E = window.TESSERA_EMBED, T = E && E.texts;
+  d = d == null ? '' : d;
+  return E && typeof E.text === 'function' ? E.text(k, d) : T && Object.prototype.hasOwnProperty.call(T, k) ? T[k] : d; };
+const HOST = window.TESSERA_ACTIVITY || {};
+const CODE = HOST.code || '';
+const CTRL = CODE ? CODE.slice(0, 11) + 'q' : '';
+const DEV = Math.random().toString(36).slice(2, 10);
+const $ = id => document.getElementById(id);
+const MIN = +CFG.min, MAX = +CFG.max, STEP = +CFG.step || 1, UNIT = CFG.unit || '';
+const DEC = (String(STEP).split('.')[1] || '').length;
+const fix = v => +(+v).toFixed(DEC);
+const fmt = v => (v < 0 ? '−' + Math.abs(v) : (CFG.signed && v > 0 ? '+' : '') + v) + UNIT;
+const MULTI = Array.isArray(CFG.items) && CFG.items.length > 1;
+const ITEMS = MULTI ? CFG.items : [{ key: 'v', label: '' }];
+const send = $('send'), status = $('status');
+const IDLE = MULTI ? 'Move every slider. Your own guesses, no searching.' : 'Move the slider. Your own guess, no searching.';
+let sent = null, closed = false, busy = false;
+
+const QUESTION = TX('question', CFG.question);
+$('kick').textContent = TX('kicker', 'Guess the number');
+$('q').textContent = QUESTION; $('setup').textContent = TX('setup', CFG.setup);
+$('given').textContent = (CFG.given || []).map((g, k) => TX('given.' + k + '.label', g.label) + ': ' + fmt(+g.value)).join(' · ');
+$('lo').textContent = fmt(MIN); $('hi').textContent = fmt(MAX);
+$('plo').textContent = TX('low', CFG.low); $('phi').textContent = TX('high', CFG.high);
+
+/* one slider per number, each starting at a random place: no anchor */
+function el(tag, cls, parent, text) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  if (text != null) e.textContent = text; parent.appendChild(e); return e;
+}
+const S = ITEMS.map((it, k) => {
+  const box = el('div', MULTI ? 'item' : '', $('items')), s = { key: it.key, touched: false };
+  if (MULTI) { const head = el('div', 'head', box); el('div', 'lab', head, TX('items.' + k + '.label', it.label)); s.val = el('div', 'val none', head, '?'); }
+  else s.val = el('div', 'val none', box, '?');
+  const row = el('div', 'row', box);
+  s.minus = el('button', '', row, '−'); s.minus.setAttribute('aria-label', 'less');
+  s.sl = el('input', '', row); s.sl.type = 'range';
+  s.plus = el('button', '', row, '+'); s.plus.setAttribute('aria-label', 'more');
+  s.sl.min = MIN; s.sl.max = MAX; s.sl.step = STEP;
+  s.sl.value = fix(MIN + Math.round(Math.random() * (MAX - MIN) / STEP) * STEP);
+  const touch = () => { if (closed) return; s.touched = true; s.sl.classList.add('on'); show(); };
+  s.sl.addEventListener('input', touch);
+  s.minus.onclick = () => { s.sl.value = fix(Math.max(MIN, +s.sl.value - STEP)); touch(); };
+  s.plus.onclick = () => { s.sl.value = fix(Math.min(MAX, +s.sl.value + STEP)); touch(); };
+  return s;
+});
+const value = () => MULTI ? Object.fromEntries(S.map(s => [s.key, +s.sl.value])) : +S[0].sl.value;
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const told = v => MULTI ? S.map(s => fmt(v[s.key])).join(', ') : fmt(v);
+
+function say(msg, cls) { status.textContent = msg; status.className = cls || ''; }
+function show() {
+  const all = S.every(s => s.touched), v = value(), again = sent !== null && same(sent, v);
+  for (const s of S) { s.val.textContent = s.touched ? fmt(+s.sl.value) : '?'; s.val.classList.toggle('none', !s.touched); }
+  send.disabled = !all || closed || busy || again;
+  send.textContent = sent === null ? (MULTI ? 'Send my guesses' : 'Send my guess')
+    : again ? 'Sent: ' + told(sent) : 'Change to ' + told(v);
+}
+
+send.onclick = async () => {
+  const v = value();
+  busy = true; show(); say('Sending…');
+  try {
+    const r = await fetch('/api/answer', { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: CODE, text: JSON.stringify({ v, d: DEV, score: 1 }),
+        question: QUESTION, name: HOST.name || undefined }) });
+    if (!r.ok) throw new Error(r.status);
+    sent = v; say('Sent. You can change it until the screen shows the spread.', 'ok');
+  } catch (e) { say('Not sent. Check your connection and try again.', 'err'); }
+  busy = false; show();
+};
+
+// follow the screen: step 1 = the spread is shown, guesses are closed; 0 = open again
+function lock(on) { closed = on; for (const s of S) s.sl.disabled = s.minus.disabled = s.plus.disabled = on; }
+async function follow() {
+  if (!CTRL) return;
+  try {
+    const r = await fetch('/api/poll?c=' + encodeURIComponent(CTRL), { cache: 'no-store' });
+    const d = await r.json();
+    const step = d && d.html ? (JSON.parse(d.html).step | 0) : 0;
+    if (step >= 1 && !closed) {
+      lock(true);
+      say(sent === null ? 'Guesses are closed. Look at the screen.' : 'Closed. You said ' + told(sent) + '. Look at the screen.', 'ok');
+    } else if (step === 0 && closed) {
+      lock(false);
+      say('Open again. ' + IDLE);
+    }
+    show();
+  } catch (e) { /* stay open */ }
+}
+say(IDLE); show(); follow(); setInterval(follow, 3000);
+</script>
+</body></html>

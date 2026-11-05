@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="tessera-game">
+<title>Buzz and vote</title>
+<!--
+  Starter game, the SCREEN half: the room's view plus the lecturer's controls,
+  for a `## game` slide (full-bleed embed over a hidden activity poll). Its
+  phone half is game-phone.html. Built on the game SDK (docs/game.md),
+  which the deck injects because of <meta name="tessera-game">.
+
+  Round by round: lobby (names as they join) -> question (phones vote, mode
+  'last', key vR; and buzz, mode 'first' on the shared slot 'room', key bR) ->
+  voting closed -> reveal (the bars, the right answer, the buzzer's fate; every
+  phone gets its own result as a private value) -> leaderboard -> next round
+  ... -> final standings. Reset (two clicks) starts over; phones rejoin.
+
+  The question goes to the phones in `state` when its round opens; the right
+  answers never leave this page before the reveal. CONFIG (make_game.py fills
+  it; null = the sample below) holds the rounds; labels are editable in the
+  deck (data-edit / TESSERA_EMBED.text, keys = CONFIG field names).
+  Without a service (the poster, the page on its own) it plays with simulated
+  phones (g.sample, g.fake).
+-->
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* the figure family's tokens (Investment / Prediction game screens): white slide, navy ink, one blue accent */
+:root{
+  --ink:#1A2326; --navy:#0D2A2F; --accent:#0F6B73;
+  --muted:#5A6467; --faint:#A7AFB1; --line:#C7CFD1; --rule:#D7DEDF;
+  --tint:#F1F5F5; --blue-tint:#E2F0F1;
+  --amber:#BF831A; --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457; --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A; --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#fff}
+body{color:var(--ink);font:16px/1.35 Manrope,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+/* the deck's logo sits at 56,36: the header starts below it */
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);
+  transform-origin:center;display:grid;grid-template-rows:150px 1fr 64px;padding:0 56px;user-select:none}
+#top{display:flex;align-items:flex-end;gap:18px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+#eyebrow{font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:700}
+#title{font-size:34px;font-weight:800;line-height:1.15;margin-top:4px;max-width:820px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#round{margin-left:auto;font-size:15px;color:var(--muted);font-weight:700}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;background:var(--tint);font-size:15px;white-space:nowrap}
+.pill b{font-size:18px}
+.num{font-variant-numeric:tabular-nums}
+/* views */
+#main{position:relative;min-height:0}
+.view{position:absolute;inset:0;padding-top:22px;opacity:0;transform:translateY(14px);pointer-events:none;
+  transition:opacity .35s,transform .45s cubic-bezier(.22,1,.36,1)}
+.view.on{opacity:1;transform:none;pointer-events:auto}
+/* lobby */
+#lobby{display:grid;grid-template-columns:260px 1fr;gap:44px}
+#joinCard{background:var(--blue-tint);border-radius:8px;padding:16px 18px;align-self:start}
+#joinHead{font-size:19px;font-weight:800;text-align:center;margin-bottom:8px}
+#join .tessera-join-qr{max-width:190px!important;background:#fff;border-radius:6px}
+#names{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;overflow:hidden;max-height:300px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:8px;background:var(--tint);
+  font-size:18px;font-weight:700;cursor:pointer;animation:pop .4s cubic-bezier(.34,1.5,.64,1) both}
+.chip:hover{background:var(--coral-tint)}
+.chip:hover::after{content:"\00d7";color:var(--coral-text);font-weight:800}
+.chip.kicked{opacity:.4;text-decoration:line-through;cursor:default}
+.chip.kicked::after{content:none}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+#lobbyHint{font-size:22px;font-weight:700;margin:0 0 16px;color:var(--ink)}
+#empty{color:var(--muted);font-size:18px}
+/* question */
+#qText{font-size:30px;font-weight:800;line-height:1.2;width:820px;margin:0 0 20px}
+#opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:820px}
+.opt{position:relative;height:84px;border-radius:8px;background:var(--tint);overflow:hidden;
+  display:flex;align-items:center;gap:14px;padding:0 18px;transition:opacity .4s,box-shadow .4s}
+.opt .bar{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--blue-tint);transition:width .9s cubic-bezier(.22,1,.36,1)}
+.opt .l{position:relative;width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;
+  font-weight:800;font-size:17px;flex:none}
+.opt .t{position:relative;font-size:21px;font-weight:700;line-height:1.2}
+.opt .n{position:relative;margin-left:auto;font-size:26px;font-weight:800;opacity:0;transition:opacity .4s}
+.opt.right{box-shadow:inset 0 0 0 2px var(--green)}
+.opt.right .bar{background:var(--green-tint)}
+.opt.right .l{background:var(--green)}
+.opt.dim{opacity:.5}
+.revealed .opt .n{opacity:1}
+#side{position:absolute;right:0;top:22px;width:300px;display:grid;gap:12px}
+.box{background:var(--tint);border-radius:8px;padding:14px 18px}
+.box h3{margin:0 0 6px;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#voted{font-size:40px;font-weight:800;line-height:1}
+#voted small{font-size:16px;color:var(--muted);font-weight:600}
+#meter{height:8px;border-radius:4px;background:var(--rule);margin-top:10px;overflow:hidden}
+#meter i{display:block;height:100%;width:0;background:var(--green);transition:width .5s}
+#buzz{font-size:26px;font-weight:800;line-height:1.2}
+#buzz.waiting{color:var(--muted);font-size:18px;font-weight:600}
+#buzz .ok{color:var(--green-text)} #buzz .no{color:var(--coral-text)}
+#closed{font-size:15px;color:var(--amber-text);font-weight:700;min-height:20px}
+/* board */
+#boardHead{font-size:28px;font-weight:800;margin:0 0 14px}
+#rows{display:grid;gap:6px;width:820px}
+.row{display:grid;grid-template-columns:48px 1fr 90px 80px;align-items:center;height:40px;padding:0 16px;border-radius:8px;
+  background:var(--tint);font-size:19px;animation:pop .4s cubic-bezier(.34,1.5,.64,1) both}
+.row .rk{font-weight:800;color:var(--muted)}
+.row .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .dl{color:var(--green-text);font-weight:700;text-align:right}
+.row .dl.neg{color:var(--coral-text)}
+.row .tt{font-weight:800;text-align:right;font-size:22px}
+.row.first{background:var(--amber-tint)} .row.first .rk{color:var(--amber-text)}
+/* foot: the lecturer's controls */
+#foot{display:flex;align-items:center;gap:12px;border-top:1px solid var(--rule)}
+button{font:inherit;color:var(--ink);background:var(--tint);border:0;border-radius:999px;
+  padding:9px 18px;cursor:pointer;font-weight:700;font-size:15px}
+button:hover{background:var(--blue-tint)}
+button.primary{background:var(--accent);color:#fff}
+button.primary:hover{background:var(--navy)}
+button.armed{background:var(--coral);color:#fff}
+button:disabled{opacity:.4;cursor:default}
+#status{margin-left:auto;color:var(--muted);font-size:14px;text-align:right;max-width:520px}
+#status.bad{color:var(--coral-text)}
+#nosdk{position:absolute;inset:0;display:none;place-items:center;text-align:center;color:var(--muted);font-size:20px;padding:80px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <header id="top">
+    <div>
+      <div id="eyebrow" data-edit="eyebrow">Live game</div>
+      <div id="title" data-edit="title">Buzz and vote</div>
+    </div>
+    <div id="round" data-no-edit></div>
+    <span class="pill" data-no-edit><b id="count" class="num">0</b> playing</span>
+  </header>
+
+  <main id="main">
+    <section id="lobby" class="view on">
+      <div id="joinCard"><div id="joinHead" data-edit="joinHead">Scan to join</div><div id="join"></div></div>
+      <div>
+        <p id="lobbyHint" data-edit="lobbyHint">Join with your name. The first question opens in a moment.</p>
+        <div id="names"><span id="empty" data-edit="empty">Nobody yet.</span></div>
+      </div>
+    </section>
+
+    <section id="question" class="view">
+      <p id="qText"></p>
+      <div id="opts"></div>
+      <div id="side">
+        <div class="box"><h3 data-edit="votedHead">Voted</h3><div id="voted" data-no-edit>0</div><div id="meter"><i></i></div></div>
+        <div class="box"><h3 data-edit="buzzHead">First on the buzzer</h3><div id="buzz" class="waiting" data-no-edit>Nobody yet</div></div>
+        <div id="closed" data-no-edit></div>
+      </div>
+    </section>
+
+    <section id="board" class="view">
+      <p id="boardHead"></p>
+      <div id="rows"></div>
+    </section>
+    <div id="nosdk" data-no-edit>The game SDK is not loaded. This page runs inside a deck (or a page that injects
+      slides/src/game-sdk.js).</div>
+  </main>
+
+  <footer id="foot">
+    <button id="next" class="primary" data-no-edit>Start round 1</button>
+    <button id="back" data-no-edit>Back</button>
+    <button id="reset" data-no-edit>Reset game</button>
+    <div id="status" data-no-edit></div>
+  </footer>
+</div>
+<script>
+'use strict';
+const CONFIG = Object.assign({
+  title: 'Buzz and vote',
+  eyebrow: 'Live game',
+  code: '',                       // the pinned bucket: a fallback when the deck gives none
+  points: { right: 1, buzzRight: 2, buzzWrong: -1 },
+  rounds: [
+    { q: 'Which share of firms said they use generative AI in at least one function in 2024?', options: ['About 1 in 5', 'About 2 in 3', 'Almost all', 'Under 1 in 10'], answer: 1 },
+    { q: 'What does a prediction market price?', options: ['A probability', 'A company', 'A vote count', 'A tax'], answer: 0 },
+    { q: 'Which is NOT a classic barrier to adopting a new technology?', options: ['Switching costs', 'Network effects', 'Complementary assets', 'Free shipping'], answer: 3 },
+  ],
+}, /*CONFIG*/null/*CONFIG*/ || {});
+
+const $ = (id) => document.getElementById(id);
+const E = window.TESSERA_EMBED || {};
+const T = (k, d) => (E.text ? E.text(k, d) : d);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LETTERS = 'ABCDEFGH';
+const N = CONFIG.rounds.length;
+$('title').textContent = T('title', CONFIG.title);
+$('eyebrow').textContent = T('eyebrow', CONFIG.eyebrow);
+
+function localFit() {               // only when the SDK is missing; TesseraGame.fit otherwise
+  if (!window.innerWidth || !window.innerHeight) return;
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
+  $('stage').style.transform = `translate(-50%,-50%) scale(${s})`;
+}
+
+if (!window.TesseraGame) {
+  addEventListener('resize', localFit); addEventListener('load', localFit); localFit();
+  if (window.ResizeObserver) new ResizeObserver(localFit).observe(document.documentElement);
+  setInterval(localFit, 1000);
+  $('nosdk').style.display = 'grid';
+  $('lobby').classList.remove('on');
+  $('foot').style.visibility = 'hidden';
+} else {
+  TesseraGame.fit($('stage'), 1280, 720);
+  start();
+}
+
+function start() {
+  const g = TesseraGame.connect({ code: CONFIG.code || undefined });
+  TesseraGame.joinBox($('join'), { fg: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() });
+  // What this screen published last, until the next read brings it back: a quick second click must
+  // build on it (and compare-and-set against its v), not on the state from before the first.
+  let mine = null;
+  const S = () => (mine && mine.v > (g.v === undefined ? -1 : g.v) ? mine.state : g.state) || {};
+  let busy = false, armed = 0;
+
+  const round = (r) => {
+    const R = CONFIG.rounds[r];
+    return { q: T(`rounds.${r}.q`, R.q), options: R.options.map((o, i) => T(`rounds.${r}.options.${i}`, o)) };
+  };
+  const players = () => g.players.filter((p) => !p.kicked);
+  const nameOf = (pid) => (g.players.find((p) => p.pid === pid) || {}).name || 'Someone';
+  const buzzOf = (r) => {           // the first move on the shared buzzer slot
+    const m = g.moves.filter((x) => x.k === `b${r}`).sort((a, b) => a.seq - b.seq)[0];
+    return m ? m.pid : null;
+  };
+  const votes = (r) => {            // pid -> option index (each phone's latest vote)
+    const out = new Map();
+    for (const [, m] of g.latest(`v${r}`)) out.set(m.pid, m.data);
+    return out;
+  };
+
+  function say(t, bad) { $('status').textContent = t || ''; $('status').classList.toggle('bad', !!bad); }
+
+  async function publish(state, accept, priv) {
+    busy = true; render();
+    try {
+      const r = await g.publish(state, { accept, private: priv, ifV: mine && mine.v > g.v ? mine.v : g.v });
+      mine = { v: r.v, state };
+      say('');
+    } catch (e) {
+      if (e.status === 409) say('Another screen changed the game: showing its state.', true);
+      else if (e.status === 401) say('Enter the lecturer key in the deck to run the game.', true);
+      else say('Could not reach the service: ' + e.message, true);
+      g.refresh();
+    } finally { busy = false; render(); }
+  }
+
+  // ── the steps
+  function openRound(r) {
+    const s = S(), scores = s.scores || {};
+    publish({ phase: 'question', r, n: N, q: round(r), scores, before: scores, top: s.top || [] }, { moves: [`v${r}`, `b${r}`] });
+  }
+  function closeRound() { publish(Object.assign({}, S(), { phase: 'closed' }), { moves: [] }); }
+  function reveal() {
+    const s = S(), r = s.r, R = CONFIG.rounds[r], P = CONFIG.points;
+    const vs = votes(r), bz = buzzOf(r), before = s.before || {}, scores = Object.assign({}, before);
+    const counts = R.options.map(() => 0), deltas = {};
+    for (const p of players()) {
+      const pick = vs.has(p.pid) ? vs.get(p.pid) : null;
+      if (pick !== null && counts[pick] !== undefined) counts[pick]++;
+      let d = pick === R.answer ? P.right : 0;
+      if (bz === p.pid) d += pick === R.answer ? P.buzzRight : P.buzzWrong;
+      deltas[p.pid] = d;
+      scores[p.pid] = (before[p.pid] || 0) + d;
+    }
+    const order = players().map((p) => p.pid).sort((a, b) => scores[b] - scores[a] || nameOf(a).localeCompare(nameOf(b)));
+    const priv = {};
+    order.forEach((pid, i) => {
+      const pick = vs.has(pid) ? vs.get(pid) : null;
+      priv[pid] = { r, pick, right: pick === R.answer, buzz: bz === pid, delta: deltas[pid], total: scores[pid],
+                    rank: 1 + order.findIndex((q) => scores[q] === scores[pid]), of: order.length, last: r === N - 1 };
+    });
+    const top = order.slice(0, 8).map((pid) => ({ name: nameOf(pid), total: scores[pid], delta: deltas[pid] }));
+    const result = { counts, answer: R.answer, buzz: bz ? { name: nameOf(bz), right: vs.get(bz) === R.answer } : null };
+    publish(Object.assign({}, s, { phase: 'reveal', scores, result, top }), { moves: [] }, priv);
+  }
+  function board() { publish(Object.assign({}, S(), { phase: S().r === N - 1 ? 'final' : 'board' }), { moves: [] }); }
+
+  const NEXT = {
+    lobby: ['Start round 1', () => openRound(0)],
+    question: ['Close voting', closeRound],
+    closed: ['Reveal', reveal],
+    reveal: ['Leaderboard', board],
+    board: ['Next round', () => openRound(S().r + 1)],
+    final: ['Play again', () => resetGame(true)],
+  };
+  $('next').onclick = () => { const f = NEXT[S().phase || 'lobby']; if (f && !busy) f[1](); };
+  $('back').onclick = () => {        // one step back, never undoing a reveal's scores twice
+    const s = S();
+    if (busy || !s.phase || s.phase === 'lobby') return;
+    if (s.phase === 'question') {
+      return s.r === 0 ? publish({ phase: 'lobby', scores: {} }, { moves: [] })
+        : publish(Object.assign({}, s, { phase: 'board', r: s.r - 1, scores: s.before }), { moves: [] });
+    }
+    if (s.phase === 'closed') return publish(Object.assign({}, s, { phase: 'question' }), { moves: [`v${s.r}`, `b${s.r}`] });
+    if (s.phase === 'reveal') return publish(Object.assign({}, s, { phase: 'closed', scores: s.before }), { moves: [] });
+    publish(Object.assign({}, s, { phase: 'reveal' }), { moves: [] });
+  };
+  function resetGame(now) {
+    if (!now && !armed) {
+      armed = setTimeout(() => { armed = 0; render(); }, 3000);
+      say('Click Reset again to wipe every player and answer.'); render(); return;
+    }
+    clearTimeout(armed); armed = 0;
+    busy = true;
+    mine = null;                     // state {} after a reset is the lobby
+    g.reset().then(() => { say(''); }, (e) => say('Reset failed: ' + e.message, true))
+      .then(() => { busy = false; render(); });
+  }
+  $('reset').onclick = () => resetGame(false);
+  $('names').onclick = (ev) => {     // click a name to remove it (a joke, a duplicate)
+    const c = ev.target.closest('.chip');
+    if (c && !c.classList.contains('kicked') && !busy) g.kick(c.dataset.pid).then(render).catch((e) => say(e.message, true));
+  };
+
+  // ── drawing
+  let shownR = -1;
+  function render() {
+    const s = S(), ph = s.phase || 'lobby';
+    for (const v of ['lobby', 'question', 'board']) {
+      const on = v === ph || (v === 'question' && (ph === 'closed' || ph === 'reveal')) || (v === 'board' && ph === 'final');
+      $(v).classList.toggle('on', on);
+    }
+    $('count').textContent = g.count;
+    $('round').textContent = ph === 'lobby' ? '' : ph === 'final' ? 'Final' : `Round ${s.r + 1} of ${s.n || N}`;
+    const nx = NEXT[ph];
+    $('next').textContent = nx ? (ph === 'board' && s.r + 1 < N ? `Start round ${s.r + 2}` : nx[0]) : '…';
+    $('next').disabled = busy || !g.hasKey || g.state === undefined;
+    $('back').disabled = busy || ph === 'lobby' || !g.hasKey;
+    $('reset').classList.toggle('armed', !!armed);
+    $('reset').disabled = busy || !g.hasKey;
+    if (!g.hasKey) say('Enter the lecturer key in the deck (present mode) to run the game.', true);
+    else if (g.error && g.error.status !== 409) say('Offline: ' + g.error.message, true);
+
+    if (ph === 'lobby') {
+      const ps = g.players;
+      const box = $('names');
+      const have = new Set([...box.querySelectorAll('.chip')].map((c) => c.dataset.pid + (c.classList.contains('kicked') ? 'k' : '')));
+      const want = new Set(ps.map((p) => p.pid + (p.kicked ? 'k' : '')));
+      if (have.size !== want.size || [...want].some((k) => !have.has(k))) {
+        box.innerHTML = ps.length ? ps.map((p) => `<span class="chip${p.kicked ? ' kicked' : ''}" data-pid="${p.pid}" data-no-edit>${esc(p.name || 'Player')}</span>`).join('')
+          : `<span id="empty" data-edit="empty">${esc(T('empty', 'Nobody yet.'))}</span>`;
+      }
+    }
+    if (ph === 'question' || ph === 'closed' || ph === 'reveal') {
+      const r = s.r, q = s.q || round(r);
+      if (shownR !== r) {
+        shownR = r;
+        $('qText').textContent = q.q;
+        $('qText').setAttribute('data-edit', `rounds.${r}.q`);
+        $('opts').innerHTML = q.options.map((o, i) =>
+          `<div class="opt" data-i="${i}"><div class="bar"></div><div class="l">${LETTERS[i]}</div><div class="t" data-edit="rounds.${r}.options.${i}">${esc(o)}</div><div class="n" data-no-edit>0</div></div>`).join('');
+      }
+      const vs = votes(r), total = players().length;
+      $('voted').innerHTML = `${vs.size} <small>of ${total}</small>`;
+      $('meter').firstElementChild.style.width = total ? `${100 * vs.size / total}%` : '0';
+      const bz = ph === 'reveal' ? (s.result && s.result.buzz) : (buzzOf(r) ? { name: nameOf(buzzOf(r)) } : null);
+      $('buzz').classList.toggle('waiting', !bz);
+      $('buzz').innerHTML = !bz ? 'Nobody yet' : esc(bz.name) + (ph === 'reveal'
+        ? (bz.right ? ` <span class="ok">right, +${CONFIG.points.buzzRight}</span>` : ` <span class="no">wrong, ${CONFIG.points.buzzWrong}</span>`) : '');
+      $('closed').textContent = ph === 'question' ? '' : ph === 'closed' ? 'Voting closed.' : '';
+      const rev = ph === 'reveal' && s.result;
+      $('question').classList.toggle('revealed', !!rev);
+      const counts = rev ? s.result.counts : null, max = rev ? Math.max(1, ...counts) : 1;
+      document.querySelectorAll('.opt').forEach((el, i) => {
+        el.classList.toggle('right', !!rev && i === s.result.answer);
+        el.classList.toggle('dim', !!rev && i !== s.result.answer);
+        el.querySelector('.bar').style.width = rev ? `${100 * counts[i] / max}%` : '0';
+        el.querySelector('.n').textContent = rev ? counts[i] : '';
+      });
+    } else shownR = -1;
+    if (ph === 'board' || ph === 'final') {
+      $('boardHead').textContent = ph === 'final' ? T('finalHead', 'Final standings') : T('boardHead', 'Leaderboard');
+      $('boardHead').setAttribute('data-edit', ph === 'final' ? 'finalHead' : 'boardHead');
+      const top = s.top || [];
+      const sig = JSON.stringify([ph, top]);
+      if ($('rows').dataset.sig !== sig) {
+        $('rows').dataset.sig = sig;
+        let rank = 0, prev = null;
+        $('rows').innerHTML = top.map((p, i) => {
+          if (p.total !== prev) { rank = i + 1; prev = p.total; }
+          return `<div class="row${rank === 1 ? ' first' : ''}" style="animation-delay:${i * 60}ms" data-no-edit><span class="rk">${rank}</span><span class="nm">${esc(p.name)}</span>`
+            + `<span class="dl${p.delta < 0 ? ' neg' : ''}">${ph === 'final' ? '' : (p.delta > 0 ? '+' : '') + p.delta}</span><span class="tt">${p.total}</span></div>`;
+        }).join('') || `<div class="row" data-no-edit><span></span><span class="nm">Nobody scored yet.</span></div>`;
+      }
+    }
+  }
+  g.onState(render);
+  g.onMoves(render);
+  if (g.onPlayers) g.onPlayers(render);
+  setInterval(render, 1000);         // count, key and error status
+  window.TESSERA_REFIT = render;
+
+  // ── sample mode: simulated phones, so the poster and a page opened on its own play by themselves
+  if (g.sample) {
+    const fakes = ['Ana', 'Marc', 'Liam', 'Sofia', 'Jordi', 'Mei', 'Omar'].map((n) => g.fake(n));
+    Promise.all(fakes.map((f) => f.join())).then(() => g.refresh());
+    let played = -1;
+    g.onState((s) => {
+      if (!s || s.phase !== 'question' || played === s.r) return;
+      played = s.r;
+      const R = CONFIG.rounds[s.r];
+      fakes.forEach((f, i) => setTimeout(() => {
+        const pick = Math.random() < 0.6 ? R.answer : Math.floor(Math.random() * R.options.length);
+        f.move(`v${s.r}`, pick).catch(() => {});
+        if (i === 2 || Math.random() < 0.2) f.move(`b${s.r}`, 1, { mode: 'first', slot: 'room' }).catch(() => {});
+      }, 300 + Math.random() * 2500));
+    });
+    say('Sample mode: simulated phones. In the deck the room plays.');
+  }
+}
+</script>
+</body>
+</html>

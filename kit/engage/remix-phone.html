@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Improve the slide</title>
+<!-- Interactive title: phone side (engage). The deck ships this page to every
+     phone as the `activity` of the hidden poll under the remix.html embed.
+     1. Check in (attendance): POST /api/answer {code, name, question,
+        text: {"v":1,"t":"in","pid","name","email"}}.
+     2. Ideas for the slide: POST /api/answer {code, name, question,
+        text: {"v":1,"t":"idea","pid","name","iid","idea"}}; one every COOLDOWN s.
+        The screen picks them up and has Haiku apply them.
+     3. What became of them, and the slide as it is now: GET /api/remix?c=CODE&v=VER
+        every 8 s (the slide's HTML only when it changed).
+     pid is made once per page load. No storage, no CDN, no fonts (sandboxed iframe,
+     opaque origin). Test from disk: open with ?fake (or without TESSERA_ACTIVITY).
+     Its title card is the screen's: the deck publishes this page with the screen
+     embed's reworded strings in front (TESSERA_EMBED.texts, keys lock.title and
+     lock.subtitle as in remix.html), and TX() lets them win over LOCK. -->
+<style>
+:root{--ink:#1A2326;--blue:#0F6B73;--navy:#0D2A2F;--muted:#5A6467;--panel:#F1F5F5;--line:#D7DEDF;--ok:#2E9E6A;--no:#D63A3F;--amber:#B97A12;--soft:#E2F0F1}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#fff;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+body{padding:16px 16px 28px;max-width:480px;margin:0 auto;font-size:16px;line-height:1.4}
+button{font:inherit;color:inherit;cursor:pointer;border-radius:0}
+#fake{font-size:12px;font-weight:700;color:#8E5F00;background:#FFF6E3;padding:6px 10px;margin-bottom:12px;display:none}
+#eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--blue);text-transform:uppercase}
+h1{font-size:25px;font-weight:800;line-height:1.2;margin:4px 0 6px;letter-spacing:-.01em}
+.lead{color:var(--muted);font-size:15px;margin-bottom:16px}
+h2{font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+section{margin-top:22px}
+label{display:block;font-size:14px;font-weight:700;margin:12px 0 6px}
+input,textarea{width:100%;font:inherit;font-size:16px;line-height:1.4;padding:11px 12px;border:1.5px solid #C7CFD1;border-radius:0;background:#fff;color:var(--ink);-webkit-appearance:none}
+input:focus,textarea:focus{outline:none;border-color:var(--blue)}
+textarea{min-height:92px;max-height:200px;resize:none}
+.go{width:100%;min-height:52px;margin-top:14px;border:0;background:var(--blue);color:#fff;font-weight:800;font-size:17px}
+.go:disabled{opacity:.35}
+.go:not(:disabled):active{transform:scale(.98)}
+.err{color:var(--no);font-weight:700;font-size:14px;margin-top:8px}
+.err:empty{display:none}
+.small{font-size:13px;color:var(--muted);margin-top:8px}
+#here{display:none;align-items:center;gap:12px;padding:14px;background:#E9F6EF;border-left:4px solid var(--ok)}
+#here .tick{width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-weight:800;font-size:18px}
+#here b{display:block;font-size:16px}
+#here span{font-size:13px;color:var(--muted)}
+#improve{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chips button{border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:600;padding:7px 11px;min-height:38px;text-align:left}
+.chips button:active{background:var(--soft)}
+#count{font-size:12px;color:var(--muted);text-align:right;margin-top:4px}
+#preview{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border:1.5px solid var(--line);background:#fff}
+#preview iframe{position:absolute;left:0;top:0;width:1280px;height:720px;border:0;transform-origin:0 0;pointer-events:none}
+#preview .none{position:absolute;inset:0;display:grid;place-items:center;font-size:14px;color:var(--muted);text-align:center;padding:16px}
+#ver{font-size:12px;color:var(--muted);margin-top:6px}
+#mine .it{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--line)}
+#mine .it:first-child{border-top:0}
+#mine .dot{width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:var(--line);margin-top:1px}
+#mine .q .dot{background:#fff;border:2px solid var(--amber);color:var(--amber)}
+#mine .ok .dot{background:var(--ok)}
+#mine .no .dot{background:var(--no)}
+#mine .tx{flex:1;font-size:15px;line-height:1.35;word-break:break-word}
+#mine .st{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+#mine .ok .st{color:var(--ok);font-weight:700}
+#mine .no .st{color:var(--no);font-weight:700}
+footer{margin-top:22px;font-size:12px;line-height:1.45;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+</style></head>
+<body>
+<div id="fake">Test mode: nothing is sent.</div>
+<div id="eyebrow">Check in</div>
+<h1 id="title">Check in</h1>
+<p class="lead" id="lead">Your attendance for today. Then you get to change the slide on the screen.</p>
+
+<section id="checkin">
+  <label for="nm">Full name</label>
+  <input id="nm" autocomplete="name" maxlength="60" placeholder="First and last name">
+  <label for="em">Email</label>
+  <input id="em" type="email" inputmode="email" autocomplete="email" maxlength="80" placeholder="name@example.com">
+  <button class="go" id="inbtn" type="button">Check in</button>
+  <div class="err" id="inerr"></div>
+</section>
+
+<div id="here"><div class="tick">✓</div><div><b id="herename"></b><span id="heretime"></span></div></div>
+
+<section id="improve">
+  <h2>Improve the slide</h2>
+  <div class="chips" id="chips"></div>
+  <textarea id="idea" maxlength="280" placeholder="Tell the AI what to change. Anything goes, except wiping it blank. The title and name stay."></textarea>
+  <div id="count">0 / 280</div>
+  <button class="go" id="send" type="button" disabled>Send to the slide</button>
+  <div class="err" id="senderr"></div>
+  <div class="small" id="sendnote"></div>
+
+  <section>
+    <h2>Your ideas</h2>
+    <div id="mine"><div class="small">Nothing sent yet.</div></div>
+  </section>
+
+  <section>
+    <h2>The slide now</h2>
+    <div id="preview"><div class="none">The slide appears here once the room starts editing.</div></div>
+    <div id="ver"></div>
+  </section>
+</section>
+
+<footer>Your name and email are kept for attendance. Ideas are shown on the screen with your first name and edited by an AI model (Claude Haiku). Keep it friendly.</footer>
+
+<script>
+const HOST = window.TESSERA_ACTIVITY || null;
+const FAKE = !HOST || new URLSearchParams(location.search).has('fake');
+const CODE = (HOST && HOST.code) || '';
+const QUESTION = 'Interactive title';
+const COOLDOWN = 12;
+const PID = Array.from({ length: 8 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.random() * 36 | 0]).join('');
+const $ = id => document.getElementById(id);
+// the locked title card the screen draws over the slide (make_remix.py fills it; <br> is the only tag)
+const LOCK = /*LOCK*/{"title": "Welcome", "subtitle": "{{date}}"}/*ENDLOCK*/;
+// the wordmark drawn in the logo plate of the preview (make_remix.py --logo-text; none: no logo plate)
+const MARK = /*MARK*/""/*ENDMARK*/;
+/* the deck's reworded strings (TESSERA_EMBED.texts, put in front of this page when it is
+   published) win over LOCK; same keys and the same plain-text form as the screen */
+const TX = (k, d) => { const E = window.TESSERA_EMBED, T = E && E.texts;
+  d = d == null ? '' : d;
+  return E && typeof E.text === 'function' ? E.text(k, d) : T && Object.prototype.hasOwnProperty.call(T, k) ? T[k] : d; };
+const plain = h => { const t = document.createElement('template'); t.innerHTML = String(h || '').replace(/<br\s*\/?>/gi, '\n'); return t.content.textContent; };
+const asHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/\n/g, '<br>');
+function lockCard() {
+  // as the screen draws it: logo, title, gold rule and name on white plates, one compact left column (the QR card under them)
+  const d = new Date(), date = `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`;
+  const title = asHtml(TX('lock.title', plain(LOCK.title))), sub = asHtml(TX('lock.subtitle', plain(LOCK.subtitle)));
+  const plate = (x, y, w, h, inner) => `<div style="all:initial;position:fixed!important;left:${x}px!important;top:${y}px!important;width:${w}px!important;height:${h}px!important;`
+    + `z-index:2147483647!important;background:#fff!important;opacity:1!important;transform:none!important;filter:none!important;display:block!important">${inner}</div>`;
+  return (MARK ? plate(40, 28, 136, 58, `<div style="all:initial;position:absolute;left:12px;top:16px;font:700 30px/1 Georgia,serif;color:#0D2A2F">${asHtml(MARK)}</div>`) : '')
+    + plate(40, 100, 270, 66, `<div style="all:initial;position:absolute;left:12px;top:8px;width:246px;font:400 38px/1.12 Georgia,serif;color:#0D2A2F">${title}</div>`)
+    + plate(40, 166, 270, 64, '<div style="all:initial;position:absolute;left:14px;top:10px;width:64px;height:3px;background:#BF831A"></div>'
+      + `<div style="all:initial;position:absolute;left:14px;top:24px;width:246px;font:600 20px/1.3 sans-serif;color:#0D2A2F">${sub.replace(/\{\{date\}\}/g, date)}</div>`)
+    + plate(40, 250, 270, 390, '<div style="all:initial;position:absolute;left:17px;top:40px;width:236px;height:236px;background:#E9ECF3"></div>');
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+if (FAKE) $('fake').style.display = 'block';
+
+const IDEAS = [
+  'Make it look like a 90s website',
+  'Add a rocket taking off',
+  'Dark mode with neon colours',
+  'Make the squares wobble',
+  'Add confetti falling',
+  'Turn it into a retro video game screen',
+  'Add a robot waving hello',
+  'Add a comic-book speech bubble',
+  'Add a sunset in the background',
+  'Make everything spin slowly',
+  'Add our class motto',
+  'Make it look like a newspaper front page',
+];
+
+/* ---------- the server ---------- */
+async function post(text, name) {
+  if (FAKE) { await wait(300); return { ok: true }; }
+  let r;
+  try {
+    r = await fetch('/api/answer', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: CODE, text, name, question: QUESTION }) });
+  } catch (e) { throw new Error('No connection. Check your Wi-Fi and try again.'); }
+  let d = {};
+  try { d = await r.json(); } catch (e) {}
+  if (!r.ok || d.error) throw new Error(d.closed ? 'This activity is closed.' : (d.error || 'Something went wrong (' + r.status + '). Try again.'));
+  return d;
+}
+
+/* ---------- 1. check in ---------- */
+let me = null;
+function inValid() {
+  const n = $('nm').value.trim().replace(/\s+/g, ' '), e = $('em').value.trim().toLowerCase();
+  if (n.split(' ').length < 2 || n.length < 4) return { err: 'Type your first and last name.' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { err: 'Type your email address.' };
+  return { name: n, email: e };
+}
+$('inbtn').onclick = async () => {
+  const v = inValid();
+  $('inerr').textContent = v.err || '';
+  if (v.err) return;
+  $('inbtn').disabled = true; $('inbtn').textContent = 'Checking in…';
+  try {
+    await post(JSON.stringify({ v: 1, t: 'in', pid: PID, name: v.name, email: v.email }), v.name);
+    me = v;
+    const t = new Date();
+    $('herename').textContent = `You're in, ${v.name.split(' ')[0]}`;
+    $('heretime').textContent = `Checked in at ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')} as ${v.email}`;
+    $('checkin').style.display = 'none';
+    $('here').style.display = 'flex';
+    $('improve').style.display = 'block';
+    $('title').textContent = 'Make this slide better';
+    $('lead').textContent = 'Every idea goes to an AI that rewrites the slide on the screen, live. Anything goes, except wiping it blank; the title and the lecturer’s name are locked.';
+    poll();
+  } catch (e) {
+    $('inerr').textContent = e.message;
+    $('inbtn').disabled = false; $('inbtn').textContent = 'Check in';
+  }
+};
+
+/* ---------- 2. ideas ---------- */
+(function chips() {
+  const pick = IDEAS.slice().sort(() => Math.random() - 0.5).slice(0, 4);
+  for (const t of pick) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = t;
+    b.onclick = () => { $('idea').value = t; paintSend(); $('idea').focus(); };
+    $('chips').appendChild(b);
+  }
+})();
+let coolUntil = 0, sending = false;
+const mine = [];   // {iid, idea, st: 'q'|'ok'|'no', why, ver}
+function paintSend() {
+  const n = $('idea').value.trim().length;
+  $('count').textContent = `${$('idea').value.length} / 280`;
+  const left = Math.ceil((coolUntil - Date.now()) / 1000);
+  $('send').disabled = sending || !n || left > 0;
+  $('send').textContent = left > 0 ? `Next idea in ${left} s` : 'Send to the slide';
+}
+$('idea').addEventListener('input', paintSend);
+setInterval(paintSend, 500);
+$('send').onclick = async () => {
+  const idea = $('idea').value.trim().replace(/\s+/g, ' ').slice(0, 280);
+  if (!idea || !me) return;
+  sending = true; paintSend(); $('senderr').textContent = '';
+  const iid = PID + Date.now().toString(36).slice(-5);
+  try {
+    await post(JSON.stringify({ v: 1, t: 'idea', pid: PID, name: me.name, iid, idea }), me.name);
+    mine.unshift({ iid, idea, st: 'q', why: '' });
+    $('idea').value = '';
+    coolUntil = Date.now() + COOLDOWN * 1000;
+    $('sendnote').textContent = 'Sent. Watch the screen.';
+    paintMine();
+    if (FAKE) fakeResult(iid);
+  } catch (e) {
+    $('senderr').textContent = e.message;
+  } finally { sending = false; paintSend(); }
+};
+function paintMine() {
+  const box = $('mine');
+  if (!mine.length) return;
+  box.innerHTML = '';
+  for (const m of mine) {
+    const row = document.createElement('div'); row.className = 'it ' + m.st;
+    const dot = document.createElement('div'); dot.className = 'dot'; dot.textContent = m.st === 'ok' ? '✓' : m.st === 'no' ? '✕' : '…';
+    const tx = document.createElement('div'); tx.className = 'tx'; tx.textContent = m.idea;
+    const st = document.createElement('span'); st.className = 'st';
+    st.textContent = m.st === 'ok' ? `On the screen${m.ver ? ' · version ' + m.ver : ''}` : m.st === 'no' ? `Skipped: ${m.why || 'not applied'}` : 'In the queue';
+    tx.appendChild(st); row.append(dot, tx); box.appendChild(row);
+  }
+}
+
+/* ---------- 3. what became of them, and the slide ---------- */
+let ver = 0, frame = null;
+function drawPreview(html) {
+  const box = $('preview');
+  if (!frame) {
+    box.innerHTML = '';
+    frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', '');           // no scripts at all: a picture of the slide
+    frame.setAttribute('tabindex', '-1');
+    box.appendChild(frame);
+    const fit = () => { frame.style.transform = `scale(${box.clientWidth / 1280})`; };
+    fit(); addEventListener('resize', fit);
+  }
+  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`
+    + '<style>html,body{margin:0;width:1280px;height:720px;overflow:hidden}img[src^="logo:"]{visibility:hidden}</style>';
+  let s = String(html);
+  s = /<head[^>]*>/i.test(s) ? s.replace(/<head[^>]*>/i, m => m + csp) : csp + s;
+  s = /<\/body\s*>/i.test(s) ? s.replace(/<\/body\s*>(?![\s\S]*<\/body\s*>)/i, () => lockCard() + '</body>') : s + lockCard();
+  frame.srcdoc = s;
+}
+let polling = false;
+async function poll() {
+  if (FAKE || polling || document.visibilityState !== 'visible') return;
+  polling = true;
+  try {
+    const r = await fetch(`/api/remix?c=${encodeURIComponent(CODE)}&v=${ver}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.ver && d.html) { drawPreview(d.html); ver = d.ver; $('ver').textContent = `Version ${ver}`; }
+    let changed = false;
+    for (const e of d.log || []) {
+      const m = mine.find(x => x.iid === e.iid);
+      if (!m) continue;
+      const st = e.ok ? 'ok' : 'no';
+      if (m.st !== st || m.why !== (e.why || '')) { m.st = st; m.why = e.why || ''; m.ver = e.ver; changed = true; }
+    }
+    if (changed) paintMine();
+  } catch (e) { /* the next round tries again */ }
+  finally { polling = false; }
+}
+setInterval(poll, 8000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
+
+/* ---------- test mode ---------- */
+async function fakeResult(iid) {
+  await wait(2500);
+  const m = mine.find(x => x.iid === iid); if (!m) return;
+  if (/blank|delete|remove all|empty/i.test(m.idea)) { m.st = 'no'; m.why = 'it would leave the slide blank'; }
+  else { m.st = 'ok'; m.ver = ++ver; drawPreview(`<html><head><style>body{background:linear-gradient(135deg,#0D2A2F,#0F6B73);color:#fff;font-family:sans-serif}h1{position:absolute;left:64px;top:400px;font-size:58px;font-weight:400}</style></head><body><h1>Your idea, applied ✨</h1></body></html>`); $('ver').textContent = `Version ${ver}`; }
+  paintMine();
+}
+</script>
+</body></html>

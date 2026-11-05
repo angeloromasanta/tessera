@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Living swarm cover</title>
+<style>
+:root{
+  --ink:#1A2326;--navy:#0D2A2F;--accent:#0F6B73;--sky:#4E9CA3;
+  --line:#C7CFD1;--rule:#D7DEDF;--tint:#F1F5F5;--blue-tint:#E2F0F1;
+  --amber:#BF831A;--amber-text:#8E5F00;--green:#3B9457;--green-text:#2B7041;
+}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#fff}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+</style></head><body><canvas aria-label="AI agents continuously building, inspecting and correcting a changing field of hexagonal tiles"></canvas>
+<script>
+// A continuous task simulation, independent of presentation text and clicks.
+// One full-slide field. Native text sits in quiet areas of the same circuit board.
+const C=(()=>{const s=getComputedStyle(document.documentElement),o={};
+  for(const k of ['ink','navy','accent','sky','line','rule','tint','blue-tint','amber','amber-text','green','green-text'])
+    o[k]=s.getPropertyValue('--'+k).trim();return o;})();
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const W=1280,H=720,R=25,DX=Math.sqrt(3)*R,DY=1.5*R;
+let seed=8127;
+const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+const mix=(a,b,u)=>a+(b-a)*u,clamp=u=>Math.max(0,Math.min(1,u));
+const ease=u=>{u=clamp(u);return u*u*(3-2*u);};
+const point=(a,c,b,u)=>({x:(1-u)**2*a.x+2*(1-u)*u*c.x+u*u*b.x,
+  y:(1-u)**2*a.y+2*(1-u)*u*c.y+u*u*b.y});
+// Accent tones only; tone deepens from the ragged edge toward the right side.
+// Green stays reserved for the agents, amber for their signals.
+const boundaryAt=y=>y<110?490:y>660?470:655+45*Math.sin(y*.013);
+function tone(depth){
+  const r=random()*.8+depth*.45;
+  return r<.34?C['blue-tint']:r<.62?C.sky:r<1.02?C.accent:C.navy;
+}
+const tiles=[];
+for(let row=-1;row<21;row++)for(let col=0;col<31;col++){
+  const x=col*DX+(row%2)*DX/2+12,y=row*DY+5,boundary=boundaryAt(y);
+  if(x<boundary)continue;
+  const depth=clamp((x-boundary)/(W-boundary));
+  tiles.push({x,y,depth,present:false,alpha:0,reserved:false,color:tone(depth),flash:-100});
+}
+const usable=tiles.filter(c=>c.x<W+10&&c.y>-R&&c.y<H+R);
+// Background lattice: every cell of the slide, text side included. Invisible
+// at rest; only the cells a ripple is passing over are drawn. Uses no random(), so
+// the simulation's sequence is untouched.
+const grid=[];
+for(let row=-1;row<21;row++)for(let col=-1;col<32;col++)
+  grid.push({x:col*DX+(row%2)*DX/2+12,y:row*DY+5});
+const RIPPLE=9,frac=v=>v-Math.floor(v);
+const agents=Array.from({length:22},(_,id)=>({id,x:W+35,y:40+random()*640,
+  pulse:-100,task:null}));
+const network=Array.from({length:30},()=>({x:random()*W,y:random()*H,p:random()*6.28}));
+const circuits=[
+  [[208,65],[386,65],[417,96],[570,96],[610,135],[1020,135]],
+  [[28,112],[28,523],[315,523],[346,554],[580,554],[630,504],[1020,504]],
+  [[67,688],[421,688],[446,663],[832,663],[872,623],[1240,623]],
+  [[559,20],[559,94],[598,133],[598,380],[630,412],[1140,412]],
+  [[450,104],[450,132],[1160,132],[1195,167],[1195,565]],
+  [[1270,58],[1080,58],[1040,98],[1040,290],[930,290],[900,320],[900,690]]
+];
+const chips=[{x:559,y:65,s:26},{x:582,y:554,s:25},{x:421,y:688,s:23},
+  {x:1040,y:290,s:30},{x:1195,y:168,s:28}];
+const signals=[];
+// Pointer response is paint-only: it bends where things are drawn, never the
+// simulation state or its random sequence. `clock` is real seconds since load;
+// `time` is the simulation's own (warm-started, slowed under reduced motion).
+const REACH=160,PUSH=12,IDLE=4;
+const ptr={x:0,y:0,tx:0,ty:0,s:0,on:false,seen:-100};
+const bursts=[];
+let clock=0;
+function warp(x,y){
+  if(ptr.s<.01)return {x,y,k:0};
+  const dx=x-ptr.x,dy=y-ptr.y,d=Math.hypot(dx,dy)||1,k=ease(1-d/REACH)*ptr.s;
+  return {x:x+dx/d*PUSH*k,y:y+dy/d*PUSH*k,k};
+}
+const toSlide=e=>({x:e.clientX*W/innerWidth,y:e.clientY*H/innerHeight});
+addEventListener('pointermove',e=>{const p=toSlide(e);ptr.tx=p.x;ptr.ty=p.y;
+  if(ptr.s<.01){ptr.x=p.x;ptr.y=p.y;}ptr.on=true;ptr.seen=clock;});
+document.documentElement.addEventListener('pointerleave',()=>{ptr.on=false;});
+addEventListener('pointerdown',e=>{const p=toSlide(e);bursts.push({x:p.x,y:p.y,t:clock,n:bursts.length+101});
+  if(bursts.length>4)bursts.shift();});
+let time=0,last=0,lastSignal=0,actions={build:0,remove:0,inspect:0};
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function hexPath(g,x,y,r){g.beginPath();
+  for(let k=0;k<6;k++){const a=(k*60-90)*Math.PI/180;
+    const px=x+r*Math.cos(a),py=y+r*Math.sin(a);k?g.lineTo(px,py):g.moveTo(px,py);}
+  g.closePath();}
+function hex(x,y,r,color,alpha=1){
+  ctx.globalAlpha=alpha;ctx.fillStyle=color;hexPath(ctx,x,y,r);ctx.fill();ctx.globalAlpha=1;
+}
+function rounded(g,x,y,w,h,r,color){g.fillStyle=color;g.beginPath();g.roundRect(x,y,w,h,r);g.fill();}
+const routeLengths=circuits.map(route=>{
+  const lengths=route.slice(1).map((p,i)=>Math.hypot(p[0]-route[i][0],p[1]-route[i][1]));
+  return {lengths,total:lengths.reduce((a,b)=>a+b,0)};});
+// Everything that never moves (the white field) is painted
+// once per resize on a second canvas BEHIND the live one; the compositor stacks
+// them, so a frame only clears and redraws what moves.
+const still=document.createElement('canvas'),sctx=still.getContext('2d');
+still.setAttribute('aria-hidden','true');document.body.prepend(still);
+function paintStill(){
+  still.width=canvas.width;still.height=canvas.height;
+  sctx.setTransform(still.width/W,0,0,still.height/H,0,0);
+  sctx.fillStyle='#FFFFFF';sctx.fillRect(0,0,W,H);
+}
+function resize(){const dpr=Math.min(devicePixelRatio||1,2);
+  canvas.width=Math.round(innerWidth*dpr);canvas.height=Math.round(innerHeight*dpr);paintStill();}
+addEventListener('resize',resize);resize();
+function chooseTask(a){
+  const filled=usable.filter(c=>c.present).length/usable.length;
+  // Feedback maintains a living field: at high coverage removals dominate.
+  const removal=clamp((filled-.57)/.19),roll=random();
+  let kind=filled<.12?'build':roll<.23?'inspect':random()<removal?'remove':'build';
+  let options=usable.filter(c=>!c.reserved&&(kind==='build'?!c.present:c.present));
+  if(!options.length){kind='inspect';options=usable.filter(c=>c.present&&!c.reserved);}
+  if(!options.length)return;
+  const cell=options[Math.floor(random()*options.length)];cell.reserved=true;
+  const src={x:a.x,y:a.y},hover={x:cell.x,y:cell.y-27};
+  const side=Math.floor(random()*3),supply=side===0?{x:W+30,y:60+random()*600}:
+    side===1?{x:700+random()*580,y:-35}:{x:700+random()*580,y:H+35};
+  const bend=(random()-.5)*100;
+  a.task={kind,cell,src,hover,supply,start:time,duration:kind==='inspect'?3.6+random()*2:6.8+random()*2.4,
+    control:{x:(src.x+hover.x)/2+bend,y:(src.y+hover.y)/2-bend},done:false};
+}
+function updateAgent(a){
+  if(time<a.id*.13)return;
+  if(!a.task)chooseTask(a);
+  const t=a.task;if(!t)return;
+  const u=clamp((time-t.start)/t.duration),c=t.cell;let p;
+  a.cargo=null;
+  if(t.kind==='build'){
+    if(u<.25)p=point(t.src,{x:(t.src.x+t.supply.x)/2,y:t.src.y-35},t.supply,ease(u/.25));
+    else if(u<.83){p=point(t.supply,{x:(t.supply.x+t.hover.x)/2,y:t.hover.y-60},t.hover,ease((u-.25)/.58));
+      a.cargo={x:p.x,y:p.y+23,color:c.color,scale:.5};}
+    else{p=t.hover;const land=ease((u-.83)/.12);
+      if(!t.done)a.cargo={x:c.x,y:mix(p.y+23,c.y,land),color:c.color,scale:mix(.5,1,land)};
+      if(u>=.95&&!t.done){c.present=true;c.flash=time;a.pulse=time;t.done=true;actions.build++;}}
+  }else if(t.kind==='remove'){
+    if(u<.46)p=point(t.src,t.control,t.hover,ease(u/.46));
+    else if(u<.60){p=t.hover;c.flash=time;
+      if(!t.done){a.pulse=time;t.done=true;}}
+    else{if(c.present){c.present=false;actions.remove++;}
+      p=point(t.hover,{x:(t.hover.x+t.supply.x)/2,y:t.hover.y-60},t.supply,ease((u-.60)/.40));
+      a.cargo={x:p.x,y:p.y+23,color:c.color,scale:.5};}
+  }else{
+    p=point(t.src,t.control,t.hover,ease(u/.72));
+    if(u>.72&&!t.done){c.flash=time;a.pulse=time;t.done=true;actions.inspect++;}
+    if(u>.72)p.y+=Math.sin((u-.72)*Math.PI*2)*2;
+  }
+  a.x=p.x;a.y=p.y;
+  if(u>=1){c.reserved=false;a.task=null;a.cargo=null;}
+}
+function drawAgent(a){
+  if(time<a.id*.13)return;
+  const {x,y}=warp(a.x,a.y);
+  // White halo keeps the ball legible over any tile.
+  ctx.fillStyle='#FFFFFF';ctx.beginPath();ctx.arc(x,y,9.5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#000000';ctx.beginPath();ctx.arc(x,y,7.5,0,Math.PI*2);ctx.fill();
+}
+function halfHex(c){ctx.beginPath();
+  for(let v=0;v<4;v++){const a=(v*60-90)*Math.PI/180;
+    const px=c.x+R*Math.cos(a),py=c.y+R*Math.sin(a);v?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.stroke();}
+function drawRipple(){
+  // One ring every RIPPLE seconds, from a new origin inside the field each time.
+  const n=Math.floor(time/RIPPLE);
+  ring(W*(.45+.5*frac(Math.sin(n*12.9898)*43758.5453)),H*frac(Math.sin(n*78.233)*12543.21),
+    (time-n*RIPPLE)*250,n);
+  // A click sends its own ring out from where it landed.
+  bursts.forEach(b=>ring(b.x,b.y,(clock-b.t)*250,b.n));
+}
+function drawPointer(){
+  // The lattice lights up in gold under the cursor, and fades when it rests or leaves.
+  if(ptr.s<.01)return;
+  ctx.strokeStyle=C.amber;ctx.lineWidth=1.2;
+  grid.forEach(c=>{const k=1-Math.hypot(c.x-ptr.x,c.y-ptr.y)/(REACH+20);
+    if(k>0){ctx.globalAlpha=.85*k*k*ptr.s;halfHex(c);}});
+  ctx.globalAlpha=1;
+}
+function drawIntro(){
+  // A gold rule draws itself between title and subtitle as the slide arrives.
+  const u=reduced?1:ease((clock-.45)/1.1);if(u<=0)return;
+  ctx.fillStyle=C.amber;ctx.fillRect(66,516,96*u,3);
+}
+function ring(ox,oy,radius,n){
+  const fade=clamp(1-radius/1500);if(fade<=0||radius<0)return;
+  // Each cell strokes only its right half (3 edges at full radius), so every
+  // shared edge of the lattice is one line, drawn once.
+  ctx.strokeStyle=C.amber;ctx.lineWidth=1.2;
+  grid.forEach((c,i)=>{const k=1-Math.abs(Math.hypot(c.x-ox,c.y-oy)-radius)/120;
+    if(k>0){ctx.globalAlpha=.7*k*k*fade;halfHex(c);
+      // About one cell in nine, a different set each ripple, fills gold as the ring crosses it.
+      if(frac(Math.sin(i*91.7+n*37.3)*43758.5453)<.11)hex(c.x,c.y,R-1.4,C.amber,.75*k*fade);}});
+  ctx.globalAlpha=1;
+}
+function render(dt){
+  ctx.setTransform(canvas.width/W,0,0,canvas.height/H,0,0);
+  ctx.clearRect(0,0,W,H);
+  ptr.x=mix(ptr.x,ptr.tx,Math.min(1,dt*10));ptr.y=mix(ptr.y,ptr.ty,Math.min(1,dt*10));
+  const want=ptr.on&&clock-ptr.seen<IDLE?1:0;
+  ptr.s=mix(ptr.s,want,Math.min(1,dt*(want?6:2.5)));
+  drawRipple();drawPointer();drawIntro();
+  agents.forEach(updateAgent);
+  // Empty cells share one faint path; filled ones and flashes draw per cell.
+  ctx.globalAlpha=.055;ctx.strokeStyle='#4E9CA3';ctx.lineWidth=.7;ctx.beginPath();
+  tiles.forEach(c=>{
+    const target=c.present?1:0;c.alpha=mix(c.alpha,target,Math.min(1,dt*7));
+    if(c.alpha<=.005){ctx.moveTo(c.x+1.2,c.y);ctx.arc(c.x,c.y,1.2,0,Math.PI*2);}
+  });
+  ctx.stroke();ctx.globalAlpha=1;
+  tiles.forEach(c=>{
+    // Tiles near the cursor shrink and lean away from it, so the field opens around it.
+    const w=warp(c.x,c.y);
+    if(c.alpha>.005)hex(w.x,w.y,(R-1.4)*mix(.6,1,c.alpha)*(1-.22*w.k),c.color,c.alpha);
+    const flash=clamp(1-(time-c.flash)/.9);
+    if(flash>0){ctx.globalAlpha=flash;ctx.strokeStyle=C.amber;ctx.lineWidth=2.5;
+      hexPath(ctx,w.x,w.y,(R-2.6)*(1-.22*w.k));ctx.stroke();ctx.globalAlpha=1;}
+  });
+  agents.forEach(a=>{if(a.cargo){const w=warp(a.cargo.x,a.cargo.y);hex(w.x,w.y,R*a.cargo.scale,a.cargo.color,.95);}});
+  agents.forEach(drawAgent);
+}
+// Warm start: the swarm has already been at work for a while when the slide
+// appears, so the first frame is a half-built field with agents in flight
+// instead of an empty board they take a minute to fill.
+(function warm(){const step=1/30;
+  while(time<60&&usable.filter(c=>c.present).length<usable.length*.5){
+    time+=step;agents.forEach(updateAgent);}
+  tiles.forEach(c=>{c.alpha=c.present?1:0;});})();
+function frame(now){const dt=Math.min(.05,(now-last)/1000||.016);last=now;
+  clock+=dt;time+=dt*(reduced?.25:1);render(dt);requestAnimationFrame(frame);}
+document.addEventListener('visibilitychange',()=>{last=performance.now();});
+window.swarmStats=()=>({coverage:usable.filter(c=>c.present).length/usable.length,
+  agents:agents.length,active:agents.filter(a=>a.task).length,actions:{...actions}});
+// The slide arrives with one ring spreading from the title side.
+if(!reduced)bursts.push({x:64,y:300,t:.25,n:100});
+render(0);   // paint the warm field now, not a frame later
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hive cluster</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+:root{
+  --ink:#1A2326;--navy:#0D2A2F;--accent:#0F6B73;--sky:#2B6CB0;
+  --muted:#5A6467;--faint:#A7AFB1;--line:#C7CFD1;--rule:#D7DEDF;--tint:#F1F5F5;--blue-tint:#E2F0F1;
+  --amber:#BF831A;--amber-text:#8E5F00;--amber-tint:#FCF0DA;
+  --green:#3B9457;--green-text:#2B7041;--green-tint:#E3F2E6;
+  --coral:#D2553A;--coral-text:#A83A20;--coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#fff;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{position:relative;width:100%;height:100%;cursor:pointer;user-select:none;-webkit-user-select:none;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+canvas{display:block;width:100%;height:100%}
+/* editable text (the deck's EMBED_TEXT_BRIDGE): on the edit canvas only, a transparent box over a
+   string the canvas draws, holding that string, so a double-click rewords it (spot()) */
+.edit{position:absolute;left:0;top:0;transform-origin:0 0;color:transparent;overflow:hidden;white-space:pre-wrap;display:none}
+.edit.on{display:block}
+#tip{position:absolute;left:0;top:0;max-width:340px;padding:12px 16px 13px;border-radius:10px;
+  background:#fff;color:var(--ink);font-size:18px;font-weight:600;line-height:1.3;
+  box-shadow:0 6px 24px rgba(26,35,38,.18),0 0 0 1.5px var(--amber);
+  pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .15s,transform .15s}
+#tip.on{opacity:1;transform:none}
+#tip b{display:block;font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:4px}
+/* the presenter's button: drawn in slide px, scaled with the slide */
+#btn{position:absolute;left:0;top:0;transform-origin:0 0;border:0;border-radius:999px;
+  padding:13px 24px 13px 20px;background:var(--navy);color:#fff;font:700 19px Manrope,sans-serif;
+  display:flex;align-items:center;gap:10px;cursor:pointer;white-space:nowrap;
+  box-shadow:0 6px 18px rgba(13,42,47,.25);opacity:0;pointer-events:none;transition:opacity .3s,background .3s}
+#btn.on{opacity:1;pointer-events:auto}
+#btn.busy{background:var(--muted);pointer-events:none}
+#btn i{font-style:normal;color:var(--amber);font-size:20px}
+#btn.pulse{animation:pulse 1.6s ease-in-out infinite}
+/* shown only when the answers are locked: the deck passes its key to a slide when
+   it builds it, so a key typed in AFTER that (first visit) has to be given here */
+#unlock{position:absolute;left:0;top:0;transform-origin:0 0;display:none;gap:10px;align-items:center}
+#unlock.on{display:flex}
+#unlock input{font:600 19px Manrope,sans-serif;padding:11px 16px;border:1.5px solid var(--line);border-radius:999px;width:220px;color:var(--ink)}
+#unlock button{font:700 19px Manrope,sans-serif;padding:12px 22px;border:0;border-radius:999px;background:var(--navy);color:#fff;cursor:pointer}
+/* join QR + address + code, bottom of the left panel, scaled with the slide */
+#join{position:absolute;left:0;top:0;transform-origin:0 0;display:none;gap:16px;align-items:center;pointer-events:none}
+#join.on{display:flex}
+#jQr{width:96px;height:96px;display:block}
+#join div{display:flex;flex-direction:column;gap:2px;color:var(--muted);font:600 15px Manrope,sans-serif}
+#jHost{color:var(--ink);font-size:17px}
+#jCode{color:var(--accent);font-size:28px;font-weight:800;letter-spacing:.04em}
+/* ⚙ Display: the presenter's settings, top-right, scaled with the slide */
+#gear{position:absolute;left:0;top:0;transform-origin:0 0}
+#gearBtn{border:0;background:none;color:var(--muted);font:600 15px Manrope,sans-serif;display:flex;align-items:center;
+  gap:7px;padding:7px 12px 7px 10px;border-radius:999px;cursor:pointer;opacity:.5;transition:opacity .2s,background .2s}
+#gearBtn:hover,#gear.open #gearBtn{opacity:1;background:var(--tint)}
+#gearBtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+#sets{position:absolute;right:0;top:calc(100% + 10px);width:360px;padding:16px 20px 18px;background:#fff;border-radius:14px;
+  box-shadow:0 10px 32px rgba(26,35,38,.2);display:none;flex-direction:column;gap:14px;color:var(--ink);font:600 15px Manrope,sans-serif}
+#gear.open #sets{display:flex}
+#sets .eb{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#sets .row{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
+#sets .row input{grid-column:1/-1;width:100%;accent-color:var(--accent);cursor:pointer}
+#sets output{color:var(--accent);font-weight:700}
+#sets .chk{display:flex;gap:10px;align-items:center;cursor:pointer}
+#sets .chk input{width:18px;height:18px;accent-color:var(--accent)}
+#sets .danger{margin-top:4px;padding-top:14px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:6px}
+#wipe{font:700 15px Manrope,sans-serif;padding:9px 14px;border:1.5px solid var(--coral);border-radius:999px;background:#fff;color:var(--coral-text);cursor:pointer}
+#wipe.arm{background:var(--coral);color:#fff}
+#wipe:disabled{opacity:.5;cursor:default}
+#wipeMsg{font-size:13px;font-weight:600;color:var(--muted);min-height:1em}
+@keyframes pulse{0%,100%{box-shadow:0 6px 18px rgba(13,42,47,.25),0 0 0 0 rgba(191,131,26,.7)}
+  50%{box-shadow:0 6px 18px rgba(13,42,47,.25),0 0 0 10px rgba(191,131,26,0)}}
+</style></head><body>
+<div id="stage"><canvas aria-label="Open-poll answers arrive as hexagons; the Cluster button groups them into labelled themes on one map"></canvas>
+<div id="tip"></div><button id="btn" type="button"></button>
+<div id="gear"><div id="sets">
+  <div class="eb">Display</div>
+  <label class="row"><span>Each answer shows for</span><output id="oHold"></output><input type="range" id="sHold" min="0.5" max="6" step="0.1"></label>
+  <label class="chk"><input type="checkbox" id="sShorten"><span>Shorter when answers pile up</span></label>
+  <label class="row"><span>Answers open at once</span><output id="oMax"></output><input type="range" id="sMax" min="1" max="6" step="1"></label>
+  <label class="row" id="rPace"><span>Replay speed</span><output id="oPace"></output><input type="range" id="sPace" min="0.25" max="4" step="0.25"></label>
+  <div class="danger"><button id="wipe" type="button">Clear responses</button><span id="wipeMsg"></span></div>
+</div><button id="gearBtn" type="button" title="Display settings (S)"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Display</button></div>
+<div id="join"><img id="jQr" alt=""><div><span>Join at</span><b id="jHost"></b><b id="jCode"></b></div></div>
+<form id="unlock"><input type="password" placeholder="Lecturer key" autocomplete="off"><button>Unlock</button></form></div>
+<script>
+// Live clustered hive, for ANY open poll. Reads a poll bucket through the deck's
+// poll service; every press of the button asks the service to cluster the
+// answers on screen (POST /api/cluster: embeddings → k-means → t-SNE map rounded
+// onto the honeycomb → LLM labels). Nothing is precomputed.
+//   before clustering  answers arrive into one comb (as in hive-fill)
+//   Cluster            every hex flies to its cell on the map, recoloured by
+//                      theme; the LLM's labels type in over each region
+//   after              each new answer opens with its text while the service
+//                      places it (op "assign": nearest theme, grey = "not yet
+//                      sorted"), then lands next to its most similar answers.
+//                      Nothing regroups until the button says Re-cluster.
+//   while clustering   answers keep arriving: each waits on the rim ("sorting…")
+//                      and is placed like a late answer once the themes land
+// ⚙ Display (bottom-left, or S): how long an answer stays open, how many at once,
+// replay speed. The defaults are in CONFIG.
+// Keys: → / click start the stream, then press the button; when there is
+// nothing to press, → goes to the next slide. Home empties the slide.
+// Needs present mode with the lecturer key (window.TESSERA_EMBED.poll).
+const CONFIG={
+  code:'',                 // the poll bucket to read; '' = the nearest poll at or before this
+                           // slide (window.TESSERA_EMBED.poll.previous — survives reminted codes)
+  replay:true,             // true: reveal answers already in the bucket as if arriving (a demo);
+                           // false: show only answers that arrive from now on... plus any already there
+  eyebrow:'OPEN QUESTION',
+  // display defaults; ⚙ Display changes them during the show
+  hold:1.7,                // seconds an answer's text stays open
+  shorten:true,            // shorten that hold when answers pile up (down to 30%)
+  maxOpen:3,               // answers open at once
+  pace:1,                  // replay speed (replay only: live answers come when they come)
+};
+const SAMPLE=null; // __SAMPLE__ (build step: sample answers + their clustering, data/sample-cluster.json)
+const SET={hold:CONFIG.hold,shorten:CONFIG.shorten,maxOpen:CONFIG.maxOpen,pace:CONFIG.pace};
+const HOST=(window.TESSERA_EMBED&&window.TESSERA_EMBED.poll)||{};
+// sample mode: while the question is still the template's placeholder, the page shows the
+// baked sample, already clustered, and never calls the service. A real question turns it live.
+const DEMO=SAMPLE&&HOST.previous&&HOST.previous.question===SAMPLE.placeholder?SAMPLE:null;
+const SERVICE=(HOST.service||'').replace(/\/$/,'');
+const HDR=HOST.lecturer?{'x-tessera-lecturer':HOST.lecturer}:{};   // the unlock field can fill it in later
+const CODE=CONFIG.code||(HOST.previous&&HOST.previous.code)||'';
+// how the room joins: the deck's session code (one per talk), else the poll's own
+const PREV=HOST.previous&&(!CONFIG.code||HOST.previous.code===CONFIG.code)?HOST.previous:null;
+const JOIN=DEMO?'':(PREV&&PREV.join)||HOST.session||CODE,JOIN_Y=552;
+
+const C=(()=>{const s=getComputedStyle(document.documentElement),o={};
+  for(const k of ['ink','navy','accent','sky','muted','faint','line','rule','tint','blue-tint',
+    'amber','amber-text','amber-tint','green','green-text','coral','coral-text'])o[k]=s.getPropertyValue('--'+k).trim();return o;})();
+const stage=document.getElementById('stage'),canvas=document.querySelector('canvas'),
+  ctx=canvas.getContext('2d'),tip=document.getElementById('tip'),btn=document.getElementById('btn'),unlock=document.getElementById('unlock');
+const W=1280,H=720,R=24,SQ3=Math.sqrt(3);
+// ---- editable text (the deck's EMBED_TEXT_BRIDGE) ----------------------------------------
+// CONFIG holds the defaults; the deck's overrides (the embed's `texts`) win: TX(KEY, default).
+// The canvas draws its strings, so on the edit canvas (TESSERA_EMBED.editable) spot() keeps a
+// transparent box holding the string over where it is drawn, data-edit=KEY; a double-click
+// rewords it in place. KEY 'poll.question' is the question of the poll the slide reports:
+// the editor stores it there, not in `texts`.
+const TX=(k,d)=>{const E=window.TESSERA_EMBED;d=d==null?'':d;return E&&typeof E.text==='function'?E.text(k,d):d;};
+const EDITABLE=!!(window.TESSERA_EMBED&&window.TESSERA_EMBED.editable);
+const spots={};
+// box in slide px (top-left x, y, w, h), drawn with `font`; show=false hides it this frame
+function spot(key,text,x,y,w,h,font,lh,show=true){
+  if(!EDITABLE)return;
+  let n=spots[key];
+  if(!n){n=spots[key]=document.createElement('div');n.className='edit';n.setAttribute('data-edit',key);
+    stage.insertBefore(n,canvas.nextSibling);}
+  if(n.textContent!==text)n.textContent=text;
+  n.classList.toggle('on',!!show&&!!text);
+  const css=`width:${Math.ceil(w)}px;height:${Math.ceil(h)}px;font:${font};line-height:${lh}px;transform:translate(${OX+x*S}px,${OY+y*S}px) scale(${S})`;
+  if(n._css!==css){n._css=css;n.style.cssText=css;}
+}
+// on the edit canvas a click on a label is half of a double-click (rewording it), not a step
+const onLabel=e=>EDITABLE&&!!(e.target&&e.target.closest&&e.target.closest('[data-edit]'));
+const VIEW={x:905,y:372,w:660,h:600};   // slide box the hive must fit in
+const ZMAX=3.4,PANEL={x:72,w:400};
+let seed=4211;
+const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+const mix=(a,b,u)=>a+(b-a)*u,clamp=(u,a=0,b=1)=>Math.max(a,Math.min(b,u));
+const ease=u=>{u=clamp(u);return u*u*(3-2*u);};
+const out3=u=>1-Math.pow(1-clamp(u),3);
+const bez=(a,c,b,u)=>({x:(1-u)**2*a.x+2*(1-u)*u*c.x+u*u*b.x,y:(1-u)**2*a.y+2*(1-u)*u*c.y+u*u*b.y});
+
+// ---- colours: one per theme id (the service keeps ids stable across re-clusters) --
+const PAL=[C.accent,C.green,C.amber,C.coral,C.sky,C.navy,C['coral-text'],C['green-text']];
+const themeColor=id=>id<0?C.line:PAL[id%PAL.length];
+const DARK_TEXT=new Set([C.amber,C['blue-tint'],C.line,C.green]);
+const rgb=h=>h.startsWith('rgb')?h.match(/\d+/g).map(Number):[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const mixColor=(a,b,u)=>{if(u<=0)return a;if(u>=1)return b;const p=rgb(a),q=rgb(b);
+  return 'rgb('+p.map((v,i)=>Math.round(mix(v,q[i],u))).join(',')+')';};
+const TONES=[C['blue-tint'],C.sky,C.accent,C.navy],WEIGHT=[.26,.36,.27,.11];
+const tone=()=>{let r=random();for(let k=0;k<4;k++){if((r-=WEIGHT[k])<0)return TONES[k];}return C.sky;};
+const key=(q,r)=>q+','+r;
+const cellXY=(q,r)=>({x:R*SQ3*(q+r/2),y:R*1.5*r});
+const NB=[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+
+// ---- state -------------------------------------------------------------------------
+const POP=.3,SHRINK=.6,MIG=1.15;
+let clock=0,last=0,step=0,mode='empty',modeAt=0,hover=null,pinned=null,Z=ZMAX,camX=0,camY=0;
+let question='',status='loading',statusMsg='',bucket=[],known=new Set();
+let hexes=[],queue=[];                  // shown / waiting to open
+let theme=null;                          // last clustering: {at,k,labelsBy,clusters:{id:{label}}}
+let clusterPending=false,assignPending=false,clusteredIds=new Set(),lastAssign=0;
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const byId=new Map();
+
+// ---- the service -------------------------------------------------------------------
+/* The lecturer key goes as x-tessera-lecturer. A poll service from before the rename lists
+   only its old header name in CORS, so its preflight fails: a request carrying the key that
+   fails on the network is sent once more under that name. */
+const OLD_LECTURER_HEADER = 'x-bento-lecturer'; // decks written before the rename / the old service only allow this name
+async function lfetch(url, opts = {}) {
+  try { return await fetch(url, opts); }
+  catch (err) {
+    const h = Object.assign({}, opts.headers || {});
+    if (!h['x-tessera-lecturer'] || (err && err.name === 'AbortError')) throw err;
+    h[OLD_LECTURER_HEADER] = h['x-tessera-lecturer']; delete h['x-tessera-lecturer'];
+    return fetch(url, Object.assign({}, opts, { headers: h }));
+  }
+}
+async function api(path,opts={}){
+  if(DEMO)return demoApi(path,opts);
+  const r=await lfetch(SERVICE+path,{cache:'no-store',...opts,headers:{...HDR,...(opts.body?{'content-type':'application/json'}:{}),...(opts.headers||{})}});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+  return j;
+}
+// sample mode: /api/poll and /api/cluster answered from the baked SAMPLE, in the service's shapes
+function demoApi(path,opts){
+  if(path.startsWith('/api/poll'))return opts.method==='DELETE'?{cleared:0}:{question:DEMO.question,answers:DEMO.answers};
+  const q=JSON.parse(opts.body||'{}'),cl=DEMO.cluster,cnt={};
+  const answers=(q.ids||[]).filter(id=>cl.cells[id]).map(id=>{const v=cl.cells[id];return{id,q:v[0],r:v[1],c:v[2],s:v[3]};});
+  if(q.op==='assign')return{answers};
+  answers.forEach(a=>cnt[a.c]=(cnt[a.c]||0)+1);
+  return{k:Object.keys(cnt).length,threshold:cl.threshold,labelsBy:cl.labelsBy,
+    clusters:Object.keys(cnt).map(Number).sort((a,b)=>a-b).map(id=>({id,label:cl.labels[id]||'',count:cnt[id]})),answers};
+}
+// sample mode opens on the finished view; Home, then a click, replays the whole flow
+async function openSample(){
+  const ids=bucket.map(a=>a.id),d=await api('/api/cluster',{method:'POST',body:JSON.stringify({op:'cluster',ids})});
+  mode='play';step=1;clock=100;
+  theme={at:0,k:d.k,labelsBy:d.labelsBy,clusters:Object.fromEntries(d.clusters.map(c=>[c.id,{label:c.label}]))};
+  const txt=new Map(bucket.map(a=>[a.id,a.text]));
+  for(const a of d.answers){const T=cellXY(a.q,a.r),col=themeColor(a.c);
+    const h={id:a.id,text:txt.get(a.id).replace(/\s+([.,;:!?])/g,'$1'),arrive:0,tone:col,show:0,hold:0,settle:1,land:2,
+      T,from:T,q:a.q,r:a.r,c:a.c,col,colFrom:col,mt:0,pulsed:1};
+    hexes.push(h);byId.set(h.id,h);}
+  bucket=[];queue=[];clusteredIds=new Set(ids);
+  const t=camTarget();Z=t.z;camX=t.x;camY=t.y;
+}
+let loaded=false,reading=false,wipes=0;   // wipes: a read that straddles a Clear is dropped
+async function readBucket(first){
+  if(reading||(!first&&!loaded))return;   // one read at a time; the first one decides the replay set
+  if(!CODE){status='offline';statusMsg='No poll on or before this slide — add an open question first.';return;}
+  reading=true;
+  try{
+    const w=wipes,d=await api('/api/poll?c='+CODE);
+    if(w!==wipes){reading=false;return;}
+    // the deck's wording first: the service holds the copy from the poll's last publish, and
+    // the question may have been reworded since (on the edit canvas, too). The sample keeps its own.
+    question=(!DEMO&&PREV&&PREV.question)||d.question||question||(HOST.previous&&HOST.previous.question)||'';
+    if(d.answersWithheld){status='locked';statusMsg=statusMsg||'Answers are locked — enter the lecturer key.';reading=false;return;}
+    status='ok';
+    const fresh=(d.answers||[]).filter(a=>a.id&&a.text&&a.text.trim()&&!known.has(a.id));
+    fresh.forEach(a=>known.add(a.id));
+    if(step>0)fresh.forEach((a,i)=>enqueue(a,clock+i*.15));
+    else if(!first||CONFIG.replay)bucket.push(...fresh);   // not started yet: held back, revealed on start
+    loaded=true;
+  }catch(e){status='offline';statusMsg='Poll service unreachable: '+e.message;}
+  reading=false;
+}
+function enqueue(a,at){queue.push({id:a.id,text:a.text.replace(/\s+([.,;:!?])/g,'$1'),arrive:at,tone:tone()});}
+// replay: the bucket's answers arrive in order, in bursts, over ~40 s
+function startReveal(){
+  let t=clock+.4;
+  for(const a of bucket){enqueue(a,t);t+=(.08+(-Math.log(1-random()*.98))*.2+(random()<.06?1.2:0))/SET.pace;}
+  bucket=[];
+}
+
+function setPace(p){const p0=SET.pace;SET.pace=p;      // stretch what is still to come
+  for(const q of queue)if(q.arrive>clock)q.arrive=clock+(q.arrive-clock)*p0/p;}
+
+// ---- opening answers one at a time (at most SET.maxOpen open) -----------------------
+function openNext(){
+  if(!queue.length||queue[0].arrive>clock)return;
+  const open=hexes.filter(h=>clock<h.land);
+  if(open.length>=SET.maxOpen)return;
+  const lastShow=hexes.length?hexes[hexes.length-1].show:-9;if(clock<lastShow+.16)return;
+  const h=queue.shift();byId.set(h.id,h);
+  h.show=clock;h.hold=SET.shorten?mix(SET.hold,Math.max(.4,SET.hold*.3),clamp((clock-h.arrive)/3.5)):SET.hold;
+  h.settle=h.show+POP+h.hold;h.land=h.settle+SHRINK;
+  h.col=h.colFrom=h.tone;h.c=null;h.mt=-9;
+  if(!theme||clusterPending){                           // no themes yet, or being redone:
+    const p=combCell(h,open);h.T=p;h.from=p;              // it waits on the rim
+    if(clusterPending){h.stale=true;if(theme)h.col=h.colFrom=C.line;}   // placed once they land
+    hexes.push(h);return;}
+  h.pending=true;h.T=null;hexes.push(h);               // the service places it…
+  if(h.pre)place(h,h.pre,clock);                       // …often before it even opens
+}
+function combCell(h,open){                              // before clustering: rim of one comb
+  const taken=new Set(hexes.filter(o=>o.q!=null).map(o=>key(o.q,o.r)));
+  let cands=[];
+  if(!taken.size)cands=[[0,0]];
+  else{const seen=new Set();for(const o of hexes){if(o.q==null)continue;for(const [dq,dr] of NB){const q=o.q+dq,r=o.r+dr,k=key(q,r);
+    if(!taken.has(k)&&!seen.has(k)){seen.add(k);cands.push([q,r]);}}}}
+  let best=null,bs=1e9,cx=0,cy=0;
+  if(theme&&taken.size){for(const k of taken){const [q,r]=k.split(',').map(Number),p=cellXY(q,r);cx+=p.x;cy+=p.y;}cx/=taken.size;cy/=taken.size;}
+  for(const [q,r] of cands){const p=cellXY(q,r),d=Math.hypot(p.x-cx,p.y-cy);
+    const near=open.reduce((m,o)=>o.T?Math.min(m,Math.hypot(o.T.x-p.x,o.T.y-p.y)):m,1e9);
+    const s=d-Math.min(near,R*SQ3*4)*.9+random()*R*.8;if(s<bs){bs=s;best=[q,r];}}
+  h.q=best[0];h.r=best[1];return cellXY(h.q,h.r);
+}
+// an answer waiting for its cell stays open (text readable) until the service answers
+function holdPending(){
+  for(const h of hexes)if(h.pending&&clock>=h.settle){h.settle=clock;h.land=clock+SHRINK;}
+}
+
+// ---- clustering -----------------------------------------------------------------------
+async function doCluster(){
+  if(clusterPending)return;
+  const ids=hexes.map(h=>h.id);if(ids.length<3)return;
+  clusterPending=true;statusMsg='';
+  for(const h of hexes)if(h.pending){                   // in this request: park them on the rim
+    h.pending=false;const p=combCell(h,[]);h.T=h.from=p;h.col=h.colFrom=C.line;
+    h.settle=Math.max(h.settle,clock);h.land=h.settle+SHRINK;}
+  try{
+    const d=await api('/api/cluster',{method:'POST',body:JSON.stringify({code:CODE,op:'cluster',ids})});
+    theme={at:clock,k:d.k,labelsBy:d.labelsBy,clusters:Object.fromEntries(d.clusters.map(c=>[c.id,{label:c.label}]))};
+    const size={};d.answers.forEach(a=>size[a.c]=(size[a.c]||0)+1);
+    const order=Object.keys(size).map(Number).sort((a,b)=>size[b]-size[a]);
+    clusteredIds=new Set(d.answers.map(a=>a.id));queue.forEach(q=>{q.pre=null;});
+    for(const a of d.answers){const h=byId.get(a.id);if(!h)continue;
+      place(h,a,clock+.1+order.indexOf(a.c)*.25+random()*.3);}
+  }catch(e){statusMsg='Clustering failed — '+e.message;if(!theme)hexes.forEach(h=>h.stale=false);}
+  clusterPending=false;
+}
+function place(h,a,mt){
+  const was=h.T?pos(h):null;
+  h.from=was||cellXY(a.q,a.r);h.colFrom=colorOf(h);
+  h.T=cellXY(a.q,a.r);h.q=a.q;h.r=a.r;h.c=a.c;h.col=themeColor(a.c);h.mt=was?mt:clock;
+  if(h.pending){h.pending=false;h.settle=Math.max(h.settle,clock+.5);h.land=h.settle+SHRINK;h.mt=-9;h.from=h.T;h.colAt=clock;}
+}
+// asks for the cells of answers that are open without one AND of answers that have
+// arrived but not opened yet, so most answers already know where they go
+async function doAssign(){
+  if(!theme||assignPending||clusterPending)return;
+  const ahead=queue.filter(q=>!q.pre&&q.arrive<=clock+2).slice(0,24);
+  const ids=hexes.filter(h=>h.pending||h.stale).map(h=>h.id).concat(ahead.map(q=>q.id));
+  if(!ids.length)return;
+  assignPending=true;lastAssign=clock;
+  try{
+    const d=await api('/api/cluster',{method:'POST',body:JSON.stringify({code:CODE,op:'assign',ids})});
+    for(const a of d.answers){const h=byId.get(a.id);if(h&&(h.pending||h.stale)){h.stale=false;place(h,a,clock);}
+      else{const q=queue.find(q=>q.id===a.id);if(q)q.pre=a;}}
+  }catch(e){statusMsg='Placing failed — '+e.message;}
+  assignPending=false;
+}
+
+// ---- where a hex is, and its colour ------------------------------------------------
+function pos(h){
+  if(!h.T)return{x:0,y:0};
+  if(clock>=h.mt+MIG)return h.T;
+  const u=(clock-h.mt)/MIG,a=h.from,b=h.T;
+  const c={x:(a.x+b.x)/2+(b.y-a.y)*.18,y:(a.y+b.y)/2-Math.hypot(b.x-a.x,b.y-a.y)*.25};
+  return bez(a,c,b,ease(u));
+}
+function colorOf(h){
+  if(h.colAt!=null&&clock<h.colAt+.35)return mixColor(h.colFrom,h.col,(clock-h.colAt)/.35);
+  return mixColor(h.colFrom,h.col,clamp((clock-h.mt)/(MIG*.3)));
+}
+const landed=h=>mode==='play'&&!h.pending&&clock>=h.land;
+
+// ---- screen mapping -----------------------------------------------------------------
+let S=1,OX=0,OY=0;
+// The deck lays the slide out at 1280x720 and scales it to the screen with a CSS
+// transform, which stretches a canvas bitmap (HTML text, like the tip, stays sharp).
+// So the backing store covers the screen size the slide is shown at, not the iframe's.
+const hostScale=()=>Math.max(1,Math.min(screen.width/innerWidth,screen.height/innerHeight)||1);
+// shadows are in raw canvas pixels, which ignore the transform: scale them by hand
+const SPX=()=>canvas.width/Math.max(1,stage.clientWidth);
+function resize(){const r=stage.getBoundingClientRect(),dpr=Math.min((devicePixelRatio||1)*hostScale(),4);
+  canvas.width=Math.round(r.width*dpr);canvas.height=Math.round(r.height*dpr);
+  S=Math.min(r.width/W,r.height/H);OX=(r.width-W*S)/2;OY=(r.height-H*S)/2;}
+addEventListener('resize',resize);new ResizeObserver(resize).observe(stage);resize();
+const scr=p=>({x:VIEW.x+(p.x-camX)*Z,y:VIEW.y+(p.y-camY)*Z});
+function camTarget(){
+  if(mode!=='play')return{z:mode==='drain'?Z:ZMAX,x:mode==='drain'?camX:0,y:mode==='drain'?camY:0};
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const h of hexes){if(!h.T)continue;x0=Math.min(x0,h.T.x);y0=Math.min(y0,h.T.y);x1=Math.max(x1,h.T.x);y1=Math.max(y1,h.T.y);}
+  if(x0>x1){x0=y0=x1=y1=0;}
+  return{z:Math.min(ZMAX,VIEW.w/(x1-x0+R*4),VIEW.h/(y1-y0+R*4)),x:(x0+x1)/2,y:(y0+y1)/2};
+}
+function hexPath(x,y,r){ctx.beginPath();
+  for(let k=0;k<6;k++){const a=(k*60-90)*Math.PI/180;const px=x+r*Math.cos(a),py=y+r*Math.sin(a);k?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.closePath();}
+function wrap(text,maxW){const words=text.split(/\s+/),lines=[];let line='';
+  for(const w of words){const t=line?line+' '+w:w;if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=w;}else line=t;}
+  if(line)lines.push(line);return lines;}
+function fitText(h){
+  if(h.fit)return h.fit;
+  for(const fs of [22,20,18,17])for(let r=74;r<=150;r+=6){
+    ctx.font=`700 ${fs}px Manrope`;const lh=fs*1.2;
+    const fits=(ls,w)=>ls.every(l=>ctx.measureText(l).width<=w);
+    let lines=wrap(h.text,r*1.34);if(lines.length*lh<=r*1.05&&fits(lines,r*1.4))return h.fit={r,fs,lh,lines};
+    lines=wrap(h.text,r*1.16);if(lines.length*lh<=r*1.3&&fits(lines,r*1.2))return h.fit={r,fs,lh,lines};
+  }
+  ctx.font='700 17px Manrope';let lines=wrap(h.text,150*1.16);const max=Math.floor(150*1.3/20.4);
+  if(lines.length>max){lines=lines.slice(0,max);let l=lines[max-1];
+    while(l&&ctx.measureText(l+'…').width>150*1.16)l=l.replace(/\s*\S+$/,'');lines[max-1]=l+'…';}
+  return h.fit={r:150,fs:17,lh:20.4,lines};
+}
+
+// ---- drawing ----------------------------------------------------------------------
+function drawSubstrate(){
+  ctx.fillStyle=C.sky;ctx.globalAlpha=.10;
+  for(let x=18;x<W;x+=24)for(let y=16;y<H;y+=24){ctx.beginPath();ctx.arc(x,y,.8,0,Math.PI*2);ctx.fill();}
+  ctx.globalAlpha=1;
+}
+function drawRim(){                        // the waiting cells of the one comb, before clustering
+  if(theme||mode==='drain')return;
+  const on=new Set(hexes.filter(landed).map(h=>key(h.q,h.r))),cells=[];
+  if(!on.size)cells.push([0,0]);
+  else{const seen=new Set();for(const h of hexes){if(!on.has(key(h.q,h.r)))continue;
+    for(const [dq,dr] of NB){const q=h.q+dq,r=h.r+dr,k=key(q,r);if(seen.has(k)||on.has(k))continue;seen.add(k);cells.push([q,r]);}}}
+  ctx.strokeStyle=C.line;ctx.lineWidth=1.3;
+  for(const [q,r] of cells){const p=scr(cellXY(q,r));hexPath(p.x,p.y,(R-2)*Z);ctx.stroke();}
+}
+function drawCell(h){
+  let p,a=1;
+  if(mode==='drain'){if(!h.wasIn)return;const u=clamp((clock-modeAt-h.dropAt)/.9);if(u>=1)return;
+    p=scr(h.snap);p.y+=u*u*(H-p.y+80);p.x+=h.drift*u;a=1-clamp((u-.7)/.3);}
+  else{if(!landed(h))return;p=scr(pos(h));}
+  const col=mode==='drain'?h.colD:colorOf(h);
+  let s=1;if(clock>=h.mt&&clock<h.mt+MIG)s=1+Math.sin((clock-h.mt)/MIG*Math.PI)*.18;
+  if(clusterPending&&mode==='play')s*=1+.06*Math.sin(clock*9+h.show*7);   // thinking
+  ctx.globalAlpha=a;ctx.fillStyle=col;hexPath(p.x,p.y,(R-2)*Z*s);ctx.fill();
+  if((h.c===-1||h.stale&&theme)&&mode!=='drain'){ctx.setLineDash([3,3]);ctx.strokeStyle=C.muted;ctx.lineWidth=1.2;
+    hexPath(p.x,p.y,(R-3.5)*Z);ctx.stroke();ctx.setLineDash([]);}
+  const rim=mode==='drain'?0:clamp(1-(clock-h.land)/1.1);
+  if(rim>0){ctx.globalAlpha=a*rim;ctx.strokeStyle=C.amber;ctx.lineWidth=Math.max(1.6,.1*R*Z);hexPath(p.x,p.y,(R-3.2)*Z);ctx.stroke();}
+  ctx.globalAlpha=1;
+}
+function drawOpen(h){
+  if(clock<h.show||clock>=h.land)return;
+  const f=fitText(h),cr=(R-2)*Z,col=colorOf(h);
+  // a pending answer has no cell yet: it opens over the middle of the hive
+  const cell=h.T?scr(h.T):{x:VIEW.x,y:VIEW.y};
+  // kept on the hive's side, so it never covers the question while the camera catches up
+  const ox=clamp(cell.x,VIEW.x-VIEW.w/2+f.r+8,W-f.r-8),oy=clamp(cell.y,f.r+8,H-f.r-8);
+  let x,y,r,textA;
+  if(clock<h.show+POP){const u=out3((clock-h.show)/POP);x=ox;y=oy+(1-u)*26;r=f.r*mix(.35,1,u);textA=clamp((u-.3)/.7);}
+  else if(clock<h.settle||h.pending){x=ox;y=oy;r=f.r;textA=1;}
+  else{const u=ease((clock-h.settle)/SHRINK);x=mix(ox,cell.x,u);y=mix(oy,cell.y,u);r=mix(f.r,cr,u);textA=1-clamp(u/.45);}
+  ctx.save();ctx.shadowColor='rgba(26,35,38,.22)';ctx.shadowBlur=(16*r/f.r)*SPX();ctx.shadowOffsetY=4*SPX();
+  ctx.fillStyle=col;hexPath(x,y,r);ctx.fill();ctx.restore();
+  if(textA>0){const k=r/f.r;ctx.save();ctx.translate(x,y);ctx.scale(k,k);ctx.globalAlpha=textA;
+    ctx.fillStyle=DARK_TEXT.has(col)?C.ink:'#fff';ctx.font=`700 ${f.fs}px Manrope`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    const top=-(f.lines.length-1)*f.lh/2;f.lines.forEach((l,j)=>ctx.fillText(l,0,top+j*f.lh));
+    if(theme&&clock>=h.show+POP*.8){           // after clustering, say where it is going
+      const wait=h.pending||h.stale;
+      const t=wait?'sorting…':h.c<0?'→ not yet sorted':'→ '+labelOf(h.c);ctx.font=(wait?'italic 600':'700')+' 15px Manrope';
+      const tw=ctx.measureText(t).width+20,ty=top+(f.lines.length-1)*f.lh+f.lh*.5+26;
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(-tw/2,ty-13,tw,26,13);ctx.fill();
+      ctx.fillStyle=h.c<0||wait?C.muted:C.ink;ctx.fillText(t,0,ty+1);}
+    ctx.restore();}
+}
+const labelOf=id=>id<0?'Not yet sorted':theme&&theme.clusters[id]?theme.clusters[id].label:'';
+// label pills: one per theme, over the centre of its region, typed in when the
+// clustering lands; overlapping pills are nudged apart with a leader line back
+const TYPE=.7,pulseAt=new Map();
+function drawLabels(){
+  if(!theme||mode!=='play')return;
+  const pills=[];
+  for(const [sid,d] of Object.entries(theme.clusters)){const id=Number(sid);
+    const mem=hexes.filter(h=>landed(h)&&h.c===id);if(!mem.length)continue;
+    let cx=0,cy=0;for(const h of mem){const p=pos(h);cx+=p.x;cy+=p.y;}
+    const c=scr({x:cx/mem.length,y:cy/mem.length});
+    const u=(clock-theme.at-.9)/TYPE;if(u<0)continue;
+    const text=u<1?d.label.slice(0,Math.ceil(d.label.length*u)):d.label;
+    ctx.font='700 17px Manrope';const fw=ctx.measureText(d.label).width,tw=ctx.measureText(text).width;
+    ctx.font='600 15px Manrope';const count=String(mem.length),cw=ctx.measureText(count).width+14;
+    pills.push({id,ax:c.x,ay:c.y,x:c.x,y:c.y,w:Math.max(fw,tw)+cw+40,text,tw,count});
+  }
+  for(let it=0;it<30;it++)for(let a=0;a<pills.length;a++)for(let b=a+1;b<pills.length;b++){
+    const p=pills[a],q=pills[b],ox=(p.w+q.w)/2+6-Math.abs(q.x-p.x),oy=40-Math.abs(q.y-p.y);
+    if(ox>0&&oy>0){const f=oy/2*(q.y>=p.y?1:-1);p.y-=f;q.y+=f;}}
+  const alpha=clamp((clock-theme.at-.9)/.3);
+  for(const P of pills){
+    P.x=clamp(P.x,VIEW.x-VIEW.w/2+P.w/2,W-12-P.w/2);
+    const pulse=clamp(1-(clock-(pulseAt.get(P.id)||-9))/.6),sc=1+pulse*.08;
+    ctx.save();ctx.globalAlpha=alpha;
+    if(Math.hypot(P.x-P.ax,P.y-P.ay)>22){ctx.strokeStyle=C.ink;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(P.ax,P.ay);ctx.lineTo(P.x,P.y);ctx.stroke();
+      ctx.fillStyle=C.ink;ctx.beginPath();ctx.arc(P.ax,P.ay,3,0,Math.PI*2);ctx.fill();}
+    ctx.translate(P.x,P.y);ctx.scale(sc,sc);
+    ctx.shadowColor='rgba(26,35,38,.25)';ctx.shadowBlur=(12)*SPX();ctx.shadowOffsetY=3*SPX();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(-P.w/2,-17,P.w,34,17);ctx.fill();ctx.shadowColor='transparent';
+    if(pulse>0){ctx.strokeStyle=C.amber;ctx.lineWidth=2.5*pulse;ctx.stroke();}
+    ctx.fillStyle=themeColor(P.id);ctx.beginPath();ctx.arc(-P.w/2+18,0,6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=C.ink;ctx.font='700 17px Manrope';ctx.textBaseline='middle';ctx.fillText(P.text,-P.w/2+32,1);
+    ctx.fillStyle=C.muted;ctx.font='600 15px Manrope';ctx.fillText(P.count,-P.w/2+32+P.tw+14,1);
+    ctx.restore();
+  }
+}
+function drawHover(){
+  const h=pinned||hover;if(!h||!landed(h))return;const p=scr(pos(h)),r=Math.max(R*Z,20);
+  ctx.save();ctx.shadowColor='rgba(26,35,38,.28)';ctx.shadowBlur=(12)*SPX();ctx.shadowOffsetY=3*SPX();
+  ctx.fillStyle=colorOf(h);hexPath(p.x,p.y-3,r);ctx.fill();ctx.restore();
+  ctx.strokeStyle=C.ink;ctx.lineWidth=3;hexPath(p.x,p.y-3,r-1.5);ctx.stroke();
+}
+function counter(){
+  if(mode==='empty')return bucket.length;              // answers waiting for the start
+  if(mode==='drain')return Math.round(hexes.filter(h=>h.wasIn).length*(1-clamp((clock-modeAt)/1.2)));
+  return hexes.filter(landed).length;
+}
+function drawPanel(){
+  const x=PANEL.x;ctx.textBaseline='alphabetic';
+  ctx.fillStyle=C.muted;ctx.font='700 16px Manrope';
+  const eb=DEMO?'SAMPLE ANSWERS':TX('eyebrow',CONFIG.eyebrow);
+  ctx.letterSpacing='1.4px';ctx.fillText(eb,x,150);spot('eyebrow',eb,x,132,ctx.measureText(eb).width+8,24,'700 16px Manrope',24,!DEMO);ctx.letterSpacing='0px';
+  const qt=TX('poll.question',question||(!DEMO&&PREV&&PREV.question)||'');
+  // Keep the counter, a status line and the button above the join block: first
+  // the counter goes compact, then the question steps down.
+  const floor=(JOIN?JOIN_Y:672)-12;let q,lh,L;
+  const LOOK=[{fs:34,gap:56,num:96,base:60,st:100},{fs:34,gap:44,num:64,base:44,st:76},
+    {fs:30,gap:44,num:64,base:44,st:76},{fs:26,gap:40,num:64,base:44,st:76},{fs:22,gap:40,num:64,base:44,st:76}];
+  for(L of LOOK){ctx.font=`700 ${L.fs}px Manrope`;lh=Math.round(L.fs*1.3);q=wrap(qt||'…',PANEL.w);
+    if(196+q.length*lh+L.gap+L.st+88<=floor)break;}
+  ctx.fillStyle=C.ink;q.forEach((l,k)=>ctx.fillText(l,x,196+k*lh));
+  spot('poll.question',qt,x-4,196-L.fs*1.02,PANEL.w+8,(q.length-1)*lh+L.fs*1.3,`700 ${L.fs}px Manrope`,lh,!!PREV);   // the editor writes it to that poll
+  const y0=196+q.length*lh+L.gap;
+  ctx.fillStyle=C.accent;ctx.fillRect(x,y0-L.gap+8,48,4);
+  const n=counter();ctx.fillStyle=C.navy;ctx.font=`800 ${L.num}px Manrope`;ctx.fillText(String(n),x-4,y0+L.base);
+  const nw=ctx.measureText(String(n)).width;
+  ctx.fillStyle=C.muted;ctx.font='600 22px Manrope';ctx.fillText(n===1?'answer':'answers',x+nw+12,y0+L.base-2);
+  const lines=[];
+  if(status!=='ok'&&status!=='loading')lines.push(statusMsg);
+  else if(mode==='empty'&&bucket.length)lines.push('Click or press → to show them');
+  else if(mode==='play'){
+    if(clusterPending){lines.push(theme?'Re-clustering all answers…':'Clustering — embedding, grouping, labelling…');
+      const n=hexes.filter(h=>h.stale).length;if(n)lines.push(`+${n} arriving meanwhile · sorted once it lands`);}
+    else if(theme){lines.push(`${theme.k} themes · k-means on embeddings · ${theme.labelsBy==='llm'?'LLM labels':'keyword labels'}`);
+      const since=hexes.filter(h=>landed(h)&&!clusteredIds.has(h.id)),un=since.filter(h=>h.c<0).length;
+      if(since.length)lines.push(`+${since.length} since · ${since.length-un} sorted, ${un} waiting`);}
+    if(statusMsg)lines.push(statusMsg);
+  }
+  ctx.font='600 19px Manrope';ctx.fillStyle=C.muted;
+  lines.forEach((l,k)=>{const w=wrap(l,PANEL.w+60);w.slice(0,2).forEach((s,j)=>ctx.fillText(s,x,y0+L.st+(k+j)*28));});
+  PANEL.btnY=Math.min(y0+L.st+lines.length*28+(lines.length?10:-8),floor-56);
+}
+function buttonState(){
+  if(mode!=='play'||status!=='ok')return null;
+  if(clusterPending)return{label:'<i>✦</i>Clustering…',busy:true};
+  const n=hexes.filter(landed).length;
+  if(!theme)return n>=3?{label:`<i>✦</i>Cluster ${n} answers`,pulse:!queue.length&&!hexes.some(h=>clock<h.land)}:null;
+  const since=hexes.filter(h=>landed(h)&&!clusteredIds.has(h.id)).length;
+  return{label:since?`<i>↻</i>Re-cluster · ${since} new`:'<i>↻</i>Re-cluster',pulse:since>0&&!queue.length};
+}
+function updateButton(){
+  const b=buttonState();
+  btn.classList.toggle('on',!!b);btn.classList.toggle('pulse',!!(b&&b.pulse));btn.classList.toggle('busy',!!(b&&b.busy));
+  if(b&&btn.dataset.l!==b.label){btn.innerHTML=b.label;btn.dataset.l=b.label;}
+  btn.style.transform=`translate(${OX+PANEL.x*S}px,${OY+(PANEL.btnY||560)*S}px) scale(${S})`;
+}
+function drawNotice(){                     // why nothing is happening
+  if(status==='ok'||status==='loading')return;
+  ctx.fillStyle=C.tint;ctx.beginPath();ctx.roundRect(VIEW.x-240,VIEW.y-60,480,120,14);ctx.fill();   // the unlock field sits just below
+  ctx.fillStyle=C.ink;ctx.font='700 20px Manrope';ctx.textAlign='center';ctx.textBaseline='middle';
+  wrap(statusMsg,420).slice(0,3).forEach((l,k,a)=>ctx.fillText(l,VIEW.x,VIEW.y+(k-(a.length-1)/2)*28));
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+function updateUnlock(){
+  unlock.classList.toggle('on',status==='locked');
+  unlock.style.transform=`translate(${OX+(VIEW.x-160)*S}px,${OY+(VIEW.y+80)*S}px) scale(${S})`;
+}
+unlock.addEventListener('click',e=>e.stopPropagation());
+// ⚙ Display
+const gear=document.getElementById('gear'),$=id=>document.getElementById(id);
+function syncSets(){$('sHold').value=SET.hold;$('oHold').textContent=SET.hold.toFixed(1)+' s';$('sShorten').checked=SET.shorten;
+  $('sMax').value=SET.maxOpen;$('oMax').textContent=SET.maxOpen;$('sPace').value=SET.pace;$('oPace').textContent=SET.pace+'×';}
+$('sHold').addEventListener('input',e=>{SET.hold=+e.target.value;syncSets();});
+$('sShorten').addEventListener('change',e=>{SET.shorten=e.target.checked;});
+$('sMax').addEventListener('input',e=>{SET.maxOpen=+e.target.value;syncSets();});
+$('sPace').addEventListener('input',e=>{setPace(+e.target.value);syncSets();});
+$('rPace').style.display=CONFIG.replay?'':'none';syncSets();
+$('gearBtn').addEventListener('click',()=>gear.classList.toggle('open'));
+['click','pointerdown','pointermove'].forEach(t=>gear.addEventListener(t,e=>e.stopPropagation()));
+// Clear responses: deletes the bucket on the service (answers, images, saved
+// clustering; needs the lecturer key) and empties the slide, for a fresh room
+// after a rehearsal. Two clicks, no confirm() — a sandboxed frame may not show one.
+const wipe=$('wipe'),wipeMsg=$('wipeMsg');let wipeArm=0;
+function disarm(){wipeArm=0;wipe.classList.remove('arm');wipe.textContent='Clear responses';}
+wipe.addEventListener('click',async()=>{
+  if(!CODE||DEMO){wipeMsg.textContent='No live poll on or before this slide.';return;}
+  if(!wipeArm){wipeArm=setTimeout(disarm,4000);wipe.classList.add('arm');
+    wipe.textContent=`Delete every response (${known.size})? Click again`;wipeMsg.textContent='Cannot be undone.';return;}
+  clearTimeout(wipeArm);disarm();wipe.disabled=true;wipeMsg.textContent='Clearing…';
+  try{const d=await api('/api/poll?c='+encodeURIComponent(CODE),{method:'DELETE'});
+    wipes++;hexes=[];queue=[];bucket=[];known=new Set();theme=null;clusteredIds=new Set();byId.clear();pulseAt.clear();
+    clusterPending=false;assignPending=false;mode='empty';step=0;hover=pinned=null;showTip(null);statusMsg='';
+    wipeMsg.textContent=`Cleared ${d.cleared??0} responses.`;
+  }catch(e){wipeMsg.textContent='Could not clear: '+e.message;}
+  wipe.disabled=false;
+});
+// once a control is let go, → and the clicker drive the show again
+gear.addEventListener('change',e=>e.target.blur());
+gear.addEventListener('pointerup',e=>{if(e.target.type==='range')setTimeout(()=>e.target.blur(),0);});
+function updateGear(){gear.style.transform=`translate(${OX+(W-56-gear.offsetWidth)*S}px,${OY+30*S}px) scale(${S})`;}
+// the join QR: the room keeps answering while the hive draws (the embed has keepPollOpen)
+const join=$('join');
+if(JOIN){$('jQr').src=SERVICE+'/api/qr?c='+encodeURIComponent(JOIN)+'&fg=131d41';
+  $('jHost').textContent=SERVICE.replace(/^https?:\/\//,'');$('jCode').textContent=JOIN;
+  $('jQr').addEventListener('error',()=>{$('jQr').style.display='none';});}
+function updateJoin(){join.classList.toggle('on',!!JOIN&&status!=='offline');
+  join.style.transform=`translate(${OX+PANEL.x*S}px,${OY+JOIN_Y*S}px) scale(${S})`;}
+unlock.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();
+  const k=unlock.querySelector('input').value.trim();if(!k)return;
+  HDR['x-tessera-lecturer']=k;status='loading';statusMsg='';loaded=false;
+  (async()=>{while(!loaded&&status!=='locked'){await readBucket(true);if(!loaded&&status!=='locked')await new Promise(r=>setTimeout(r,2000));}
+    if(status==='locked')statusMsg='That key was not accepted — try again.';})();
+});
+function render(dt){
+  const t=camTarget(),k=Math.min(1,dt*2.2);
+  Z=Math.exp(mix(Math.log(Z),Math.log(t.z),k));camX=mix(camX,t.x,k);camY=mix(camY,t.y,k);
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const px=canvas.width/stage.getBoundingClientRect().width;ctx.setTransform(S*px,0,0,S*px,OX*px,OY*px);
+  drawSubstrate();drawRim();hexes.forEach(drawCell);drawLabels();drawHover();
+  if(mode==='play')hexes.forEach(drawOpen);
+  drawPanel();drawNotice();updateButton();updateUnlock();updateGear();updateJoin();
+  for(const h of hexes)if(!h.pulsed&&h.c!=null&&landed(h)&&!clusteredIds.has(h.id)){h.pulsed=1;pulseAt.set(h.c,clock);}
+}
+
+// ---- stepping --------------------------------------------------------------------------
+function start(){hexes=[];queue=[];theme=null;clusteredIds=new Set();byId.clear();pulseAt.clear();statusMsg='';
+  mode='play';step=1;clock=0;startReveal();}
+function reset(){                         // Home: everything falls away
+  if(mode!=='play'){mode='empty';step=0;return;}
+  hexes.forEach(h=>{h.wasIn=landed(h);h.snap=h.wasIn?pos(h):null;h.colD=h.wasIn?colorOf(h):null;
+    const p=h.snap?scr(h.snap):{y:0};h.dropAt=clamp(1-p.y/H)*.3+random()*.3;h.drift=(random()-.5)*70;});
+  mode='drain';modeAt=clock;step=0;
+  // replay again from the top next time
+  bucket=hexes.map(h=>({id:h.id,text:h.text})).concat(queue.map(h=>({id:h.id,text:h.text})));queue=[];
+}
+/** One "next" from a click or → : start, else press the button. False = nothing to do. */
+function advance(){
+  if(status!=='ok')return false;
+  if(step===0){if(mode==='drain')return true;start();return true;}
+  if(DEMO&&theme)return false;   // the sample is already clustered: → leaves the slide
+  const b=buttonState();if(b&&!b.busy){doCluster();return true;}
+  return false;
+}
+let polling=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000||.016);last=now;
+  clock+=dt*(reduced?3:1);
+  if(mode==='drain'&&clock-modeAt>1.6){mode='empty';hexes=[];}
+  if(mode==='play'){openNext();holdPending();if(clock-lastAssign>.8)doAssign();}
+  if(now-polling>3000){polling=now;readBucket(false);}
+  render(dt);requestAnimationFrame(frame);}
+
+// ---- hover / tap -------------------------------------------------------------------------
+function toSlide(e){const r=stage.getBoundingClientRect();return{x:(e.clientX-r.left-OX)/S,y:(e.clientY-r.top-OY)/S};}
+function hit(e){const p=toSlide(e);let best=null,bd=Math.max(R*Z*.95,14);
+  for(const h of hexes){if(!landed(h))continue;const s=scr(pos(h)),d=Math.hypot(s.x-p.x,s.y-p.y);if(d<bd){bd=d;best=h;}}
+  return best;}
+function showTip(h){
+  if(!h){tip.classList.remove('on');return;}
+  tip.innerHTML='<b></b>';tip.firstChild.textContent=theme&&h.c!=null?labelOf(h.c):'Answer';
+  tip.appendChild(document.createTextNode(h.text));
+  const rect=stage.getBoundingClientRect(),p=scr(pos(h)),sx=OX+p.x*S,sy=OY+p.y*S,rr=R*Z*S,tw=tip.offsetWidth,th=tip.offsetHeight;
+  let x=clamp(sx-tw/2,8,rect.width-tw-8),y=sy-rr-th-10;if(y<8)y=sy+rr+10;
+  tip.style.left=x+'px';tip.style.top=y+'px';tip.classList.add('on');
+}
+stage.addEventListener('pointermove',e=>{if(e.pointerType!=='mouse')return;const h=hit(e);if(h!==hover){hover=h;showTip(h);}});
+stage.addEventListener('pointerleave',()=>{hover=null;if(!pinned)showTip(null);});
+let lastTouch=0;stage.addEventListener('touchstart',()=>{lastTouch=performance.now();},{passive:true});
+stage.addEventListener('click',e=>{
+  if(e.target===btn||onLabel(e))return;
+  if(gear.classList.contains('open')){gear.classList.remove('open');return;}   // a click away closes it
+  if(e.pointerType==='touch'||e.pointerType==='pen'||lastTouch>performance.now()-600){
+    const h=hit(e);if(h){pinned=h===pinned?null:h;showTip(pinned);return;}
+    if(pinned){pinned=null;showTip(null);return;}
+  }
+  advance();
+});
+btn.addEventListener('click',e=>{e.stopPropagation();doCluster();});
+window.TESSERA_STEPPED=true;
+addEventListener('keydown',e=>{
+  if(e.target&&e.target.tagName==='INPUT')return;   // typing the key
+  if(['ArrowRight',' ','Enter','PageDown'].includes(e.key)){if(advance())e.preventDefault();}
+  if(e.key==='Home'){reset();e.preventDefault();}
+  if(e.key==='s'||e.key==='S')gear.classList.toggle('open');
+  if(e.key==='Escape')gear.classList.remove('open');
+});
+window.hiveStats=()=>({step,mode,status,clock:+clock.toFixed(2),landed:hexes.filter(landed).length,
+  queued:queue.length,open:hexes.filter(h=>clock<h.land).length,pending:hexes.filter(h=>h.pending).length,
+  themes:theme?Object.values(theme.clusters).map(c=>c.label):null,clusterPending,stale:hexes.filter(h=>h.stale).length,set:{...SET},statusMsg,zoom:+Z.toFixed(2)});
+(async()=>{while(!loaded){await readBucket(true);if(!loaded)await new Promise(r=>setTimeout(r,3000));}if(DEMO)openSample();})();
+document.fonts.load('700 34px Manrope').finally(()=>requestAnimationFrame(frame));
+</script></body></html>

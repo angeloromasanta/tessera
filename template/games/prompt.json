@@ -1,0 +1,42 @@
+{
+  "slide": {
+    "id": "sl-game-prompt",
+    "name": "12f · Game: prompt game",
+    "question": "Prompt game",
+    "screen": "../../kit/engage/prompt-screen.html",
+    "phone": "../../kit/engage/prompt-phone.html",
+    "requirename": true,
+    "after": "sl-game-pot",
+    "assets": "prompt",
+    "notes": "The prompt game. The screen shows a target animation; students describe it on their phones, an AI turns each description into a drawing, and they keep correcting it in words until theirs looks like the target.\n\nHow to run it:\n1. Present this slide on the day. Presenting publishes the phone page, and the AI answers only within 3 hours of that. To open it earlier, run slide.py poll publish DECK.html sl-game-prompt.\n2. State 0 shows the target and the join QR. Students join with their name and send their first description.\n3. Click: the wall. Every student's current drawing, closest to the target first, so a tile climbs as it improves. Click a tile to see it next to the target with all its prompts; Remove there takes a joke off the wall.\n4. Click: The prompts. Every prompt of every student, closest first. The list scrolls by itself after a few seconds; the arrows, the wheel or a drag scroll it without changing the slide. Tell the room to borrow what works and try again. Go back to the wall (left arrow) to let them iterate.\n5. Click: the ranking. This closes the phones, so the podium cannot change while you reveal it. Each further click shows one of the top five, last place first. Each phone shows its own place.\n\nThe Phones button at the bottom right opens or closes the phones at any moment. Reset game (two clicks) wipes every player and drawing; phones join again by themselves. The game needs the lecturer key in the deck. A phone that reloads keeps its name and its prompts.",
+    "code": "9j37kv"
+  },
+  "phone": [
+    "title",
+    "target",
+    "phoneHead",
+    "phoneAsk",
+    "phoneHint",
+    "phoneClosed"
+  ],
+  "title": "Prompt game",
+  "target": {},
+  "top": 5,
+  "briefEyebrow": "Recreate this by prompting",
+  "steps": [
+    "Join on your phone",
+    "Describe the animation in words",
+    "The AI draws it. Look at what comes back",
+    "Tell it what to change"
+  ],
+  "promptsEyebrow": "The prompts",
+  "promptsHead": "Borrow anything you see. Try again.",
+  "pnone": "No prompts yet.",
+  "boardHead": "Closest to the target",
+  "targetCap": "The target",
+  "countLbl": "drawings in",
+  "phoneHead": "Recreate the animation by telling an AI what to draw.",
+  "phoneAsk": "Describe it, or say what to change",
+  "phoneHint": "Shapes, colours, where they are, how they move. Borrow from the prompts on the screen.",
+  "phoneClosed": "The phones are closed. Watch the screen."
+}

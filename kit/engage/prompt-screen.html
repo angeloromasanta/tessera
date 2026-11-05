@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="tessera-game">
+<meta name="figcheck-allow" content="state0 coverage">
+<title>Prompt game</title>
+<!--
+  The prompt game, the SCREEN half (prompt-phone.html is the phone). A `## game`
+  slide: a full-bleed 1280x720 embed over a hidden activity poll. Students see a
+  target animation, describe it on their phones, an AI turns each prompt into a
+  draw(ctx, t) function, and they iterate. On the game SDK (docs/game.md),
+  injected by the deck because of <meta name="tessera-game">.
+
+  CONTRACT (one code, the activity poll's; nothing else is read or written)
+  - players  g.players (pid from the phone's device token: a reload is the same player).
+  - moves    k = "p<n>", n = 1, 2, 3 ... the phone's turn; data = {p: prompt (<= 600),
+             js: the drawing's source (<= 3000; '' when the AI's was too long)}; mode last.
+             The wall shows each pid's highest n with js; "The prompts" lists every p<n>.
+  - state    {s, ph, open, by}: s the screen state (0 brief, 1 wall, 2 the prompts,
+             3 ranked, 4.. the podium, last place first), ph 'brief'|'wall'|'prompts'|
+             'rank'|'podium', open = phones may send, by = this screen page's id.
+             Published with ifV (compare-and-set): a 409 means another screen moved the
+             game, and this one follows it; a reloaded screen resumes from the stored s.
+  - accept   {moves: ['p*']} while open, {moves: []} when closed (the server refuses a
+             late prompt). Entering the ranking closes the phones, going back to 0-2
+             reopens them; the "Phones" button overrides until the next such change.
+  - private  from the ranking on, per player with a scored drawing: {rank, of, score}.
+  - ai task  "draw", declared in the phone page's <script id="tessera-ai"> (the system
+             prompt of server/poll-worker/src/api/draw.js, minus its planted errors);
+             the phone calls g.ai('draw', input) and gets {text}. The AI answers only
+             within 3 h of the slide's activity page being published.
+  Untrusted code never runs on this page (it holds the lecturer key): every drawing is
+  compiled and run in Workers (one scores, one paints).
+  CONFIG (make_game.py fills it): target = art() parameters, or the source of a
+  draw(ctx, t) function; top = podium size; the labels (data-edit keys = CONFIG names).
+  Without a service (the poster, the page on its own): 13 simulated players (g.fake).
+-->
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+:root{
+  --ink:#1A2326; --navy:#0D2A2F; --accent:#0F6B73; --sky:#2B6CB0; --muted:#5A6467;
+  --faint:#A7AFB1; --line:#C7CFD1; --rule:#D7DEDF; --tint:#F1F5F5; --blue-tint:#E2F0F1;
+  --amber:#BF831A; --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457; --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A; --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;color:var(--ink);
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+/* The stage is authored at 1280x720; TesseraGame.fit scales it into the frame. */
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);transform-origin:center;
+  cursor:pointer;user-select:none;-webkit-user-select:none}
+.eyebrow{font-weight:600;font-size:16px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.head{font-weight:700;font-size:26px}
+.lbl{font-weight:700;font-size:20px}
+.sub{font-weight:500;font-size:17px;color:var(--muted)}
+.big{font-weight:700;font-size:52px;line-height:1}
+
+/* tiles: one per drawing; left/top/width/height are tweened, so a tile travels */
+.tile{position:absolute;background:#fff;outline:1px solid var(--rule);overflow:hidden;
+  transition:left .9s cubic-bezier(.22,1,.36,1),top .9s cubic-bezier(.22,1,.36,1),
+    width .9s cubic-bezier(.22,1,.36,1),height .9s cubic-bezier(.22,1,.36,1),opacity .5s ease}
+.tile canvas{display:block;width:100%;height:100%}
+.tile.target{outline:3px solid var(--accent)}
+.tile.hero{outline:3px solid var(--amber);z-index:3}
+.tile.bad{background:var(--tint)}
+.tile .x{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  font-weight:600;font-size:16px;color:var(--faint)}
+.tile.bad .x{display:flex}
+.tile .nm,.tile .sc{position:absolute;font-weight:700;font-size:16px;line-height:1;
+  padding:5px 8px;background:#fff;opacity:0;transition:opacity .4s ease}
+.tile .nm{left:0;bottom:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .sc{right:0;top:0;color:#fff;background:var(--accent)}
+.tile.names .nm{opacity:1}
+.tile.scores .sc{opacity:1}
+.tile.small .x{font-size:0}
+/* on the wall an entry whose code fails is an error tile, not a grey one */
+.tile .er{position:absolute;inset:0;display:none;flex-flow:row wrap;align-items:center;align-content:center;justify-content:center;
+  gap:6px 10px;padding:8px 10px 30px;background:var(--coral-tint);color:var(--coral-text);text-align:center}
+.tile.err{outline:3px solid var(--coral);z-index:1}
+.tile.err .er{display:flex}
+.tile.err .x{display:none}
+.tile .er svg{width:38px;height:34px;flex:none}
+.tile .er b{font-weight:800;font-size:26px;line-height:1}
+.tile .er span{flex:0 0 100%;font-weight:600;font-size:16px;line-height:1.2;max-width:100%;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.tile.err .nm{background:var(--coral-tint)}
+.tile.mid .er span{display:none}
+.tile.mid .er{padding-bottom:8px;gap:4px}
+.tile.mid .er svg{width:30px;height:27px}
+.tile.mid .er b{font-size:18px}
+.tile.small .er{padding:2px;gap:0}
+.tile.small .er b,.tile.small .er span{display:none}
+.tile.small .er svg{width:70%;height:70%}
+
+/* panels slide in from their own side */
+.panel{position:absolute;opacity:0;pointer-events:none;
+  transition:opacity .45s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+.panel.on{opacity:1;transform:none!important}
+#brief{left:936px;top:112px;width:288px;transform:translateX(60px)}
+#brief ol{list-style:none;margin-top:16px;counter-reset:n}
+#brief li{counter-increment:n;position:relative;padding:0 0 12px 34px;font-weight:600;font-size:18px;line-height:1.3}
+#brief li:before{content:counter(n);position:absolute;left:0;top:0;width:24px;height:24px;
+  background:var(--accent);color:#fff;font-size:16px;font-weight:700;text-align:center;line-height:24px}
+/* TesseraGame.joinBox fills #join (QR, address, code); laid out left-aligned here */
+#join{align-items:flex-start!important;text-align:left!important;gap:4px!important;margin-top:10px;color:var(--muted)!important}
+#join .tessera-join-qr{width:176px!important;max-width:176px!important;margin-bottom:6px}
+#join .tessera-join-addr{font-weight:500;font-size:17px!important;opacity:1!important;color:var(--muted)}
+#join .tessera-join-code{font-weight:700;font-size:34px!important;line-height:1.1!important;letter-spacing:0!important;color:var(--accent)}
+#count{position:absolute;right:56px;top:36px;text-align:right;transition:opacity .4s}
+#count b{font-weight:700;font-size:26px}
+/* state 2: every student's prompts, in order, one scrolling list of cards */
+#prompts{left:0;top:0;width:1280px;height:720px;transform:translateY(30px)}
+#prompts .eyebrow{position:absolute;left:56px;top:30px}
+#prompts .head{position:absolute;left:56px;top:52px;font-size:30px}
+#prompts .more{position:absolute;left:56px;top:98px;font-weight:600;font-size:16px;color:var(--muted)}
+#pnone{position:absolute;left:56px;top:300px;width:1168px;text-align:center;font-weight:700;font-size:34px;color:var(--muted);display:none}
+#prompts.none #pnone{display:block}
+#prompts.none #pctl{display:none}
+#plist{position:absolute;left:56px;top:126px;width:1076px;height:540px;overflow-y:auto;overscroll-behavior:contain;
+  padding-right:12px;cursor:grab;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#plist.drag{cursor:grabbing}
+#plist::-webkit-scrollbar,.hist::-webkit-scrollbar{width:8px}
+#plist::-webkit-scrollbar-thumb,.hist::-webkit-scrollbar-thumb{background:var(--line)}
+#prompts.on #plist,#prompts.on #pctl,#hq.on .hist{pointer-events:auto}
+.card{display:flex;gap:20px;align-items:flex-start;background:var(--tint);padding:14px 16px;margin-bottom:12px}
+.card .ph{flex:none;position:relative;width:224px;height:126px;background:#fff;outline:1px solid var(--rule)}
+.card .ph canvas{display:block;width:100%;height:100%}
+.card .ph[data-s]:not([data-s=""])::after{content:attr(data-s);position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font-weight:600;font-size:16px;color:var(--faint);background:var(--tint)}
+.card .tx{flex:1;min-width:0}
+.card .tx b{display:flex;gap:12px;align-items:baseline;font-weight:800;font-size:24px;line-height:1.2;color:var(--accent);margin-bottom:6px}
+.card .tx b i{font-style:normal;color:var(--muted);font-weight:600;font-size:18px}
+.hist{list-style:none}
+.hist li{display:flex;gap:12px;align-items:flex-start;font-weight:500;font-size:22px;line-height:1.3;color:var(--muted);
+  padding:3px 0;word-break:break-word}
+.hist li em{flex:none;font-style:normal;width:28px;height:28px;margin-top:1px;line-height:28px;text-align:center;
+  font-weight:700;font-size:16px;background:var(--rule);color:var(--muted)}
+.hist li.last{font-weight:700;font-size:24px;color:var(--ink)}
+.hist li.last em{background:var(--accent);color:#fff;margin-top:2px}
+#pctl{position:absolute;left:1148px;top:126px;width:76px;height:540px;display:flex;flex-direction:column;align-items:center;gap:12px}
+#pctl button{width:76px;height:76px;border:0;background:var(--accent);color:#fff;cursor:pointer;
+  font:700 30px Manrope,sans-serif;display:flex;align-items:center;justify-content:center}
+#pctl button.dim{background:var(--rule);color:#fff;cursor:default}
+#pctl #pauto{margin-top:auto;width:76px;height:auto;padding:8px 0;background:transparent;color:var(--muted);
+  font-size:13px;font-weight:700;line-height:1.2;flex-direction:column;gap:6px;outline:1px solid var(--rule)}
+#pauto i{width:12px;height:12px;border-radius:50%;background:var(--rule)}
+#pauto.on{color:var(--green-text)}
+#pauto.on i{background:var(--green)}
+/* a picked tile or a winner: every prompt it took, under the two drawings */
+#hq{left:56px;top:488px;width:1168px;height:178px;transform:translateY(30px);display:flex;flex-direction:column}
+#hq .eyebrow{flex:none;margin-bottom:6px}
+#hq .hist{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:12px;cursor:grab;
+  scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+#board{left:56px;top:92px;width:280px;transform:translateX(-60px)}
+#board .row{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--rule);
+  font-weight:600;font-size:18px}
+#board .row i{font-style:normal;color:var(--muted);width:24px}
+#board .row span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#board .row b{color:var(--accent)}
+#capT{left:56px;top:104px;transform:translateY(-24px)}
+#capH{left:652px;top:96px;width:572px;display:flex;align-items:baseline;gap:16px;transform:translateY(-24px)}
+#capH .lbl{flex:1;font-size:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#capH .big{color:var(--accent)}
+#rank{color:var(--amber-text)}
+/* the lecturer's controls, at the foot (the slide has no footer: logo only) */
+#note{position:absolute;left:56px;top:680px;max-width:500px;font-weight:600;font-size:15px;line-height:1.3;color:var(--coral-text)}
+#note.calm{color:var(--muted)}
+#dots{position:absolute;left:50%;top:680px;transform:translateX(-50%);display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#ctl{position:absolute;right:56px;top:672px;display:flex;gap:10px;align-items:center}
+#ctl button,#kick{font:700 14px Manrope,sans-serif;color:var(--ink);background:var(--tint);border:0;padding:7px 14px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:8px}
+#ctl button:hover,#kick:hover{background:var(--blue-tint)}
+#ctl button:disabled{opacity:.4;cursor:default}
+#ctl button i{width:10px;height:10px;border-radius:50%;background:var(--coral)}
+#ctl #open.on i{background:var(--green)}
+#ctl button.armed,#kick.armed{background:var(--coral);color:#fff}
+#kick{align-self:center;flex:none;display:none}
+#capH.picked #kick{display:inline-flex}
+#capH.on #kick{pointer-events:auto}
+#nosdk{position:absolute;inset:0;display:none;place-items:center;text-align:center;color:var(--muted);font-size:20px;padding:80px}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.15s!important}}
+</style></head>
+<body>
+<div id="stage">
+  <div class="panel none" id="prompts">
+    <div class="eyebrow" data-edit="promptsEyebrow">The prompts</div>
+    <div class="head" data-edit="promptsHead">Borrow anything you see. Try again.</div>
+    <div class="more" id="pmore" data-no-edit></div>
+    <div id="plist" data-no-edit></div>
+    <div id="pctl" data-no-edit><button id="pup" title="Scroll up">&#9650;</button><button id="pdn" title="Scroll down">&#9660;</button>
+      <button id="pauto" title="Scroll slowly on its own after 4 s idle"><i></i>auto-scroll</button></div>
+    <div id="pnone" data-edit="pnone">No prompts yet.</div>
+  </div>
+  <div id="tiles" data-no-edit></div>
+  <div id="count"><b id="n" data-no-edit>0</b> <span class="sub" data-edit="countLbl">drawings in</span></div>
+  <div class="panel" id="brief">
+    <div class="eyebrow" data-edit="briefEyebrow">Recreate this by prompting</div>
+    <div id="join" data-no-edit></div>
+    <ol>
+      <li data-edit="steps.0">Join on your phone</li>
+      <li data-edit="steps.1">Describe the animation in words</li>
+      <li data-edit="steps.2">The AI draws it. Look at what comes back</li>
+      <li data-edit="steps.3">Tell it what to change</li>
+    </ol>
+  </div>
+  <div class="panel" id="hq"><div class="eyebrow" id="hqe" data-no-edit>Their prompts</div><ol class="hist" id="hqt" data-no-edit></ol></div>
+  <div class="panel" id="board"><div class="eyebrow" data-edit="boardHead">Closest to the target</div><div id="rows" data-no-edit></div></div>
+  <div class="panel" id="capT"><div class="eyebrow" data-edit="targetCap">The target</div></div>
+  <div class="panel" id="capH" data-no-edit><div class="big" id="rank"></div><div class="lbl" id="who"></div><div class="big" id="pts"></div>
+    <button id="kick" title="Take this player off the wall (their phone can join again)">Remove</button></div>
+  <div id="note" data-no-edit></div>
+  <div id="dots" data-no-edit></div>
+  <div id="ctl" data-no-edit>
+    <button id="open" class="on" title="Whether the phones may send prompts now"><i></i><span>Phones open</span></button>
+    <button id="reset" title="Wipe every player and drawing (two clicks)">Reset game</button>
+  </div>
+  <div id="nosdk" data-no-edit>The game SDK is not loaded. This page runs inside a deck (or a page that injects
+    slides/src/game-sdk.js).</div>
+</div>
+
+<script>
+'use strict';
+const CONFIG = Object.assign({
+  title: 'Prompt game',
+  code: '',                        // the pinned bucket: a fallback when the deck gives none
+  target: {},                      // art() parameters, or the source of a draw(ctx, t) function
+  top: 5,                          // how many winners the podium shows
+  briefEyebrow: 'Recreate this by prompting',
+  steps: ['Join on your phone', 'Describe the animation in words', 'The AI draws it. Look at what comes back', 'Tell it what to change'],
+  promptsEyebrow: 'The prompts',
+  promptsHead: 'Borrow anything you see. Try again.',
+  pnone: 'No prompts yet.',
+  boardHead: 'Closest to the target',
+  targetCap: 'The target',
+  countLbl: 'drawings in',
+}, /*CONFIG*/null/*CONFIG*/ || {});
+
+const $ = id => document.getElementById(id);
+const E = window.TESSERA_EMBED || {};
+const T = (k, d) => (E.text ? E.text(k, d) : d);
+for (const el of document.querySelectorAll('[data-edit]')) {
+  const k = el.dataset.edit, m = /^steps\.(\d+)$/.exec(k);
+  const d = m ? (CONFIG.steps || [])[+m[1]] : CONFIG[k];
+  if (typeof d === 'string') el.textContent = T(k, d);
+}
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+const stage = $('stage');
+/* Only without the SDK; TesseraGame.fit otherwise. A frame can run this before it has a
+   size (a slideshow started on this slide): never scale to 0, and fit again later. */
+function localFit() {
+  if (!window.innerWidth || !window.innerHeight) return;
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
+  stage.style.transform = `translate(-50%,-50%) scale(${s})`;
+}
+
+/* ---- the drawing format ---------------------------------------------------
+   function draw(ctx, t): a 320x180 canvas already cleared to white, t in 0..1
+   over LOOP ms. The target is written in the same format as the entries. */
+const DW = 320, DH = 180, LOOP = 6000, MAXLEN = 3000, TOP = Math.max(1, CONFIG.top | 0 || 5);
+
+/* The target: six dots travel a star
+   path, easing at each point, while the whole figure turns. Three lines join each
+   dot to its partner in the other triangle (half a lap ahead), and twice a loop
+   one set of three dots reaches out to its neighbours: green edges grow until the
+   triangle closes, hold, and pull back, while the disc turns green around a
+   triangle that stays white. One loop = 2 star edges of travel + one fifth of a
+   turn, which lands every dot on its own start.
+   art() is the same text in prompt-phone.html (keep the two identical). */
+/* art:begin */
+function art(o = {}) {
+  const p = Object.assign({ R: 76, pts: 5, skip: 2, dots: 6, adv: .4, turn: 1, hold: 1.6, pulses: 2,
+    tri: '#0F6B73', dot: '#1A2326', starc: '#3B9457', ring: '#C7CFD1', ease: true }, o);
+  return `function draw(ctx,t){
+const N=${p.pts},T=Math.PI*2,R=${p.R},V=[];
+for(let i=0,v=0;i<N;i++,v=(v+${p.skip})%N){const a=v*T/N-Math.PI/2;V.push([R*Math.cos(a),R*Math.sin(a)])}
+const at=q=>{q=((q%1)+1)%1;const s=Math.floor(q*N),u=q*N-s,e=${p.ease ? '(Math.sin(Math.PI*(u-.5))+1)/2' : 'u'},a=V[s],b=V[(s+1)%N];return[a[0]+e*(b[0]-a[0]),a[1]+e*(b[1]-a[1])]};
+ctx.translate(160,90);
+ctx.rotate(${p.turn}*t*T/N);
+const P=[];for(let i=0;i<${p.dots};i++)P.push(at(i/${p.dots}+${p.adv}*t));
+const g=Math.min(1,${p.hold}*Math.pow(Math.max(0,Math.sin(T*${p.pulses}*t)),2));
+if(g>0){ctx.globalAlpha=g;ctx.beginPath();ctx.arc(0,0,R,0,T);ctx.fillStyle='${p.starc}';ctx.fill();ctx.globalAlpha=1;
+ctx.beginPath();[0,2,4].forEach((i,k)=>ctx[k?'lineTo':'moveTo'](P[i][0],P[i][1]));ctx.fillStyle='#fff';ctx.fill()}
+ctx.beginPath();ctx.arc(0,0,R,0,T);ctx.strokeStyle='${p.ring}';ctx.lineWidth=1;ctx.stroke();
+ctx.beginPath();for(let i=0;i<3;i++){ctx.moveTo(P[i][0],P[i][1]);ctx.lineTo(P[i+3][0],P[i+3][1])}
+ctx.strokeStyle='${p.tri}';ctx.lineWidth=2;ctx.stroke();
+if(g>0){ctx.beginPath();for(const i of[0,2,4]){const a=P[i],b=P[(i+2)%6];ctx.moveTo(a[0],a[1]);ctx.lineTo(a[0]+g*(b[0]-a[0]),a[1]+g*(b[1]-a[1]))}
+ctx.strokeStyle='${p.starc}';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.stroke()}
+ctx.fillStyle='${p.dot}';for(const q of P){ctx.beginPath();ctx.arc(q[0],q[1],3.4,0,T);ctx.fill()}
+}`;
+}
+const TARGET = typeof CONFIG.target === 'string' && /draw/.test(CONFIG.target) ? CONFIG.target
+  : art(CONFIG.target && typeof CONFIG.target === 'object' ? CONFIG.target : {});
+/* art:end */
+
+/* ---- untrusted code never runs on this page -------------------------------
+   This page holds the lecturer key, so every entry is compiled and run inside
+   Workers, which cannot see it. One worker scores (and is killed if an entry
+   hangs); one paints every tile through the OffscreenCanvas it was handed. */
+const SANDBOX = `
+const HIDE=['self','globalThis','fetch','XMLHttpRequest','WebSocket','importScripts','postMessage',
+  'setTimeout','setInterval','indexedDB','caches','navigator','close'];
+function compile(code){
+  const f=new Function(...HIDE,'"use strict";'+code+'\\n;return typeof draw==="function"?draw:null')();
+  if(!f) throw new Error('no draw function');
+  return f;
+}
+function fresh(ctx,c){ if(ctx.reset) ctx.reset(); else c.width=c.width; ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); }
+`;
+const SCORER = SANDBOX + `
+const W=64,H=36,N=24,c=new OffscreenCanvas(W,H),ctx=c.getContext('2d'),
+  c2=new OffscreenCanvas(W,H),soft=c2.getContext('2d',{willReadFrequently:true});
+function frames(fn){
+  const out=[];
+  for(let k=0;k<N;k++){
+    fresh(ctx,c); ctx.scale(W/${DW},H/${DH}); fn(ctx,k/N);
+    // The target is thin lines, so an honest attempt a few pixels off would share no ink with it:
+    // both are blurred first (2px here is 10px of the drawing), and near misses overlap.
+    soft.filter='blur(2px)'; soft.fillStyle='#fff'; soft.fillRect(0,0,W,H); soft.drawImage(c,0,0);
+    const d=soft.getImageData(0,0,W,H).data;
+    out.push(pool(d,W,H,2),pool(d,W,H,4));          // a fine and a coarse reading of each frame
+  }
+  return out;
+}
+// Mean colour per block: the coarse reading forgives a shape that is slightly out of place.
+function pool(d,W,H,B){
+  const w=W/B,h=H/B,g=new Float32Array(w*h*3);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)for(let ch=0;ch<3;ch++)
+    g[(Math.floor(y/B)*w+Math.floor(x/B))*3+ch]+=d[(y*W+x)*4+ch]/(B*B);
+  return g;
+}
+// Mean error per value, fine and coarse weighted equally.
+const diff=(A,B)=>{let s=0;for(let k=0;k<A.length;k++){let e=0;for(let j=0;j<A[k].length;j++)e+=Math.abs(A[k][j]-(B?B[k][j]:255));s+=e/A[k].length}return s};
+let ref=null,blank=1;
+onmessage=e=>{
+  const m=e.data;
+  try{
+    if(m.target){ref=frames(compile(m.target));blank=diff(ref,null)||1;return}
+    const score=Math.max(0,Math.round(100*(1-diff(frames(compile(m.code)),ref)/blank)));
+    postMessage({id:m.id,ok:true,score});
+  }catch(err){postMessage({id:m.id,ok:false,err:String(err&&err.message||err).slice(0,80)})}
+};
+`;
+const PAINTER = SANDBOX + `
+const tiles=new Map();
+onmessage=e=>{
+  const m=e.data;
+  if(m.ping){postMessage({pong:m.ping});return}
+  if(m.drop){tiles.delete(m.drop);return}
+  let t=tiles.get(m.id);
+  if(m.canvas){t={c:m.canvas,ctx:m.canvas.getContext('2d'),fn:null,bad:0,off:false};tiles.set(m.id,t)}
+  if(!t)return;
+  if('off' in m)t.off=!!m.off;
+  if('code' in m){t.bad=0;try{t.fn=m.code?compile(m.code):null}catch(err){t.fn=null}if(!t.fn)fresh(t.ctx,t.c)}
+};
+function frame(){
+  const now=Date.now(),t=(now%${LOOP})/${LOOP};
+  for(const x of tiles.values()){
+    if(!x.fn||x.bad>3||x.off)continue;
+    const t0=performance.now();
+    try{fresh(x.ctx,x.c);x.ctx.scale(x.c.width/320,x.c.height/180);x.fn(x.ctx,t);if(performance.now()-t0>40)x.bad++}catch(err){x.bad++}
+  }
+  (self.requestAnimationFrame||(f=>setTimeout(f,33)))(frame);
+}
+frame();
+`;
+const mkWorker = src => new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+
+/* scoring: one entry at a time; a hang costs that entry, not the slide */
+let scorer = null, busy = null; const queue = [];
+function startScorer() { scorer = mkWorker(SCORER); scorer.postMessage({ target: TARGET }); scorer.onmessage = e => settle(e.data); }
+function settle(r) {
+  if (!busy || r.id !== busy.e.id) return;
+  clearTimeout(busy.timer);
+  const e = busy.e; busy = null;
+  if (e.gone) { pump(); return; }
+  e.status = r.ok ? 'ok' : 'bad'; e.score = r.ok ? r.score : -1; e.err = r.err || '';
+  paint(e); changed(); pump();
+}
+function pump() {
+  if (busy || !queue.length) return;
+  const e = queue.shift();
+  busy = { e, timer: setTimeout(() => {              // it hung: kill the worker, keep the slide
+    scorer.terminate(); startScorer(); settle({ id: e.id, ok: false, err: 'never finished' });
+  }, 1500) };
+  scorer.postMessage({ id: e.id, code: e.code });
+}
+
+/* painting: restarted if a drawing that scored fine later hangs it */
+let painter = null, lastPong = 0, pingN = 0;
+function startPainter() {
+  painter = mkWorker(PAINTER); lastPong = Date.now();
+  painter.onmessage = e => { if (e.data.pong) lastPong = Date.now(); };
+}
+function paint(e) {
+  if (!e.sent) {
+    const off = e.canvas.transferControlToOffscreen();
+    painter.postMessage({ id: e.id, canvas: off, code: e.status === 'ok' ? e.code : '' }, [off]);
+    e.sent = true;
+  } else painter.postMessage({ id: e.id, code: e.status === 'ok' ? e.code : '' });
+}
+
+/* ---- entries, from the game's moves ----------------------------------------
+   One entry (tile) per player: their highest turn p<n> that carries a drawing.
+   Prompts: every p<n> of a player, in turn order, an identical prompt sent twice
+   in a row shown once. Names come from the roster (g.players), by pid. */
+const entries = [];                 // [0] is the target
+const byPid = new Map();            // pid -> entry
+const prompts = new Map();          // pid -> {turns: Map(n -> text), list: [text, ...]}
+let roster = new Map(), eid = 0;    // pid -> {pid, name, kicked}
+const nameOf = pid => { const p = roster.get(pid); return (p && p.name) || 'Player'; };
+const isLive = pid => { const p = roster.get(pid); return !p || !p.kicked; };
+function ingest(ms) {
+  let any = false; const hit = new Set();
+  for (const m of ms) {
+    const t = /^p(\d{1,3})$/.exec(m.k); if (!t) continue;
+    const n = +t[1], d = m.data && typeof m.data === 'object' ? m.data : {};
+    const text = String(d.p || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    let p = prompts.get(m.pid);
+    if (!p) prompts.set(m.pid, p = { turns: new Map(), list: [] });
+    if (text) { p.turns.set(n, text); hit.add(p); }
+    const code = clean(d.js);
+    if (!code || !/draw/.test(code) || code.length > MAXLEN + 100) continue;
+    let e = byPid.get(m.pid);
+    if (e && n < e.n) continue;                         // an older turn, re-sent
+    if (!e) { e = mkEntry(m.pid); byPid.set(m.pid, e); }
+    e.n = n;
+    if (e.code === code) continue;
+    e.code = code;                                      // a scored entry keeps its place until re-scored
+    if (!queue.includes(e)) queue.push(e);
+    any = true;
+  }
+  for (const p of hit) p.list = [...p.turns.keys()].sort((a, b) => a - b).map(k => p.turns.get(k))
+    .filter((t, k, A) => !k || t !== A[k - 1]);
+  if (any || hit.size) changed();
+  if (any) pump();
+}
+function forget() {                                     // a reset: every entry but the target goes
+  for (const e of entries.slice(1)) { e.gone = true; e.el.remove(); if (e.sent) painter.postMessage({ drop: e.id }); }
+  entries.length = 1; byPid.clear(); prompts.clear(); queue.length = 0;
+  if (busy) { clearTimeout(busy.timer); busy = null; }
+  for (const d of cards.values()) { d.el.remove(); if (d.sent) painter.postMessage({ drop: d.id }); }
+  cards.clear(); picked = null; changed();
+}
+const histOf = e => { const p = e && prompts.get(e.pid); return p ? p.list : []; };
+function histHTML(ol, list) {                           // numbered, the latest one emphasised
+  ol.textContent = '';
+  list.forEach((t, k) => {
+    const li = document.createElement('li'), em = document.createElement('em'), sp = document.createElement('span');
+    if (k === list.length - 1) li.className = 'last';
+    em.textContent = k + 1; sp.textContent = t; li.append(em, sp); ol.append(li);
+  });
+}
+function clean(s) {
+  return String(s || '').replace(/^\s*```[a-z]*\s*$/gim, '').replace(/^\s*export\s+(default\s+)?/gm, '').trim();
+}
+const WARN = `<svg viewBox="0 0 44 40"><path d="M22 2 42 38H2Z" fill="${C.coral}"/><path d="M22 14v12" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="22" cy="32" r="2.4" fill="#fff"/></svg>`;
+function mkEntry(pid, isTarget) {
+  const el = document.createElement('div'); el.className = 'tile' + (isTarget ? ' target' : '');
+  const canvas = document.createElement('canvas');      // backing store: sharp when shown large
+  canvas.width = DW * (isTarget ? 4 : 1.5); canvas.height = DH * (isTarget ? 4 : 1.5);
+  el.append(canvas);
+  for (const k of ['x', 'er', 'nm', 'sc']) { const d = document.createElement('div'); d.className = k; el.append(d); }
+  el.querySelector('.er').innerHTML = WARN + '<b>Error</b><span></span>';
+  el.querySelector('.nm').textContent = isTarget ? T('targetCap', CONFIG.targetCap) : nameOf(pid);
+  $('tiles').append(el);
+  const e = { id: 'e' + (eid++), pid, code: '', n: 0, el, canvas, isTarget: !!isTarget, status: 'wait', score: -1, sent: false, seq: eid };
+  el.addEventListener('click', ev => { if (pick(e)) ev.stopPropagation(); });
+  entries.push(e);
+  return e;
+}
+
+/* ---- states and layout ----------------------------------------------------
+   0 brief · 1 wall · 2 the prompts · 3 ranked · 4.. the top entries, last
+   place first · then a click returns to 0. `picked` is a tile clicked on the wall
+   for a closer look. The wall is closest first, so a tile climbs as it improves. */
+let i = 0, picked = null;
+const PH = n => (n <= 0 ? 'brief' : n === 1 ? 'wall' : n === 2 ? 'prompts' : n === 3 ? 'rank' : 'podium');
+const subs = () => entries.filter(e => !e.isTarget && isLive(e.pid));
+const ranked = () => subs().filter(e => e.status !== 'wait')
+  .sort((a, b) => b.score - a.score || a.seq - b.seq);
+const podium = () => ranked().filter(e => e.status === 'ok').slice(0, TOP);
+const nStates = () => 4 + podium().length;
+const COUNTER = { x: 1140, y: 44, w: 32, h: 18 };
+
+function grid(n, R, cap = 420) {
+  let best = { w: 0, cols: 1 }; const gap = n > 60 ? 4 : 10;
+  for (let cols = 1; cols <= 40; cols++) {
+    const rows = Math.ceil(n / cols);
+    let w = Math.min(cap, (R.w - gap * (cols - 1)) / cols);
+    w = Math.min(w, ((R.h - gap * (rows - 1)) / rows) * DW / DH);
+    if (w > best.w) best = { w, cols, rows };
+  }
+  const { w, cols, rows } = best, h = w * DH / DW;
+  const x0 = R.x + (R.w - (cols * w + (cols - 1) * gap)) / 2;
+  const y0 = R.y + (R.c ? (R.h - (rows * h + (rows - 1) * gap)) / 2 : 0);
+  return k => ({ x: x0 + (k % cols) * (w + gap), y: y0 + Math.floor(k / cols) * (h + gap), w, h });
+}
+function place(e, r, o = 1) {
+  const s = e.el.style;
+  s.left = r.x + 'px'; s.top = r.y + 'px'; s.width = r.w + 'px'; s.height = r.h + 'px'; s.opacity = o;
+  s.pointerEvents = o ? '' : 'none';                  // a hidden tile never takes a click or a wheel
+  e.el.classList.toggle('small', r.w < 120);
+  e.el.classList.toggle('mid', r.w >= 120 && r.w < 190);
+  e.el.classList.toggle('err', e.status === 'bad' && i <= 2);   // from the ranking on it is "crashed"
+  e.el.querySelector('.er span').textContent = (e.err || '').slice(0, 40);
+  e.el.querySelector('.x').textContent = e.status === 'bad' ? 'crashed' : e.status === 'wait' ? '…' : '';
+  e.el.classList.toggle('bad', e.status !== 'ok');
+  e.el.querySelector('.sc').textContent = e.score >= 0 ? e.score : '';
+  if (!e.isTarget) e.el.querySelector('.nm').textContent = nameOf(e.pid);
+  return r;
+}
+function layout() {
+  const target = entries[0], all = subs(), pod = podium();
+  const n = Math.min(i, nStates() - 1);
+  if (picked && (!isLive(picked.pid) || picked.gone)) picked = null;
+  const hero = picked || (n >= 4 ? pod[pod.length - 1 - (n - 4)] : null);
+  const order = [...ranked(), ...all.filter(e => e.status === 'wait')];
+  entries.forEach(e => e.el.classList.remove('hero', 'names', 'scores'));
+  entries.forEach(e => { if (!e.isTarget && !isLive(e.pid)) place(e, COUNTER, 0); });   // removed players
+  const on2 = n === 2 && !hero;                         // the cards' drawings paint only while shown
+  if (on2 !== cardsOn) { cardsOn = on2; for (const d of cards.values()) if (d.sent) painter.postMessage({ id: d.id, off: !on2 }); }
+
+  if (n === 0 && !hero) {                               // the brief: only the target
+    place(target, { x: 56, y: 112, w: 848, h: 477 });
+    all.forEach(e => place(e, COUNTER, 0));             // waiting inside the counter
+  } else if (hero) {                                    // two up, the rest a strip below
+    place(target, { x: 56, y: 150, w: 572, h: 321.75 });
+    const g = grid(Math.max(1, order.length - 1), { x: 56, y: 496, w: 1168, h: 136 }, 120);
+    const hh = histOf(hero), hp = hh.join('\u0001');    // its prompts replace the strip
+    let k = 0;
+    order.forEach(e => e === hero ? place(e, { x: 652, y: 150, w: 572, h: 321.75 }) : place(e, g(k++), hp ? 0 : .3));
+    if ($('hqt').dataset.v !== hp) {
+      $('hqt').dataset.v = hp; histHTML($('hqt'), hh); $('hqt').scrollTop = 1e6;   // opens on the latest; scroll up for the first
+      $('hqe').textContent = hh.length > 1 ? 'Their ' + hh.length + ' prompts, in order' : 'Their prompt';
+    }
+    hero.el.classList.add('hero');
+    $('rank').textContent = picked ? '' : '#' + (pod.indexOf(hero) + 1);
+    $('who').textContent = nameOf(hero.pid);
+    $('pts').textContent = hero.score >= 0 ? hero.score : '';
+  } else if (n === 2) {                                 // the prompts: a scrolling list, each card with its own drawing
+    layoutCards();
+    place(target, { x: 1064, y: 20, w: 160, h: 90 });
+    all.forEach(e => place(e, COUNTER, 0));
+  } else {                                              // the wall, target first, closest first
+    const R = n === 3 ? { x: 368, y: 92, w: 856, h: 548 } : { x: 56, y: 92, w: 1168, h: 548 };
+    const g = grid(order.length + 1, R, 420);
+    const r = place(target, g(0));
+    order.forEach((e, k) => { place(e, g(k + 1));
+      e.el.classList.toggle('names', r.w >= 170);
+      e.el.classList.toggle('scores', n === 3 && r.w >= 70 && e.score >= 0); });
+    target.el.classList.toggle('names', r.w >= 170);
+  }
+  $('brief').classList.toggle('on', n === 0 && !hero);
+  $('board').classList.toggle('on', n === 3 && !hero);
+  $('prompts').classList.toggle('on', n === 2 && !hero);
+  $('hq').classList.toggle('on', !!hero && histOf(hero).length > 0);
+  $('capT').classList.toggle('on', !!hero);
+  $('capH').classList.toggle('on', !!hero);
+  $('capH').classList.toggle('picked', !!picked);
+  $('count').style.opacity = hero || n === 2 ? 0 : 1;
+  $('n').textContent = all.length;
+  $('rows').innerHTML = '';
+  ranked().filter(e => e.status === 'ok').slice(0, 10).forEach((e, k) => {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<i>${k + 1}</i><span></span><b>${e.score}</b>`;
+    row.querySelector('span').textContent = nameOf(e.pid);
+    $('rows').append(row);
+  });
+  const dots = $('dots');
+  if (dots.children.length !== nStates()) dots.innerHTML = '<i></i>'.repeat(nStates());
+  [...dots.children].forEach((d, k) => d.classList.toggle('on', k <= n));
+  bar();
+  publish();
+}
+/* The prompt cards: one per student, closest to the target first (then anyone
+   with a prompt but no drawing yet), in one list that scrolls. A card is kept
+   per player and only updated, so its drawing and the scroll position survive the
+   re-scoring; each card paints its own small copy of the student's drawing. */
+const cards = new Map();            // pid -> {el, nm, sc, ol, ph, canvas, id, sent, code, sig}
+let cardsOn = null, cardN = 0;
+function cardList() {
+  const scored = [...ranked(), ...subs().filter(e => e.status === 'wait')];
+  const list = scored.filter(e => histOf(e).length).map(e => ({ e, key: e.pid, hist: histOf(e) }));
+  for (const [pid, p] of prompts) if (!byPid.has(pid) && isLive(pid) && p.list.length) list.push({ e: null, key: pid, hist: p.list });
+  return list;
+}
+function mkCard() {
+  const el = document.createElement('div'); el.className = 'card';
+  el.innerHTML = '<div class="ph"></div><div class="tx"><b><span></span><i></i></b><ol class="hist"></ol></div>';
+  const canvas = document.createElement('canvas'); canvas.width = DW * .75; canvas.height = DH * .75;
+  el.querySelector('.ph').append(canvas);
+  return { el, canvas, nm: el.querySelector('span'), sc: el.querySelector('i'), ol: el.querySelector('ol'),
+    ph: el.querySelector('.ph'), id: 'k' + (cardN++), sent: false, code: null, sig: null };
+}
+function layoutCards() {
+  const list = cardList(), box = $('plist'), keep = new Set();
+  $('prompts').classList.toggle('none', !list.length);
+  $('pmore').textContent = list.length ? list.length + (list.length > 1 ? ' students' : ' student')
+    + ', closest to the target first. Every prompt in order, the latest in bold.' : '';
+  list.forEach((c, k) => {
+    keep.add(c.key);
+    let d = cards.get(c.key);
+    if (!d) cards.set(c.key, d = mkCard());
+    const sig = c.hist.join('\u0001');
+    if (d.sig !== sig) { d.sig = sig; histHTML(d.ol, c.hist); }
+    d.nm.textContent = nameOf(c.key);
+    d.sc.textContent = c.e && c.e.score >= 0 ? c.e.score + ' pts' : '';
+    d.ph.dataset.s = !c.e ? 'no drawing yet' : c.e.status === 'bad' ? 'crashed' : c.e.status === 'wait' ? '…' : '';
+    if (c.e) {
+      const code = c.e.status === 'ok' ? c.e.code : '';
+      if (!d.sent) {
+        const off = d.canvas.transferControlToOffscreen();
+        painter.postMessage({ id: d.id, canvas: off, code, off: !cardsOn }, [off]); d.sent = true; d.code = code;
+      } else if (d.code !== code) { painter.postMessage({ id: d.id, code }); d.code = code; }
+    }
+    if (box.children[k] !== d.el) box.insertBefore(d.el, box.children[k] || null);
+  });
+  for (const [k, d] of cards) if (!keep.has(k)) { d.el.remove(); if (d.sent) painter.postMessage({ drop: d.id }); cards.delete(k); }
+  scrollButtons();
+}
+
+/* ---- scrolling the list (and a picked tile's prompts) ----------------------
+   Wheel, trackpad and drag scroll inside the list and never step the slide;
+   the big buttons scroll one screen; after 4 s idle the list creeps down on its
+   own until a wheel, a drag, a button or an up/down key stops it (the toggle
+   turns it back on). Scroll offsets are in stage pixels; a drag divides by the scale. */
+const scaleNow = () => stage.getBoundingClientRect().width / 1280 || 1;
+function scroller(el, onUser) {
+  let down = false, moved = false, y0 = 0, s0 = 0;
+  el.addEventListener('wheel', ev => { ev.stopPropagation(); onUser(); }, { passive: true });
+  el.addEventListener('pointerdown', ev => {
+    if (ev.button || ev.pointerType === 'touch') return;     // touch scrolls natively
+    down = true; moved = false; y0 = ev.clientY; s0 = el.scrollTop;
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!down) return;
+    const dy = ev.clientY - y0;
+    if (!moved && Math.abs(dy) > 6) { moved = true; try { el.setPointerCapture(ev.pointerId); } catch (e) {} el.classList.add('drag'); onUser(); }
+    if (moved) el.scrollTop = s0 - dy / scaleNow();
+  });
+  const up = () => { down = false; el.classList.remove('drag'); setTimeout(() => { moved = false; }, 0); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('click', ev => { if (moved) { ev.stopPropagation(); ev.preventDefault(); } }, true);  // a drag is not a step
+}
+let auto = true, idleAt = 0, autoAcc = -1, autoLast = 0, autoEnd = 0;
+function syncAuto() { $('pauto').classList.toggle('on', auto); }
+function userScroll() { auto = false; idleAt = performance.now(); autoAcc = -1; syncAuto(); }
+function pageBy(d) {
+  const el = $('plist');
+  el.scrollBy({ top: d * Math.round(el.clientHeight * .85), behavior: 'smooth' });
+}
+function scrollButtons() {
+  const el = $('plist'), max = el.scrollHeight - el.clientHeight;
+  $('pup').classList.toggle('dim', el.scrollTop <= 1);
+  $('pdn').classList.toggle('dim', el.scrollTop >= max - 1);
+}
+scroller($('plist'), userScroll);
+scroller($('hqt'), () => {});
+$('plist').addEventListener('scroll', scrollButtons, { passive: true });
+for (const [id, d] of [['pup', -1], ['pdn', 1]]) $(id).addEventListener('click', ev => { ev.stopPropagation(); userScroll(); pageBy(d); });
+$('pauto').addEventListener('click', ev => { ev.stopPropagation(); auto = !auto; idleAt = performance.now(); autoAcc = -1; autoEnd = 0; syncAuto(); });
+for (const id of ['pup', 'pdn', 'pauto']) $(id).addEventListener('pointerdown', ev => ev.stopPropagation());
+function autoTick(now) {
+  requestAnimationFrame(autoTick);
+  const dt = Math.min(100, now - autoLast); autoLast = now;
+  const el = $('plist');
+  if (!auto || i !== 2 || picked || now - idleAt < 4000) { autoAcc = -1; return; }
+  const max = el.scrollHeight - el.clientHeight;
+  if (max <= 2) return;
+  if (autoAcc < 0) autoAcc = el.scrollTop;
+  if (autoAcc >= max - 1) {                              // at the end: wait, back to the top, then again
+    if (!autoEnd) autoEnd = now;
+    else if (now - autoEnd > 4000) { autoEnd = 0; autoAcc = -1; idleAt = now; el.scrollTo({ top: 0, behavior: 'smooth' }); }
+    return;
+  }
+  autoAcc = Math.min(max, autoAcc + 32 * dt / 1000); el.scrollTop = autoAcc;
+}
+let relay = 0;                      // a timer, not rAF: a hidden second screen still keeps up
+function changed() { clearTimeout(relay); relay = setTimeout(layout, 30); }
+/* Entering the ranking closes the phones (a late prompt would reorder the podium
+   mid-reveal); going back to 0-2 reopens them. The Phones button overrides. */
+let open = true;
+function go(n) {
+  picked = null;
+  const was = i <= 2;
+  i = (n + nStates()) % nStates();
+  if ((i <= 2) !== was) open = i <= 2;
+  if (i === 2) { $('plist').scrollTop = 0; auto = true; idleAt = performance.now(); autoAcc = -1; autoEnd = 0; syncAuto(); }
+  layout();
+}
+function next() { go(i + 1); }
+function pick(e) {                                      // a closer look at one tile on the wall
+  if (picked) { picked = null; layout(); return true; }
+  if (i < 1 || i > 3 || e.isTarget || e.status !== 'ok') return false;
+  picked = e; kickArmed = false; layout(); return true;
+}
+const steps = { get length() { return nStates(); } };  // read by the screenshot tools
+
+/* ---- the lecturer's bar ------------------------------------------------------ */
+let g = null, note = '', calm = false, armed = 0, kickArmed = false;
+function say(t, isCalm) { note = t || ''; calm = !!isCalm; bar(); }
+function bar() {
+  const nt = $('note');
+  let t = note, c = calm;
+  if (g && !g.hasKey) { t = 'Enter the lecturer key in the deck (present mode) to run the game.'; c = false; }
+  else if (g && g.error && g.error.status !== 409 && !note) { t = 'Poll service unreachable: ' + g.error.message; c = false; }
+  nt.textContent = t; nt.classList.toggle('calm', c);
+  const ok = !!g && g.hasKey;
+  $('open').classList.toggle('on', open);
+  $('open').querySelector('span').textContent = open ? 'Phones open' : 'Phones closed';
+  $('open').disabled = !ok; $('reset').disabled = !ok;
+  $('reset').classList.toggle('armed', !!armed);
+  $('reset').textContent = armed ? 'Click again to wipe' : 'Reset game';
+  $('kick').classList.toggle('armed', kickArmed);
+  $('kick').textContent = kickArmed ? 'Click again' : 'Remove';
+  $('kick').disabled = !ok;
+}
+for (const id of ['open', 'reset', 'kick']) {
+  $(id).addEventListener('pointerdown', ev => ev.stopPropagation());
+}
+$('open').addEventListener('click', ev => { ev.stopPropagation(); open = !open; layout(); });
+$('reset').addEventListener('click', ev => { ev.stopPropagation(); resetGame(); });
+$('kick').addEventListener('click', ev => {
+  ev.stopPropagation();
+  if (!picked) return;
+  if (!kickArmed) { kickArmed = true; bar(); return; }
+  const e = picked; kickArmed = false; picked = null;
+  const p = roster.get(e.pid); if (p) p.kicked = true;  // at once; the next read confirms it
+  layout();
+  g.kick(e.pid).catch(x => say('Could not remove (' + (x.status ? 'HTTP ' + x.status : x.message) + ')'));
+});
+
+/* ---- the game: state, accept, private (CONTRACT at the top) --------------------- */
+const SID = Math.random().toString(36).slice(2, 10);   // this screen page; another screen's moves are followed
+let ready = false, knownV = -1, lastSig = '', lastPriv = {}, pubBusy = false, pubAgain = false, pubT = 0, epoch;
+function wanted() {
+  const n = Math.min(i, nStates() - 1);
+  const state = { s: i, ph: PH(n), open, by: SID };
+  const priv = {};
+  if (n >= 3) {                                          // each phone its own place, from the ranking on
+    const R = ranked().filter(e => e.status === 'ok');
+    for (const e of R) priv[e.pid] = { rank: 1 + R.filter(x => x.score > e.score).length, of: R.length, score: e.score };
+  }
+  return { state, accept: { moves: open ? ['p*'] : [] }, priv };
+}
+function publish() {
+  if (!ready || !g || !g.hasKey) return;
+  clearTimeout(pubT); pubT = setTimeout(flush, 60);
+}
+function flush() {
+  if (pubBusy) { pubAgain = true; return; }
+  const w = wanted(), sig = JSON.stringify([w.state.s, w.state.ph, w.state.open]), priv = {}, sent = {};
+  let np = 0;
+  for (const pid in w.priv) {
+    const t = JSON.stringify(w.priv[pid]);
+    if (lastPriv[pid] !== t) { priv[pid] = w.priv[pid]; sent[pid] = t; np++; }
+  }
+  if (sig === lastSig && !np) return;
+  pubBusy = true;
+  const ifV = Math.max(knownV, g.v === undefined ? -1 : g.v);
+  g.publish(w.state, np ? { accept: w.accept, private: priv, ifV } : { accept: w.accept, ifV })
+    .then(r => { knownV = r.v; lastSig = sig; Object.assign(lastPriv, sent); if (/^(Could not|Another)/.test(note)) say(''); },
+      e => {
+        if (e.status === 409 && e.body && e.body.state) {   // another screen moved first: follow it
+          knownV = e.body.v; follow(e.body.state); say('Another screen moved the game: following it.', true);
+        } else say('Could not reach the phones (' + (e.status ? 'HTTP ' + e.status : e.message) + ')');
+      })
+    .then(() => { pubBusy = false; if (pubAgain) { pubAgain = false; flush(); } });
+}
+const valid = st => st && Number.isInteger(st.s) && st.s >= 0 && st.s < 64;
+function follow(st) {
+  if (!valid(st)) return;
+  i = st.s; open = st.open !== false; picked = null;
+  lastSig = JSON.stringify([st.s, st.ph, open]);
+  layout();
+}
+async function resetGame() {
+  if (!armed) {
+    armed = setTimeout(() => { armed = 0; bar(); }, 3500);
+    say('Click Reset again to wipe every player, prompt and drawing.', true); return;
+  }
+  clearTimeout(armed); armed = 0;
+  try {
+    const r = await g.reset();
+    knownV = r.v; epoch = r.epoch; forget(); lastPriv = {}; lastSig = '';
+    i = 0; open = true; say('Reset: every drawing wiped; the phones join again by themselves.', true);
+    layout();
+  } catch (e) { say('Reset failed: ' + (e.status ? 'HTTP ' + e.status : e.message)); }
+}
+function onState(st) {
+  st = st || {};
+  if (epoch !== undefined && g.epoch !== epoch) {       // a reset (here or on another screen)
+    epoch = g.epoch; forget(); lastPriv = {};
+    if (!valid(st)) { i = 0; open = true; lastSig = ''; layout(); return; }
+  }
+  epoch = g.epoch;
+  if (!ready) {                                          // a reload resumes where the game was
+    ready = true;
+    if (valid(st)) follow(st);
+    else { i = g.sample ? 1 : 0; open = true; layout(); }
+    return;
+  }
+  if (valid(st) && st.by !== SID) {                      // another screen published: follow it
+    knownV = Math.max(knownV, g.v);
+    if (st.s !== i || (st.open !== false) !== open) follow(st);
+  }
+}
+function onPlayers(ps) {
+  roster = new Map(ps.map(p => [p.pid, p]));
+  changed();
+}
+
+/* ---- offline: simulated phones (g.fake), so the poster shows the wall --------- */
+function sampleEntries() {
+  return [
+    ['Aitana', art({ adv: .4, R: 74 }), ['A circle with dots on a star', 'Six dark dots move along the lines of a five-point star inside a thin grey circle', 'Make the dots slow down at each corner of the star', 'The whole thing should also turn slowly clockwise, about a fifth of a turn per loop', 'Join each dot to the dot opposite it with a blue line, and do not draw the star itself']],
+    ['Bruno', art({ ease: false }), ['Dots moving on a star', 'Same as now but the dots should move at constant speed and keep the blue lines joining opposite dots']],
+    ['Carla', art({ hold: 1 }), ['Six dots on a star in a circle', 'Every 3 seconds the circle fills green and a white triangle appears between three of the dots, then fades', 'Every 3 seconds the circle fills green and a white triangle appears between three of the dots, then fades', 'The green should come twice per loop, and the triangle edges should grow from the dots']],
+    ['Dídac', art({ pts: 7, skip: 3, R: 70 }), ['A seven-point star with dots travelling on it']],
+    ['Elena', art({ turn: -1, tri: C.green, starc: C.amber }), ['A rotating star', 'Six dots instead of five', 'Make it turn the other way and use blue lines instead of green']],
+    ['Farid', art({ pulses: 1, R: 60 }), ['Dots on a star inside a ring', 'Add green flashes', 'Bigger circle, radius 76, and the green flash twice per loop not once', 'Keep the ring grey and thin', 'The flash is too short, make it last longer', 'Smaller again, the circle is cut off at the bottom']],
+    ['Greta', art({ dots: 12, adv: .2, starc: C.sky }), ['Twelve dots chasing each other on a star', 'Six dots only, not twelve. Navy dots, blue connecting lines']],
+    ['Hugo', art({ R: 50, hold: 0 }), ['A star of dots that turns', 'Add the green pulse: the disc turns green and green edges grow from three dots until they close a triangle']],
+    ['Irene', art({ pts: 4, skip: 1 }), ['A square with dots', 'Five points, skip two vertices so it is a star and not a pentagon']],
+    ['Jordi', `function draw(ctx,t){ctx.fillStyle='${C.accent}';ctx.beginPath();ctx.arc(160+60*Math.cos(t*6.283),90+60*Math.sin(t*6.283),14,0,7);ctx.fill()}`, ['A blue dot moving in a circle around the centre']],
+    ['Kai', `const draw=(ctx,t)=>{ctx.translate(160,90);ctx.rotate(t*6.283);ctx.strokeStyle='${C.ink}';ctx.strokeRect(-50,-50,100,100)}`, ['A square rotating in the middle, dark outline']],
+    ['Laia', art({ R: 70 }).replace('{', '{\n  ctx.lineWidth = size / 40;'), ['A star with six dots and green flashes', 'Thinner lines please, they look too heavy']],   // a genuine bug of the model
+    ['Oriol', art({ hold: 1, R: 68 }), ['Copy what Aitana said about the star', 'Add the green phase every three seconds', 'Keep everything, just make the green phase stay a bit longer']],
+  ];
+}
+async function seedSample() {
+  for (const [name, js, list] of sampleEntries()) {
+    const f = g.fake(name);
+    await f.join();
+    for (let k = 0; k < list.length; k++) await f.move('p' + (k + 1), { p: list[k], js: k === list.length - 1 ? js : '' });
+  }
+  const paula = g.fake('Paula');                         // a prompt, no drawing yet
+  await paula.join(); await paula.move('p1', { p: 'A circle with six dots on it that move', js: '' });
+}
+
+/* ---- start ------------------------------------------------------------------- */
+startScorer(); startPainter();
+setInterval(() => {
+  if (Date.now() - lastPong > 4000) {                 // rebuild every canvas for a new worker
+    painter.terminate(); startPainter();
+    for (const e of entries) { const c = document.createElement('canvas'); c.width = e.canvas.width; c.height = e.canvas.height;
+      e.canvas.replaceWith(c); e.canvas = c; e.sent = false; if (e.status !== 'wait') paint(e); }
+    for (const d of cards.values()) { const c = document.createElement('canvas'); c.width = d.canvas.width; c.height = d.canvas.height;
+      d.canvas.replaceWith(c); d.canvas = c; d.sent = false; }
+    cardsOn = null; changed();
+  }
+  painter.postMessage({ ping: ++pingN });
+}, 1000);
+const T0 = mkEntry('', true); T0.code = TARGET; T0.status = 'ok'; paint(T0);
+requestAnimationFrame(autoTick);
+syncAuto();
+
+if (!window.TesseraGame) {
+  addEventListener('resize', localFit); addEventListener('load', localFit); localFit();
+  if (window.ResizeObserver) new ResizeObserver(localFit).observe(document.documentElement);
+  setInterval(localFit, 1000);
+  $('nosdk').style.display = 'grid'; $('ctl').style.visibility = 'hidden';
+  layout();
+} else {
+  TesseraGame.fit(stage, 1280, 720);
+  g = TesseraGame.connect({ code: CONFIG.code || undefined });
+  TesseraGame.joinBox($('join'), { fg: C.ink });
+  stage.addEventListener('click', () => { if (picked) { picked = null; layout(); } else next(); });
+  window.TESSERA_STEPPED = true;
+  addEventListener('keydown', e => {
+    const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+    const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+    if (fwd && i < nStates() - 1) { next(); e.preventDefault(); }
+    if (back && i > 0) { go(i - 1); e.preventDefault(); }
+    if (e.key === 'Home') { go(0); e.preventDefault(); }
+    const ud = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;   // up/down scroll the prompts
+    if (ud && i === 2 && !picked) { userScroll(); pageBy(ud); e.preventDefault(); }
+    else if (ud && picked) { $('hqt').scrollBy({ top: ud * 120, behavior: 'smooth' }); e.preventDefault(); }
+  });
+  const boot = g.sample ? seedSample().then(() => g.refresh()) : Promise.resolve();
+  g.onPlayers(onPlayers);
+  g.onMoves(fresh => ingest(fresh));
+  g.onState(st => { if (g.sample && !ready) boot.then(() => onState(g.state)); else onState(st); });
+  setInterval(() => { bar(); publish(); }, 2500);
+  if (g.sample) say('Sample: simulated players. In the deck the room plays.', true);
+  layout();
+  document.fonts && document.fonts.ready.then(layout);
+  window.TESSERA_GAME = g;                                 // for the rehearsal
+}
+</script>
+</body></html>

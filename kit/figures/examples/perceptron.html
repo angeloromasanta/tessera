@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perceptron</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;padding:0 28px 6px}
+svg{flex:1;width:100%;min-height:0;display:block;overflow:visible}
+/* ---- type scale: every text takes ONE of these roles (see figure.html) -- */
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.axis{font-weight:600;font-size:16px;fill:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase}          /* node captions, plot axis ends */
+.tick{font-weight:600;font-size:16px;fill:var(--faint)}   /* plot number ticks */
+.head{font-weight:700;font-size:26px;fill:var(--ink)}     /* the output readout */
+.on-dark{fill:#fff}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:28px;padding:8px 4px 2px;border-top:1px solid var(--rule)}
+.ctl{display:flex;align-items:center;gap:10px}
+.ctl label{font-size:17px;font-weight:700;color:var(--ink);width:20px}
+.ctl input[type=range]{width:150px;accent-color:var(--accent)}
+.ctl .val{font-size:17px;font-weight:600;color:var(--muted);width:44px;text-align:left;font-variant-numeric:tabular-nums}
+#hint{margin-left:auto;font-size:13px;color:var(--faint);font-style:italic}
+</style></head>
+<body>
+<div id="stage">
+<svg id="fig" viewBox="0 0 1280 440" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <clipPath id="plotClip"><rect x="60" y="30" width="370" height="370"/></clipPath>
+  </defs>
+
+  <!-- ===== left: 2D input plane ===== -->
+  <rect x="60" y="30" width="370" height="370" fill="none" style="stroke:var(--line)" stroke-width="1.5"/>
+  <g clip-path="url(#plotClip)">
+    <g id="dataScaled" transform="translate(245,215) scale(37,-37)">
+      <polygon id="negHalf" style="fill:var(--coral);fill-opacity:.09"/>
+      <polygon id="posHalf" style="fill:var(--accent);fill-opacity:.10"/>
+      <line x1="-5" y1="0" x2="5" y2="0" style="stroke:var(--line)" stroke-width="0.035"/>
+      <line x1="0" y1="-5" x2="0" y2="5" style="stroke:var(--line)" stroke-width="0.035"/>
+      <line id="boundary" style="stroke:var(--ink)" stroke-width="0.09" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g id="dataUnclipped" transform="translate(245,215) scale(37,-37)">
+    <circle id="probe" r="0.24" style="stroke:var(--ink);cursor:grab" stroke-width="0.07"/>
+  </g>
+
+  <!-- axis ticks / labels (outer, unscaled) -->
+  <!-- tick values are derived from the data range, not labels -->
+  <g id="ticks" data-no-edit></g>
+  <text class="axis" data-edit="axis-x1" x="245" y="438" text-anchor="middle">x&#8321;</text>
+  <text class="axis" data-edit="axis-x2" x="26" y="219" text-anchor="middle" transform="rotate(-90 26 219)">x&#8322;</text>
+  <text id="probeLbl" data-no-edit class="tick" x="0" y="0" text-anchor="start" style="fill:var(--ink)" font-weight="700"></text>
+
+  <!-- ===== right: perceptron diagram ===== -->
+  <line id="eX1" x1="560" y1="130" x2="900" y2="215" style="stroke:var(--line)" stroke-width="2.5"/>
+  <line id="eX2" x1="560" y1="300" x2="900" y2="215" style="stroke:var(--line)" stroke-width="2.5"/>
+  <line id="eB"  x1="860" y1="70"  x2="900" y2="215" style="stroke:var(--line)" stroke-width="2.5"/>
+  <line id="eOut" x1="938" y1="215" x2="1112" y2="215" style="stroke:var(--line)" stroke-width="2.5"/>
+
+  <text id="wLbl1" data-no-edit class="sub" x="700" y="152" text-anchor="middle"></text>
+  <text id="wLbl2" data-no-edit class="sub" x="700" y="285" text-anchor="middle"></text>
+  <text id="bLbl"  data-no-edit class="sub" x="896" y="130" text-anchor="start"></text>
+  <text class="sub" data-edit="step" x="1025" y="197" text-anchor="middle">step(z)</text>
+
+  <circle cx="560" cy="130" r="30" fill="#fff" style="stroke:var(--ink)" stroke-width="2"/>
+  <text class="lbl" data-edit="node-x1" x="560" y="130" text-anchor="middle" dominant-baseline="central">x&#8321;</text>
+  <text class="axis" data-edit="cap-x1" x="560" y="90" text-anchor="middle">input</text>
+
+  <circle cx="560" cy="300" r="30" fill="#fff" style="stroke:var(--ink)" stroke-width="2"/>
+  <text class="lbl" data-edit="node-x2" x="560" y="300" text-anchor="middle" dominant-baseline="central">x&#8322;</text>
+  <text class="axis" data-edit="cap-x2" x="560" y="350" text-anchor="middle">input</text>
+
+  <circle cx="860" cy="70" r="20" fill="#fff" style="stroke:var(--line)" stroke-width="2"/>
+  <text class="sub" data-edit="node-bias" x="860" y="70" text-anchor="middle" dominant-baseline="central">1</text>
+  <text class="axis" data-edit="cap-bias" x="860" y="33" text-anchor="middle">bias</text>
+
+  <circle cx="900" cy="215" r="38" style="fill:var(--tint);stroke:var(--ink)" stroke-width="2"/>
+  <text class="lbl" data-edit="node-sum" x="900" y="207" text-anchor="middle" dominant-baseline="central">&#931;</text>
+  <text id="zVal" data-no-edit class="sub" x="900" y="272" text-anchor="middle" font-weight="700"></text>
+
+  <circle id="outNode" cx="1150" cy="215" r="38" style="stroke:var(--ink)" stroke-width="2"/>
+  <text id="outVal" data-no-edit class="head on-dark" x="1150" y="215" text-anchor="middle" dominant-baseline="central"></text>
+  <text class="axis" data-edit="cap-out" x="1150" y="270" text-anchor="middle">output</text>
+</svg>
+
+<div id="bar">
+  <div class="ctl"><label for="w1">w&#8321;</label><input id="w1" type="range" min="-2" max="2" step="0.1" value="1"><span class="val" id="w1v"></span></div>
+  <div class="ctl"><label for="w2">w&#8322;</label><input id="w2" type="range" min="-2" max="2" step="0.1" value="1"><span class="val" id="w2v"></span></div>
+  <div class="ctl"><label for="bb">b</label><input id="bb" type="range" min="-5" max="5" step="0.1" value="-2"><span class="val" id="bv"></span></div>
+  <div id="hint">drag the point &middot; move the sliders</div>
+</div>
+</div>
+
+<script>
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+
+const SCALE = 37, OX = 245, OY = 215, BIG = 50, EPS = 0.05;
+const POS = C.accent, NEG = C.coral;
+
+const w1El = document.getElementById('w1'), w2El = document.getElementById('w2'), bEl = document.getElementById('bb');
+const w1vEl = document.getElementById('w1v'), w2vEl = document.getElementById('w2v'), bvEl = document.getElementById('bv');
+const negHalf = document.getElementById('negHalf'), posHalf = document.getElementById('posHalf'), boundary = document.getElementById('boundary');
+const probe = document.getElementById('probe'), probeLbl = document.getElementById('probeLbl');
+const wLbl1 = document.getElementById('wLbl1'), wLbl2 = document.getElementById('wLbl2'), bLbl = document.getElementById('bLbl');
+const zVal = document.getElementById('zVal'), outNode = document.getElementById('outNode'), outVal = document.getElementById('outVal');
+const svg = document.getElementById('fig');
+
+let x1 = 1.5, x2 = 1.5;
+
+// axis ticks, drawn once
+const ticks = document.getElementById('ticks');
+[-5, 0, 5].forEach(v => {
+  const px = OX + v * SCALE;
+  ticks.insertAdjacentHTML('beforeend', `<text class="tick" x="${px}" y="416" text-anchor="middle">${v}</text>`);
+  const py = OY - v * SCALE;
+  ticks.insertAdjacentHTML('beforeend', `<text class="tick" x="52" y="${py + 4}" text-anchor="end">${v}</text>`);
+});
+
+function fmt(n) { return (n >= 0 ? '' : '') + n.toFixed(1); }
+
+function update() {
+  const w1 = parseFloat(w1El.value), w2 = parseFloat(w2El.value), b = parseFloat(bEl.value);
+  w1vEl.textContent = fmt(w1); w2vEl.textContent = fmt(w2); bvEl.textContent = fmt(b);
+  wLbl1.textContent = 'w₁ = ' + fmt(w1);
+  wLbl2.textContent = 'w₂ = ' + fmt(w2);
+  bLbl.textContent = 'b = ' + fmt(b);
+
+  const magSq = w1 * w1 + w2 * w2;
+  if (magSq < 1e-6) {
+    boundary.setAttribute('points', ''); boundary.removeAttribute('x1');
+    negHalf.setAttribute('points', ''); posHalf.setAttribute('points', '');
+  } else {
+    const nx = w1 / Math.sqrt(magSq), ny = w2 / Math.sqrt(magSq);
+    const tx = -ny, ty = nx;
+    const p0x = -b * w1 / magSq, p0y = -b * w2 / magSq;
+    const pt = (a, n) => [(p0x + tx * a + nx * n).toFixed(3), (p0y + ty * a + ny * n).toFixed(3)];
+    const P = (...pts) => pts.map(p => p.join(',')).join(' ');
+    posHalf.setAttribute('points', P(pt(BIG, -EPS), pt(-BIG, -EPS), pt(-BIG, BIG), pt(BIG, BIG)));
+    negHalf.setAttribute('points', P(pt(BIG, EPS), pt(-BIG, EPS), pt(-BIG, -BIG), pt(BIG, -BIG)));
+    const a = pt(-BIG, 0), c = pt(BIG, 0);
+    boundary.setAttribute('x1', a[0]); boundary.setAttribute('y1', a[1]);
+    boundary.setAttribute('x2', c[0]); boundary.setAttribute('y2', c[1]);
+  }
+
+  const z = w1 * x1 + w2 * x2 + b;
+  const pos = z >= 0;
+  const col = pos ? POS : NEG;
+
+  zVal.textContent = 'z = ' + z.toFixed(2);
+  outNode.setAttribute('fill', col);
+  outVal.textContent = pos ? '+1' : '−1';
+
+  probe.setAttribute('cx', x1); probe.setAttribute('cy', x2);
+  probe.setAttribute('fill', col);
+  probe.setAttribute('fill-opacity', '.85');
+  const ppx = OX + x1 * SCALE, ppy = OY - x2 * SCALE;
+  probeLbl.setAttribute('x', ppx + 12); probeLbl.setAttribute('y', ppy - 10);
+  probeLbl.textContent = `(${x1.toFixed(1)}, ${x2.toFixed(1)})`;
+}
+
+[w1El, w2El, bEl].forEach(el => el.addEventListener('input', update));
+
+// drag the probe point
+let dragging = false;
+function toData(evt) {
+  const pt0 = svg.createSVGPoint();
+  pt0.x = evt.clientX; pt0.y = evt.clientY;
+  const p = pt0.matrixTransform(svg.getScreenCTM().inverse());
+  return [Math.max(-5, Math.min(5, (p.x - OX) / SCALE)), Math.max(-5, Math.min(5, -(p.y - OY) / SCALE))];
+}
+probe.addEventListener('pointerdown', e => {
+  dragging = true; probe.setPointerCapture(e.pointerId); probe.style.cursor = 'grabbing';
+  e.preventDefault();
+});
+probe.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  [x1, x2] = toData(e);
+  update();
+});
+['pointerup', 'pointercancel'].forEach(ev => probe.addEventListener(ev, () => { dragging = false; probe.style.cursor = 'grab'; }));
+
+update();
+</script>
+</body></html>

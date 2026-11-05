@@ -1,0 +1,20 @@
+{
+  "name": "tessera-poll-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Audience poll service for tessera decks on Cloudflare Workers Free: join page, answers and images in Durable Objects, live change signals over WebSockets, a game layer (/api/game), AI routes via OpenRouter.",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "sync": "node scripts/sync.mjs",
+    "dev": "node scripts/sync.mjs && wrangler dev",
+    "deploy": "node scripts/sync.mjs && node test/e2e.test.mjs && node test/game.e2e.test.mjs && wrangler deploy",
+    "test": "node scripts/sync.mjs && node test/draw.test.mjs && node test/help.test.mjs && node test/ai.test.mjs && node test/remix.test.mjs && node test/legacy.test.mjs && node test/e2e.test.mjs && node test/game.e2e.test.mjs && python test/live_browser.py"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.3"
+  }
+}

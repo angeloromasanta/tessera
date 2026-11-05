@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+# Local secrets for `wrangler dev`. Never commit.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+__pycache__/

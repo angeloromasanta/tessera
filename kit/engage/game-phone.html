@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="tessera-game">
+<meta name="tessera-activity" content="full">
+<title>Buzz and vote</title>
+<!--
+  Starter game, the PHONE half (the activity page): game-screen.html is the
+  screen. The game SDK is injected by the join page (<meta name="tessera-game">).
+  The phone follows the screen's `state`: lobby -> question (vote with mode
+  'last' under vR, buzz with mode 'first' on the shared slot 'room' under bR)
+  -> closed -> reveal (its own result, from me.private) -> leaderboard.
+  It never sees the right answer before the reveal, nor anyone else's result.
+  CONFIG: only the keys make_game.py's "phone" list allows (null = defaults).
+  Opened on its own (no TESSERA_ACTIVITY) it previews a question in sample mode.
+-->
+<style>
+:root{--navy:#0D2A2F;--blue:#0F6B73;--ink:#1A2326;--muted:#5A6467;--line:#D7DEDF;--tint:#E2F0F1;
+  --go:#1E9E84;--go-tint:#DDF4EE;--warn:#B97800;--bad:#D63A3F;--bad-tint:#FBE3E3}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:#fff;color:var(--ink);
+  font:16px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#app{max-width:480px;margin:0 auto;padding:18px 18px 28px;min-height:100vh;display:flex;flex-direction:column;gap:14px}
+#head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}
+#title{font-weight:800;font-size:18px;color:var(--navy)}
+#who{margin-left:auto;font-size:14px;color:var(--muted);font-weight:600;max-width:50%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view{display:flex;flex-direction:column;gap:12px}
+#round{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);font-weight:700}
+h1{font-size:23px;line-height:1.25;margin:0;color:var(--navy)}
+p{margin:0}
+.muted{color:var(--muted)}
+.opt{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:10px 14px;border-radius:12px;border:2px solid var(--line);
+  background:#fff;color:var(--ink);font:inherit;font-size:17px;font-weight:600;text-align:left;cursor:pointer}
+.opt b{width:32px;height:32px;border-radius:50%;background:var(--tint);color:var(--blue);display:grid;place-items:center;flex:none}
+.opt.sel{border-color:var(--blue);background:var(--tint)}
+.opt.sel b{background:var(--blue);color:#fff}
+.opt.right{border-color:var(--go);background:var(--go-tint)}
+.opt:disabled{cursor:default}
+.opts{display:grid;gap:10px}
+#buzz{width:100%;height:84px;border-radius:42px;border:0;background:var(--bad);color:#fff;font:inherit;font-size:26px;font-weight:800;
+  letter-spacing:.08em;cursor:pointer;box-shadow:0 6px 0 #9E2327;transition:transform .08s,box-shadow .08s}
+#buzz:active{transform:translateY(4px);box-shadow:0 2px 0 #9E2327}
+#buzz:disabled{background:#C9CDD8;box-shadow:none;cursor:default}
+.note{font-size:15px;font-weight:600;min-height:21px}
+.note.ok{color:var(--go)} .note.no{color:var(--bad)}
+.card{border-radius:14px;padding:18px;background:var(--tint)}
+.card.ok{background:var(--go-tint)} .card.no{background:var(--bad-tint)}
+.big{font-size:44px;font-weight:800;line-height:1;color:var(--navy)}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)}
+.row:last-child{border:0}
+input{width:100%;height:50px;border:1.5px solid var(--line);border-radius:12px;padding:0 14px;font:inherit;font-size:17px}
+.go{width:100%;height:50px;border:0;border-radius:12px;background:var(--blue);color:#fff;font:inherit;font-size:17px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="head"><span id="title" data-edit="title">Buzz and vote</span><span id="who"></span></div>
+  <div id="view"><p class="muted">Connecting…</p></div>
+</div>
+<script>
+'use strict';
+const CONFIG = Object.assign({ title: 'Buzz and vote', points: { right: 1, buzzRight: 2, buzzWrong: -1 } },
+  /*CONFIG*/null/*CONFIG*/ || {});
+const TEXTS = (window.TESSERA_EMBED && window.TESSERA_EMBED.texts) || {};   // the screen's wording, put here by the deck
+const T = (k, d) => (Object.prototype.hasOwnProperty.call(TEXTS, k) ? TEXTS[k] : d);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LETTERS = 'ABCDEFGH';
+$('title').textContent = T('title', CONFIG.title);
+
+if (!window.TesseraGame) {
+  $('view').innerHTML = '<p class="muted">This page runs inside the join page (the game SDK is not loaded).</p>';
+} else {
+  start();
+}
+
+function start() {
+  const g = TesseraGame.connect({ role: 'phone' });
+  // Opened on its own (no join page): a preview of a question against the SDK's in-memory service.
+  const SAMPLE = g.sample ? { phase: 'question', r: 0, n: 3, q: { q: 'Sample: which option is right?', options: ['This one', 'That one', 'Neither'] } } : null;
+  if (g.sample) g.join('Sample player').catch(() => {});
+  let note = { r: -1, text: '', cls: '' }, sig = '';
+
+  function vote(r, i) {
+    g.move(`v${r}`, i).then(() => draw(true)).catch((e) => flash(r, e.closed ? 'Voting is closed.' : e.message, 'no'));
+    draw(true, { r, i });                    // show the pick at once; the read confirms it
+  }
+  function buzz(r) {
+    $('buzz').disabled = true;
+    g.move(`b${r}`, 1, { mode: 'first', slot: 'room' })
+      .then(() => flash(r, 'You were first!', 'ok'))
+      .catch((e) => flash(r, e.taken ? 'Too late: someone was faster.' : e.closed ? 'Voting is closed.' : e.message, 'no'));
+  }
+  function flash(r, text, cls) { note = { r, text, cls }; draw(true); }
+
+  function draw(force, pending) {
+    const s = SAMPLE || g.state || {}, me = g.me || {}, ph = s.phase || 'lobby', r = s.r;
+    const key = JSON.stringify([s, g.v, me, note, pending, g.sample]);
+    if (!force && key === sig) return;
+    sig = key;
+    $('who').textContent = me.name || '';
+    const v = $('view');
+    if (me.kicked) {
+      v.innerHTML = '<h1>You were removed from the game.</h1><p class="muted">If that was a mistake, join again.</p><button class="go" id="again">Join again</button>';
+      $('again').onclick = () => g.join().then(() => draw(true)).catch((e) => flash(r, e.message, 'no'));
+      return;
+    }
+    if (!me.joined) {
+      v.innerHTML = '<h1>Join the game</h1><input id="nm" maxlength="40" placeholder="Your name" autocomplete="name"><button class="go" id="jn">Join</button><p class="note no" id="jerr"></p>';
+      const go = () => { const n = $('nm').value.trim(); if (n) g.join(n).then(() => draw(true)).catch((e) => { $('jerr').textContent = e.closed ? 'Joining is closed.' : e.message; }); };
+      $('jn').onclick = go; $('nm').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+      return;
+    }
+    const head = ph === 'lobby' ? '' : `<div id="round">${ph === 'final' ? 'Final' : `Round ${r + 1} of ${s.n}`}</div>`;
+    if (ph === 'lobby') {
+      v.innerHTML = `<h1>You're in, ${esc(me.name || 'player')}.</h1><p class="muted">${esc(T('phoneWait', 'Watch the screen: the first question opens in a moment.'))}</p>`;
+      return;
+    }
+    const mine = me.moves || {}, priv = me.private && me.private.r === r ? me.private : null;
+    if (ph === 'question' || ph === 'closed') {
+      const q = s.q || { q: '', options: [] };
+      const pick = pending && pending.r === r ? pending.i : mine[`v${r}`] ? mine[`v${r}`].data : null;
+      const open = ph === 'question';
+      const buzzed = !!mine[`b${r}`];
+      const n = note.r === r ? note : { text: buzzed ? 'You were first!' : '', cls: 'ok' };
+      v.innerHTML = head + `<h1>${esc(q.q)}</h1><div class="opts">` + q.options.map((o, i) =>
+        `<button class="opt${pick === i ? ' sel' : ''}" data-i="${i}" ${open ? '' : 'disabled'}><b>${LETTERS[i]}</b>${esc(o)}</button>`).join('')
+        + `</div><p class="muted">${open ? 'You can change your vote until voting closes.' : 'Voting is closed. Watch the screen.'}</p>`
+        + `<button id="buzz" ${open && !buzzed && n.cls !== 'no' ? '' : 'disabled'}>BUZZ</button>`
+        + `<p class="note ${n.cls}">${esc(n.text)}</p>`
+        + `<p class="muted" style="font-size:14px">First on the buzzer: +${CONFIG.points.buzzRight} if your vote is right, ${CONFIG.points.buzzWrong} if not.</p>`;
+      v.querySelectorAll('.opt').forEach((b) => { b.onclick = () => vote(r, +b.dataset.i); });
+      $('buzz').onclick = () => buzz(r);
+      return;
+    }
+    if (ph === 'reveal') {
+      if (!priv) { v.innerHTML = head + '<h1>The answer is on the screen.</h1><p class="muted">You did not play this round.</p>'; return; }
+      const q = s.q || { options: [] };
+      v.innerHTML = head + `<div class="card ${priv.right ? 'ok' : 'no'}"><h1>${priv.right ? 'Right!' : priv.pick === null ? 'No vote this round.' : 'Not this time.'}</h1>`
+        + `<p class="big" style="margin-top:10px">${priv.delta > 0 ? '+' : ''}${priv.delta}</p></div>`
+        + `<div class="card"><div class="row"><span>Your vote</span><b>${priv.pick === null ? '-' : esc(LETTERS[priv.pick] + '. ' + q.options[priv.pick])}</b></div>`
+        + (priv.buzz ? `<div class="row"><span>Buzzer</span><b>first, ${priv.right ? '+' + CONFIG.points.buzzRight : CONFIG.points.buzzWrong}</b></div>` : '')
+        + `<div class="row"><span>Total</span><b>${priv.total}</b></div><div class="row"><span>Place</span><b>${priv.rank} of ${priv.of}</b></div></div>`;
+      return;
+    }
+    if (ph === 'board' || ph === 'final') {
+      const p = me.private;
+      v.innerHTML = head + (p ? `<div class="card"><p class="muted">${ph === 'final' ? 'Final place' : 'Your place'}</p><p class="big">${p.rank}<span style="font-size:22px"> of ${p.of}</span></p>`
+        + `<p style="margin-top:8px"><b>${p.total}</b> points</p></div>` : '<h1>Leaderboard on the screen.</h1>')
+        + `<p class="muted">${ph === 'final' ? 'Thanks for playing.' : 'Next round soon.'}</p>`;
+    }
+  }
+  g.onState(() => draw());
+  g.onMe(() => draw());
+  setInterval(() => draw(), 1000);
+}
+</script>
+</body>
+</html>

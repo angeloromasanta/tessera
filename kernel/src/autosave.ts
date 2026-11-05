@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The Tessera authors (see LICENSE)
+// Local auto-save + lightweight version history, backed by IndexedDB.
+//
+// Two concerns, one store:
+//   · recovery  — a single latest snapshot per docId, overwritten each cycle.
+//     On reopen, if it differs from the file we loaded, we offer to restore
+//     (the safety net for a crash / tab-close before a save, and the ONLY net
+//     on browsers without the File System Access API).
+//   · versions  — a capped, throttled timeline of snapshots per docId, for the
+//     "Version history" restore UI.
+//
+// Snapshots hold the plain document JSON (a few KB–tens of KB), NOT the ~430KB
+// HTML shell — restore re-injects via store.replaceDoc. Encrypted decks are
+// never snapshotted here (that would write plaintext to disk); their file
+// write-back stays encrypted.
+
+import type { KernelDoc } from './doc.ts'
+import { openLegacyDb, readLegacy, legacyCopied, markLegacyCopied } from './legacy.ts'
+
+const DB_NAME = 'tessera-autosave'
+const DB_VERSION = 1
+const RECOVERY = 'recovery'
+const VERSIONS = 'versions'
+const MAX_VERSIONS = 20 // per doc
+const PRUNE_DAYS = 30
+
+export interface Snapshot {
+  id?: number
+  docId: string
+  at: number
+  title: string
+  json: string
+}
+
+let dbPromise: Promise<IDBDatabase | null> | null = null
+
+function openDb(): Promise<IDBDatabase | null> {
+  if (dbPromise) return dbPromise
+  dbPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') { resolve(null); return }
+    let req: IDBOpenDBRequest
+    try { req = indexedDB.open(DB_NAME, DB_VERSION) } catch { resolve(null); return }
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(RECOVERY)) db.createObjectStore(RECOVERY, { keyPath: 'docId' })
+      if (!db.objectStoreNames.contains(VERSIONS)) {
+        const s = db.createObjectStore(VERSIONS, { keyPath: 'id', autoIncrement: true })
+        s.createIndex('docId', 'docId', { unique: false })
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => resolve(null)
+  })
+  return dbPromise
+}
+
+function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
+  return openDb().then((db) => {
+    if (!db) return null
+    return new Promise<T | null>((resolve) => {
+      let t: IDBTransaction
+      try { t = db.transaction(store, mode) } catch { resolve(null); return }
+      const req = fn(t.objectStore(store))
+      req.onsuccess = () => resolve(req.result as T)
+      req.onerror = () => resolve(null)
+    })
+  })
+}
+
+// --- what an older shell kept ------------------------------------------------
+//
+// Shells from before the rename kept the same snapshots in a database of
+// another name (legacy.ts). The first time a deck is touched here, its
+// recovery snapshot and version history are copied across — once per docId,
+// and never over what this database already holds. The old database is left
+// as it is: an older shell in this profile still uses it.
+const carried = new Map<string, Promise<void>>()
+
+function carry(docId: string): Promise<void> {
+  let p = carried.get(docId)
+  if (!p) carried.set(docId, p = carryNow(docId).catch(() => undefined))
+  return p
+}
+
+async function carryNow(docId: string): Promise<void> {
+  if (!docId || legacyCopied(DB_NAME, docId)) return
+  const old = await openLegacyDb(DB_NAME)
+  if (old) {
+    const [rec] = await readLegacy<Snapshot>(old, RECOVERY, docId)
+    if (rec && !(await tx<Snapshot>(RECOVERY, 'readonly', (s) => s.get(docId)))) {
+      await tx(RECOVERY, 'readwrite', (s) => s.add(rec))
+    }
+    const have = new Set((await versionsOf(docId)).map((v) => v.at))
+    for (const v of await readLegacy<Snapshot>(old, VERSIONS, docId, 'docId')) {
+      if (have.has(v.at)) continue
+      const { id: _id, ...rest } = v
+      await tx(VERSIONS, 'readwrite', (s) => s.add(rest))
+    }
+  }
+  markLegacyCopied(DB_NAME, docId)
+}
+
+/**
+ * Write the single latest recovery snapshot for this doc.
+ *
+ * Returns whether it ACTUALLY stored. `tx()` resolves null on every failure
+ * rather than throwing — no IndexedDB at all, a blocked open, a failed
+ * transaction — which is right for a best-effort backstop but means a caller
+ * cannot assume success. That distinction is load-bearing now that the editor
+ * tells the author their work is "backed up in this browser": Safari in private
+ * browsing and some `file://` contexts have no usable IndexedDB, and on iOS
+ * that is exactly where a shared deck tends to be opened. Claiming a backstop
+ * that isn't there would be worse than saying nothing.
+ */
+export async function putRecovery(doc: KernelDoc, json?: string): Promise<boolean> {
+  await carry(doc.docId)
+  // `json`: JSON.stringify(doc) when the caller already has it (the autosave
+  // stringifies once per save and shares it with the file write).
+  const key = await tx(RECOVERY, 'readwrite', (s) =>
+    s.put({ docId: doc.docId, at: Date.now(), title: doc.title, json: json ?? JSON.stringify(doc) } as Snapshot))
+  return key != null
+}
+
+export async function getRecovery(docId: string): Promise<Snapshot | null> {
+  await carry(docId)
+  return (await tx<Snapshot>(RECOVERY, 'readonly', (s) => s.get(docId))) ?? null
+}
+
+export async function clearRecovery(docId: string): Promise<void> {
+  await carry(docId)
+  await tx(RECOVERY, 'readwrite', (s) => s.delete(docId))
+}
+
+/** Delete every version-history snapshot for a docId. Used when a deck is
+ *  encrypted: the plaintext snapshots written before encryption was enabled must
+ *  not linger in IndexedDB (they'd defeat the encryption the user just turned on). */
+export async function clearVersions(docId: string): Promise<void> {
+  const all = await listVersions(docId)
+  await Promise.all(all.map((v) => tx(VERSIONS, 'readwrite', (s) => s.delete(v.id!))))
+}
+
+export async function addVersion(doc: KernelDoc, json?: string, at = Date.now()): Promise<void> {
+  await carry(doc.docId)
+  // `at`: when the snapshot was taken, for one filed later (a recovery
+  // snapshot moved into the history when the deck opens)
+  await tx(VERSIONS, 'readwrite', (s) =>
+    s.add({ docId: doc.docId, at, title: doc.title, json: json ?? JSON.stringify(doc) } as Snapshot))
+  // prune to the newest MAX_VERSIONS for this doc
+  const all = await listVersions(doc.docId)
+  if (all.length > MAX_VERSIONS) {
+    const doomed = all.slice(MAX_VERSIONS)
+    await Promise.all(doomed.map((v) => tx(VERSIONS, 'readwrite', (s) => s.delete(v.id!))))
+  }
+}
+
+export async function listVersions(docId: string): Promise<Snapshot[]> {
+  await carry(docId)
+  return versionsOf(docId)
+}
+
+async function versionsOf(docId: string): Promise<Snapshot[]> {
+  const db = await openDb()
+  if (!db) return []
+  return new Promise((resolve) => {
+    let t: IDBTransaction
+    try { t = db.transaction(VERSIONS, 'readonly') } catch { resolve([]); return }
+    const idx = t.objectStore(VERSIONS).index('docId')
+    const out: Snapshot[] = []
+    const req = idx.openCursor(IDBKeyRange.only(docId))
+    req.onsuccess = () => {
+      const cur = req.result
+      if (cur) { out.push(cur.value as Snapshot); cur.continue() }
+      else resolve(out.sort((a, b) => b.at - a.at)) // newest first
+    }
+    req.onerror = () => resolve([])
+  })
+}
+
+/** Drop snapshots older than PRUNE_DAYS across all docs (housekeeping). */
+export async function pruneOld(): Promise<void> {
+  const cutoff = Date.now() - PRUNE_DAYS * 24 * 60 * 60 * 1000
+  const db = await openDb()
+  if (!db) return
+  for (const store of [VERSIONS, RECOVERY]) {
+    try {
+      const t = db.transaction(store, 'readwrite')
+      const req = t.objectStore(store).openCursor()
+      req.onsuccess = () => {
+        const cur = req.result
+        if (!cur) return
+        if ((cur.value as Snapshot).at < cutoff) cur.delete()
+        cur.continue()
+      }
+    } catch { /* best effort */ }
+  }
+}

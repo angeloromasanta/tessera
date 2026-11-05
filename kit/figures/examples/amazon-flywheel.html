@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Amazon flywheel</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset .8s cubic-bezier(.35,0,.25,1),opacity .2s}
+.draw.on{stroke-dashoffset:0}
+/* ---- the loop CONDENSES into what it produces --------------------------
+   GROWTH is not a sixth thing that appears in the middle: the four spokes
+   slide inward off the ring and the core swells out of the point they meet.
+   --dx/--dy is the offset from a spoke's final place back out to the ring. */
+.pop,.spoke{transform-box:fill-box;transform-origin:center}
+.pop{transition:opacity .35s ease,transform .6s cubic-bezier(.34,1.3,.5,1)}
+.pop:not(.on){transform:scale(.18)}
+.spoke{transition:opacity .4s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.spoke:not(.on){transform:translate(var(--dx,0),var(--dy,0))}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .pop,.spoke{transform:none!important}
+}
+/* ---- type scale: every text takes ONE of these roles (see figure.html) -- */
+.head{font-weight:700;font-size:26px;fill:var(--ink)}          /* node labels */
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.on-dark{fill:#fff}  .on-dark.sub{fill-opacity:.85}
+#flow{animation:ants 1.7s linear infinite}
+@keyframes ants{to{stroke-dashoffset:-36}}
+#flow.on{opacity:.8}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1.2 L9,5 L0,8.8 z" style="fill:var(--accent)"/>
+    </marker>
+    <marker id="arg" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1.2 L9,5 L0,8.8 z" style="fill:var(--green)"/>
+    </marker>
+  </defs>
+  <!-- generated marks are appended here -->
+</svg>
+
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+
+/* ---- layout: six nodes on an ellipse, clockwise from the top ---------- */
+const CX = 640, CY = 235, RX = 430, RY = 176, W = 240, H = 68, M = 9;
+const rad = d => d * Math.PI / 180;
+const at  = d => [CX + RX * Math.cos(rad(d)), CY + RY * Math.sin(rad(d))];
+
+const SVG = 'http://www.w3.org/2000/svg';
+const fig = document.getElementById('fig');
+function mk(tag, attrs, txt, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  (parent || fig).appendChild(e);
+  return e;
+}
+// Editable words (assets/figure.html): every label carries data-edit=KEY and
+// reads its text through T(), so the deck editor can retype it.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+const label = (key, attrs, words, parent) => mk('text', { ...attrs, 'data-edit': key }, T(key, words), parent);
+
+const nodes = [
+  { id: 'n1', a: -90, lines: ['Lower prices'] },
+  { id: 'n2', a: -30, lines: ['Better customer', 'experience'] },
+  { id: 'n3', a:  30, lines: ['More traffic'] },
+  { id: 'n4', a:  90, lines: ['More sellers'] },
+  { id: 'n5', a: 150, lines: ['Wider selection'] },
+  { id: 'n6', a: 210, lines: ['Lower cost', 'structure'] },
+];
+const byId = {};
+nodes.forEach(n => { const p = at(n.a); n.x = p[0]; n.y = p[1]; byId[n.id] = n; });
+
+/* walk away from a node's own angle until the ellipse leaves its box, so an
+   arc starts and ends at the boxes rather than floating between them */
+function edge(node, dir, extra) {
+  let t = node.a;
+  for (let k = 0; k < 400; k++) {
+    t += dir * 0.4;
+    const [x, y] = at(t);
+    if (Math.abs(x - node.x) > W / 2 + M || Math.abs(y - node.y) > H / 2 + M)
+      return t + dir * (extra || 0);
+  }
+  return t;
+}
+function arc(id, from, to, colour, marker) {
+  const a1 = edge(byId[from], +1, 0), a2 = edge(byId[to], -1, 3);
+  const p1 = at(a1), p2 = at(a2);
+  mk('path', { class: 'el draw', id,
+    d: `M${p1[0].toFixed(1)},${p1[1].toFixed(1)} A ${RX} ${RY} 0 0 1 ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`,
+    fill: 'none', stroke: colour, 'stroke-width': 3.6, 'stroke-linecap': 'round',
+    'marker-end': `url(#${marker})` });
+}
+
+/* ring arcs, behind the boxes */
+arc('a12', 'n1', 'n2', C.accent, 'ar');
+arc('a23', 'n2', 'n3', C.accent, 'ar');
+arc('a34', 'n3', 'n4', C.accent, 'ar');
+arc('a45', 'n4', 'n5', C.accent, 'ar');
+arc('a56', 'n5', 'n6', C.accent, 'ar');
+arc('a61', 'n6', 'n1', C.accent, 'ar');
+
+/* the ants that ride the ring once the loop is closed */
+mk('ellipse', { class: 'el', id: 'flow', cx: CX, cy: CY, rx: RX, ry: RY, fill: 'none',
+  stroke: C.amber, 'stroke-width': 3, 'stroke-dasharray': '8 30', 'stroke-linecap': 'round' });
+
+/* growth: dotted spokes in from the ring, one green arrow out to the cost node */
+[[-30], [30], [90], [150]].forEach(([a], k) => {
+  const p = at(a);
+  const e = mk('line', { class: 'el spoke', id: 'sp' + k,
+    x1: CX + (p[0] - CX) * .74, y1: CY + (p[1] - CY) * .74,
+    x2: CX + (p[0] - CX) * .30, y2: CY + (p[1] - CY) * .30,
+    stroke: C.green, 'stroke-width': 2, 'stroke-dasharray': '3 6', opacity: .85 });
+  // starts a third of the way further out, on the ring it comes off
+  e.style.setProperty('--dx', ((p[0] - CX) * .26).toFixed(1) + 'px');
+  e.style.setProperty('--dy', ((p[1] - CY) * .26).toFixed(1) + 'px');
+  e.style.transitionDelay = (k * 55) + 'ms';   // a wave inward, not four blinks
+});
+{
+  const p6 = byId['n6'];
+  mk('path', { class: 'el draw', id: 'ag6',
+    d: `M${(CX - 88).toFixed(1)},${(CY - 30).toFixed(1)} L${(p6.x + 92).toFixed(1)},${(p6.y + 22).toFixed(1)}`,
+    fill: 'none', stroke: C.green, 'stroke-width': 3.6, 'stroke-linecap': 'round',
+    'marker-end': 'url(#arg)' });
+}
+// the core swells out of the point the spokes meet, after they land
+mk('circle', { class: 'el pop', id: 'core', cx: CX, cy: CY, r: 92, fill: C.accent })
+  .style.transitionDelay = '190ms';
+label('coret', { class: 'el pop head on-dark', id: 'coret', x: CX, y: CY + 2, 'text-anchor': 'middle',
+  style: 'letter-spacing:.06em' }, 'GROWTH')
+  .style.transitionDelay = '300ms';
+label('coret2', { class: 'el pop sub on-dark', id: 'coret2', x: CX, y: CY + 28, 'text-anchor': 'middle' }, 'volume, not margin')
+  .style.transitionDelay = '360ms';
+
+/* node boxes on top */
+for (const n of nodes) {
+  const g = mk('g', { class: 'el', id: n.id });
+  mk('rect', { x: n.x - W / 2, y: n.y - H / 2, width: W, height: H, rx: 31,
+    fill: '#fff', style: `stroke:${C.accent}`, 'stroke-width': 2.5 }, null, g);
+  if (n.lines.length === 1) {
+    label(n.id, { class: 'lbl', x: n.x, y: n.y + 7, 'text-anchor': 'middle' }, n.lines[0], g);
+  } else {        // one key per line: n2-1, n2-2
+    label(n.id + '-1', { class: 'lbl', x: n.x, y: n.y - 4, 'text-anchor': 'middle' }, n.lines[0], g);
+    label(n.id + '-2', { class: 'lbl', x: n.x, y: n.y + 19, 'text-anchor': 'middle' }, n.lines[1], g);
+  }
+}
+
+/* ---- steps ------------------------------------------------------------ */
+const S = [];
+S[0] = ['n1'];
+S[1] = ['n1','a12','n2'];
+S[2] = [...S[1],'a23','n3'];
+S[3] = [...S[2],'a34','n4'];
+S[4] = [...S[3],'a45','n5'];
+S[5] = [...S[4],'sp0','sp1','sp2','sp3','core','coret','coret2'];
+S[6] = [...S[5],'a56','ag6','n6'];
+S[7] = [...S[6],'a61','flow'];
+const steps = S;
+
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();
+  p.style.strokeDasharray = L + ' ' + L;
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  const on = steps[i];
+  els.forEach(e => e.classList.toggle('on', on.includes(e.id)));
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+// keys stop at either end so the deck moves on (see assets/figure.html)
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

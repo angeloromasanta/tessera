@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The hype cycle</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset 1.05s cubic-bezier(.35,0,.25,1),opacity .25s}
+.draw.on{stroke-dashoffset:0}
+/* ---- motion: the closing beat CARVES the band out of the curve ----------
+   The quiet years are a region the figure opens up, not a rectangle pasted
+   over it: the rect wipes outward from its own centre line (SVG geometry is
+   CSS-animatable) and the two dashed edges slide apart from that same line. */
+.fromC,.rise{transform-box:fill-box;transform-origin:center;
+  transition:opacity .45s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+.fromC:not(.on){transform:translateX(var(--dx,0))}
+.rise:not(.on){transform:translateY(18px)}
+#band{transition:x .85s cubic-bezier(.4,0,.2,1),width .85s cubic-bezier(.4,0,.2,1),opacity .4s}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .fromC,.rise{transform:none!important}
+}
+.lbl{font-weight:700;font-size:20px;fill:var(--ink);letter-spacing:.01em}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.axis{font-weight:600;font-size:16px;fill:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <pattern id="hatch" width="9" height="9" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="0" y2="9" style="stroke:var(--coral)" stroke-width="3" opacity=".26"/>
+    </pattern>
+  </defs>
+
+  <!-- every label carries data-edit=KEY, so the deck editor can retype it
+       (assets/figure.html, "EDITABLE TEXT"); a two-line label is two tspans -->
+  <!-- frame: never fades -->
+  <line x1="118" y1="422" x2="1215" y2="422" style="stroke:var(--line)" stroke-width="2"/>
+  <line x1="118" y1="32" x2="118" y2="422" style="stroke:var(--line)" stroke-width="2"/>
+  <text class="axis" data-edit="axis-x" x="1215" y="448" text-anchor="end">TIME / MATURITY</text>
+  <text class="axis" data-edit="axis-y" x="104" y="32" text-anchor="end" transform="rotate(-90 104 32)">ATTENTION</text>
+
+  <!-- final step: where the value is actually captured. The rect is authored
+       CLOSED on the centre line (675) and opened by the step; the two edges
+       are authored open and fly in from that same line. -->
+  <rect class="el" id="band" x="675" y="32" width="0" height="390" fill="url(#hatch)"/>
+  <line class="el fromC" id="bandl" style="--dx:143px;stroke:var(--coral)" x1="532" y1="32" x2="532" y2="422" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <line class="el fromC" id="bandr" style="--dx:-143px;stroke:var(--coral)" x1="818" y1="32" x2="818" y2="422" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <text data-edit="bandt" class="el rise lbl" id="bandt" x="675" y="61" text-anchor="middle" style="fill:var(--coral)">THE QUIET YEARS</text>
+  <text data-edit="bandt2" class="el rise sub" id="bandt2" x="675" y="84" text-anchor="middle" style="fill:var(--coral)">the durable ones get built here</text>
+
+  <line class="el draw" id="budgetl" x1="404" y1="120" x2="404" y2="422" style="stroke:var(--amber)" stroke-width="1.5"/>
+  <text class="el rise sub" id="budgett" x="392" y="396" text-anchor="end" style="fill:var(--amber-text)"><tspan data-edit="budgett-1">where the budgets</tspan><tspan data-edit="budgett-2" x="392" dy="20">get committed</tspan></text>
+
+  <!-- the curve, in four segments that draw themselves -->
+  <path class="el draw" id="s1" d="M140,408 C 250,404 330,344 404,114" fill="none" style="stroke:var(--accent)" stroke-width="5" stroke-linecap="round"/>
+  <path class="el draw" id="s2" d="M404,114 C 470,234 520,355 690,378" fill="none" style="stroke:var(--accent)" stroke-width="5" stroke-linecap="round"/>
+  <path class="el draw" id="s3" d="M690,378 C 800,374 856,305 966,254" fill="none" style="stroke:var(--accent)" stroke-width="5" stroke-linecap="round"/>
+  <path class="el draw" id="s4" d="M966,254 C 1050,217 1108,208 1200,204" fill="none" style="stroke:var(--accent)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- trigger -->
+  <circle class="el" id="trig" cx="140" cy="408" r="9" style="fill:var(--accent)"/>
+  <text data-edit="trigt" class="el lbl" id="trigt" x="134" y="373" text-anchor="start">Trigger</text>
+  <text data-edit="trigt2" class="el sub" id="trigt2" x="134" y="350" text-anchor="start">a demo, a paper</text>
+
+  <!-- peak -->
+  <circle class="el" id="peak" cx="404" cy="114" r="9" style="fill:var(--amber)"/>
+  <text data-edit="peakt" class="el lbl" id="peakt" x="372" y="82" text-anchor="middle">Peak of inflated expectations</text>
+  <text data-edit="peakt2" class="el sub" id="peakt2" x="372" y="58" text-anchor="middle">every board deck has a slide on it</text>
+
+  <!-- trough -->
+  <circle class="el" id="tro" cx="690" cy="378" r="9" style="fill:var(--coral)"/>
+  <text data-edit="trot" class="el lbl" id="trot" x="675" y="187" text-anchor="middle">Trough of disillusionment</text>
+  <text data-edit="trot2" class="el sub" id="trot2" x="675" y="211" text-anchor="middle">the pilots never reached production</text>
+  <line class="el" id="trol" x1="690" y1="228" x2="690" y2="362" style="stroke:var(--coral)" stroke-width="1.5"/>
+
+  <!-- slope -->
+  <text data-edit="slot" class="el lbl" id="slot" x="940" y="376" text-anchor="middle">Slope of enlightenment</text>
+  <text data-edit="slot2" class="el sub" id="slot2" x="940" y="398" text-anchor="middle">someone fixes the boring parts</text>
+
+  <!-- plateau -->
+  <line class="el" id="platl" x1="966" y1="184" x2="1200" y2="184" style="stroke:var(--green)" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <circle class="el" id="plat" cx="1200" cy="204" r="9" style="fill:var(--green)"/>
+  <text data-edit="platt" class="el lbl" id="platt" x="1200" y="160" text-anchor="end" style="fill:var(--green-text)">Plateau of productivity</text>
+  <text data-edit="platt2" class="el sub" id="platt2" x="1200" y="136" text-anchor="end" style="fill:var(--green-text)">below the peak, far above the trough</text>
+</svg>
+
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+// One entry per click. `on` is the ids visible at that step — an id that stays
+// in consecutive steps stays on screen, which is why the figure tweens. `band`
+// is this figure's own field: how wide the quiet-years region is opened, which
+// the step applies through do(). The narration lives in the slide's notes.
+const BANDC = 675, BANDW = 286;                       // centre line, full width
+const band = document.getElementById('band');
+const openBand = w => {
+  band.setAttribute('x', BANDC - w / 2);
+  band.setAttribute('width', w);
+};
+const steps = [
+  { on: ["trig","trigt","trigt2"] },
+  { on: ["trig","trigt","trigt2","s1","peak","peakt","peakt2"] },
+  { on: ["trig","s1","peak","peakt","s2","tro","trot","trot2","trol"] },
+  { on: ["trig","s1","peak","s2","tro","trot","trol","s3","slot","slot2"] },
+  { on: ["trig","s1","peak","s2","tro","s3","slot","s4","plat","platl","platt","platt2"] },
+  { on: ["trig","s1","peak","peakt","s2","tro","trot","trol","s3","s4","plat","platl","platt",
+         "band","bandl","bandr","bandt","bandt2","budgetl","budgett"], band: BANDW },
+];
+steps.forEach(s => { s.do = () => openBand(s.band || 0); });
+
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();
+  p.style.strokeDasharray = L + ' ' + L;
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  const s = steps[i];
+  els.forEach(e => e.classList.toggle('on', s.on.includes(e.id)));
+  if (s.do) s.do(s);
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+// keys stop at either end so the deck moves on (see assets/figure.html)
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

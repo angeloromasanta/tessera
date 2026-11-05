@@ -1,0 +1,6 @@
+{
+  "decks": {
+    "my-talk": "decks/my-talk/my-talk.html",
+    "workshop": "decks/workshop/session-1.html"
+  }
+}

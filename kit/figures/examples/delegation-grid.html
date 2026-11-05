@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The delegation grid</title>
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+/* ---- palette: the ONLY colours a figure uses -----------------------------
+   Default tokens; if the deck's theme differs, change them HERE, once. In JS
+   read them through C.ink, C.accent … (defined from these at the top of the
+   script) — never type a hex into a mark. figcheck warns on any other colour. */
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;font-family:Manrope,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+
+/* ---- motion ------------------------------------------------------------
+   A 2x2 is not four bullets: each card is what ITS column and ITS row
+   produce together. So every card flies out of the corner where the two
+   header rails meet, and the two headers that made it light up as it lands.
+   --dx/--dy is the offset from the card's final place back to that corner. */
+.fly{transform-box:fill-box;transform-origin:center;
+  transition:opacity .4s ease,transform .85s cubic-bezier(.22,1,.36,1)}
+.fly:not(.on){transform:translate(var(--dx,0),var(--dy,0)) scale(.34)}
+
+/* ---- pose: where a mark IS in this step (see assets/figure.html) -------
+   The closing beat swells the bottom row in place and dims the top one, so
+   "the row is what really decides it" is a change to the picture already on
+   screen — not another card. */
+.posed{transform-box:fill-box;transform-origin:center;
+  transition:opacity .45s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+.el.on.posed{transform:translate(var(--tx,0),var(--ty,0))
+  scale(var(--sc,1)) rotate(var(--rot,0deg))}
+.el.on.dim{opacity:.22}
+
+/* ---- type roles: every text takes one of these (see assets/figure.html) */
+.eyebrow,.axis{font-weight:600;font-size:16px;fill:var(--muted);letter-spacing:.08em;
+  text-transform:uppercase;transition:fill .45s ease,font-weight .3s ease}  /* column / row header */
+.eyebrow.lit{fill:var(--ink);font-weight:700}
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}            /* card title */
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}          /* card body: the two factors */
+.callout{font-weight:700;font-size:20px;fill:var(--accent)}     /* the takeaway line — colour overridden per card */
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .fly,.posed{transform:none!important}
+}
+</style></head>
+<body>
+<div id="stage">
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <g id="shapes"></g><g id="labels"></g>
+</svg>
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+<script>
+const SVG = 'http://www.w3.org/2000/svg';
+function mk(tag, a, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in a) e.setAttribute(k, a[k]);
+  (parent || shapes).appendChild(e); return e;
+}
+// Editable words (assets/figure.html): every label carries data-edit=KEY and
+// reads its text through T(): txt(key, words, attrs), so the deck editor can retype it.
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+function txt(key, s, a, parent) {
+  const t = mk('text', { ...a, 'data-edit': key }, parent || labels);
+  t.textContent = T(key, s); return t;
+}
+
+// The palette, read from :root so the CSS is its one source: C.accent, C['amber-tint'] …
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+
+/* ---- content: column = what you need, row = can you judge it ---------- */
+const COLS = ['YOU NEED THE RESULT', 'YOU NEED THE SKILL'];
+const ROWS = ['EASY TO JUDGE', 'HARD TO JUDGE'];
+const Q = [   // [col, row]
+  { c: 0, r: 0, title: 'Delegate', color: C.green, ink: C['green-text'],
+    factors: ['The result is what counts', 'A bad answer is obvious to you'],
+    move: 'Hand it over, skim the result' },
+  { c: 0, r: 1, title: 'Delegate, then verify', color: C.amber, ink: C['amber-text'],
+    factors: ['The result is what counts', 'Mistakes look just like facts'],
+    move: 'Demand sources, check every claim' },
+  { c: 1, r: 0, title: 'Use AI as a coach', color: C.accent, ink: C.accent,
+    factors: ['Doing it is how you learn', 'You can see yourself improve'],
+    move: 'Let it quiz, question and critique you' },
+  { c: 1, r: 1, title: 'Keep it', color: C.coral, ink: C['coral-text'],
+    factors: ['Doing it is how you learn', 'You could not judge its version'],
+    move: 'Do it yourself first' },
+];
+
+/* ---- geometry --------------------------------------------------------- */
+const GX = 112, GY = 40, GW = 1128, GH = 424, GAP = 16;
+const CW = (GW - GAP) / 2, CH = (GH - GAP) / 2;
+const cardX = c => GX + c * (CW + GAP), cardY = r => GY + r * (CH + GAP);
+const HEAD_Y = GY - 14, HEAD_X = GX - 26;
+const ORIGIN = [HEAD_X, HEAD_Y];          // where the two header rails cross
+
+/* headers: static marks, so they are not part of the build — but their
+   colour is what each step CHANGES, applied through the step's do() hook. */
+const colHead = COLS.map((h, c) =>
+  txt('col-' + c, h, { class: 'eyebrow', x: cardX(c) + CW / 2, y: HEAD_Y, 'text-anchor': 'middle' }));
+const rowHead = ROWS.map((h, r) =>
+  txt('row-' + r, h, { class: 'eyebrow', x: 0, y: 0, 'text-anchor': 'middle',
+    transform: `translate(${HEAD_X},${cardY(r) + CH / 2}) rotate(-90)` }));
+function light(axes) {          // axes = [col, row] | null
+  colHead.forEach((t, c) => t.classList.toggle('lit', !!axes && axes[0] === c));
+  rowHead.forEach((t, r) => t.classList.toggle('lit', !!axes && axes[1] === r));
+}
+
+/* empty card outlines so the grid is legible before it fills */
+Q.forEach(q => mk('rect', { x: cardX(q.c), y: cardY(q.r), width: CW, height: CH, rx: 18,
+  fill: 'none', stroke: C.rule, 'stroke-width': 2, 'stroke-dasharray': '6 6' }));
+
+Q.forEach((q, k) => {
+  const x = cardX(q.c), y = cardY(q.r);
+  const g = mk('g', { class: 'el fly', id: 'q' + k }, labels);
+  // out of the corner where its column and its row meet
+  g.style.setProperty('--dx', (ORIGIN[0] - (x + CW / 2)).toFixed(1) + 'px');
+  g.style.setProperty('--dy', (ORIGIN[1] - (y + CH / 2)).toFixed(1) + 'px');
+  mk('rect', { x: x - 2, y: y - 2, width: CW + 4, height: CH + 4, rx: 19, fill: '#fff' }, g);
+  mk('rect', { x, y, width: CW, height: CH, rx: 18, fill: q.color, 'fill-opacity': .1 }, g);
+  mk('rect', { x, y: y + 18, width: 6, height: CH - 36, rx: 3, fill: q.color }, g);
+  txt('q' + k + '-title', q.title, { class: 'lbl', x: x + 34, y: y + 50 }, g);
+  q.factors.forEach((f, j) => {
+    const fy = y + 92 + j * 32;
+    mk('path', { d: `M${x + 36},${fy - 6} l6,6 l12,-13`, fill: 'none', stroke: q.color,
+      'stroke-width': 3.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+    txt('q' + k + '-f' + (j + 1), f, { class: 'sub', x: x + 64, y: fy }, g);
+  });
+  txt('q' + k + '-move', '→  ' + q.move, { class: 'callout', x: x + 34, y: y + CH - 24, style: `fill:${q.ink}` }, g);
+});
+
+/* ---- helpers the starter ships ---------------------------------------- */
+const spotlight = (ids, s = 2.4) => Object.fromEntries(ids.map(id => [id, { s }]));
+
+/* ---- steps ------------------------------------------------------------
+   `axes` is this figure's own field: which column and row header the step is
+   about. do() applies it, which is how a step changes something that is
+   already on screen rather than only adding to the picture. */
+const steps = [
+  { on: [], axes: null },
+  { on: ['q0'], axes: [0, 0] },
+  { on: ['q0', 'q1'], axes: [0, 1] },
+  { on: ['q0', 'q1', 'q2'], axes: [1, 0] },
+  { on: ['q0', 'q1', 'q2', 'q3'], axes: [1, 1] },
+  // the row is what really decides it: the two you cannot judge swell, the
+  // two you can recede. No new card — the same four, re-read.
+  { on: ['q0', 'q1', 'q2', 'q3'], axes: [null, 1],
+    pose: spotlight(['q1', 'q3'], 1.05), dim: ['q0', 'q2'] },
+];
+steps.forEach(s => { s.do = () => light(s.axes); });
+
+/* ---- engine: the starter's, unedited ---------------------------------- */
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+const POSED = new Set();
+steps.forEach(s => Object.keys(s.pose || {}).forEach(id => POSED.add(id)));
+POSED.forEach(id => document.getElementById(id)?.classList.add('posed'));
+function setPose(e, p) {
+  e.style.setProperty('--tx', (p.x || 0) + 'px');
+  e.style.setProperty('--ty', (p.y || 0) + 'px');
+  e.style.setProperty('--sc', p.s == null ? 1 : p.s);
+  e.style.setProperty('--rot', (p.r || 0) + 'deg');
+}
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  const s = steps[i];
+  els.forEach(e => {
+    e.classList.toggle('on', s.on.includes(e.id));
+    for (const k of ['dim', 'dead', 'sel'])
+      e.classList.toggle(k, (s[k] || []).includes(e.id));
+    if (POSED.has(e.id)) {
+      const p = (s.pose || {})[e.id];
+      setPose(e, (typeof p === 'function' ? p() : p) || {});
+    }
+  });
+  if (s.do) s.do(s);
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent = i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// on the deck's edit canvas a click on a label is the start of a double-click edit
+document.getElementById('stage').addEventListener('click', e => {
+  if (window.TESSERA_EMBED && TESSERA_EMBED.editable && e.target.closest('[data-edit]')) return;
+  go(i + 1);
+});
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+</script>
+</body></html>

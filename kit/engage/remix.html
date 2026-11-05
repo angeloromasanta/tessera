@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="figcheck-allow" content="state0 coverage still">
+<title>Interactive title</title>
+<!--
+  Interactive title, screen side (engage). A full-bleed `embed` (1280 x 720) over a
+  hidden `activity` poll on the same slide, whose phone page is remix-phone.html.
+  make_remix.py fills the fonts and the CONFIG block; never edit a generated copy.
+
+  The room checks in on their phones (attendance) and then sends ideas to improve this
+  slide. This page is the queue: every 3 s it reads the bucket (lecturer key), takes the
+  ideas not yet handled (oldest first, one per phone per batch, at most BATCH), and sends
+  them to POST /api/remix {op:"apply"}, where Haiku rewrites the slide's HTML. The reply
+  is drawn in the back frame, measured, and only then cross-faded in. A version that
+  looks blank (no readable text on top: a full-screen cover, text the colour of its
+  background, everything hidden) is sent back with {op:"reject"} and never shown.
+
+  The slide itself is HTML + CSS only. It runs in a sandboxed frame (opaque origin, so it
+  cannot reach the key in TESSERA_EMBED) under a CSP that allows no script but this page's
+  own checker (by nonce) and no network at all. The server strips scripts as well.
+
+  Answers in the bucket (JSON text):
+    {"v":1, "t":"in",   "pid", "name", "email"}          a check-in (attendance)
+    {"v":1, "t":"idea", "pid", "name", "iid", "idea"}    an idea for the slide
+
+  On stage, after one click into the page (the frame then has the keyboard):
+    P  pause / resume applying ideas      U  undo the last version
+    R twice within 3 s: back to the original slide (the old one stays one undo away)
+    [ ]  step back / forward through the versions        L  back to the live version
+  The same three are buttons, top right, shown on hover. Left, right and the Page keys
+  always go back to the deck.
+
+  Version bars (#bars): a thin row along the bottom, right of the left column, one bar per
+  version the server keeps (the original first, the live one dark). Clicking a bar shows
+  that version, view only: the server does not change, applying ideas waits, and the
+  state chip says "Version 3 of 7" until the last bar, L, ] past the end or a click on the
+  chip returns to live. Every version this screen showed stays in memory; the rest come
+  from GET /api/remix?hist=1 (on start, and after another screen changed the slide). An
+  old version is drawn through the same wrap()/CSP as the live one.
+
+  Three layers, bottom up: the base (#base, CONFIG.base: the deck's live swarm cover, a
+  page of our own, so its script runs), the slide the model edits (transparent until an
+  idea paints a background over the swarm), and the locked title. The logo, the title, a
+  short gold rule and the lecturer's name are NOT part of the slide the model edits: this
+  page draws them as one compact left column (x 40-310), on three white plates (#lock,
+  ZONES; from CONFIG.lock) that vanish into the white side of the swarm and stay readable
+  on any background, so no idea can remove, hide or restyle them. The QR card (CARD) sits
+  right under them, so everything right of x 330 is the room's. The model is told the
+  plates and the card cover those rectangles; the checker ignores text under them.
+  The title and the name are editable in place (keys lock.title, lock.subtitle; see TX).
+
+  Without TESSERA_EMBED (the poster, the editor canvas, shoot.py) it shows the seed slide
+  with a sample check-in count and sample version bars, tagged "sample". Without the key it says so.
+  Sandbox rules: one file, no CDN, no storage.
+-->
+<style id="fonts">/*FONTS*/</style>
+<style>
+  :root{
+    --ink:#1A2326; --navy:#0D2A2F; --accent:#0F6B73; --muted:#5A6467; --rule:#D7DEDF;
+    --tint:#F1F5F5; --ok:#2E9E6A; --no:#D63A3F; --amber:#E8A33D;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#fff}
+  body{color:var(--ink);font:16px/1.35 Manrope,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none}
+  #stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;overflow:hidden;
+         transform:translate(-50%,-50%);transform-origin:center center;background:#fff}
+  .slide{position:absolute;inset:0;width:1280px;height:720px;border:0;background:transparent;
+         transition:opacity .9s ease;pointer-events:none}
+  .slide.back{opacity:0}
+  /* ── the QR card: always on top, the slide can never cover it ── */
+  #card{position:absolute;left:40px;top:250px;width:270px;height:390px;background:#fff;
+        border:1.5px solid var(--rule);display:flex;flex-direction:column;align-items:center;
+        padding:14px 14px 12px;z-index:5}
+  #card .k{font-size:13px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--accent)}
+  #qr{width:236px;height:236px;margin:8px 0 6px;display:grid;place-items:center;background:#fff}
+  #qr img{width:236px;height:236px;display:block}
+  #qr .ph{width:236px;height:236px;border:2px dashed var(--rule);display:grid;place-items:center;
+          font-size:13px;font-weight:700;color:var(--muted);text-align:center;padding:12px}
+  #join{font-size:15px;font-weight:800;color:var(--navy);white-space:nowrap;max-width:100%}
+  #counts{margin-top:auto;width:100%;display:flex;justify-content:space-between;align-items:baseline;
+          border-top:1.5px solid var(--rule);padding-top:8px}
+  #counts div{text-align:center;flex:1}
+  #counts b{display:block;font-size:24px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+  #counts span{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+  /* ── the locked title: always on top, no idea can touch it ── */
+  #base{position:absolute;inset:0;width:1280px;height:720px;border:0;background:#fff;pointer-events:none}
+  #lock .plate{position:absolute;background:#fff;z-index:3;transition:background-color .9s ease}
+  #lock.bare .plate{background:transparent}   /* the original slide: the swarm's ripples pass under the title */
+  #lkp-logo{left:40px;top:28px;width:136px;height:58px}
+  #lkp-logo img{position:absolute;left:12px;top:12px;width:111px;height:34px}
+  #lkp-title{left:40px;top:100px;width:270px;height:66px}
+  #lktitle{position:absolute;left:12px;top:6px;width:246px;font-family:/*TITLEFONT*/Manrope,serif;font-weight:400;
+           font-size:46px;line-height:1.12;color:var(--navy);white-space:pre-line}
+  #lkp-name{left:40px;top:166px;width:270px;height:64px}
+  #lkp-name i{position:absolute;left:14px;top:10px;width:64px;height:3px;background:#BF831A}
+  #lksub,#lkedsub{position:absolute;left:14px;top:24px;width:246px;font-size:20px;font-weight:600;line-height:1.3;color:var(--navy);white-space:pre-line}
+  /* the transparent box over the name that makes it editable: it holds the raw string ({{date}} unfilled) */
+  #lkedsub{color:transparent;overflow:hidden}
+  /* ── what is happening: bottom left of the room's space, over the version bars ── */
+  #feed{position:absolute;left:330px;bottom:30px;width:440px;display:flex;flex-direction:column-reverse;gap:8px;z-index:4;pointer-events:none}
+  .pill{align-self:flex-start;max-width:440px;display:flex;align-items:center;gap:10px;padding:9px 16px 9px 12px;
+        background:rgba(13,42,47,.88);color:#fff;font-size:18px;font-weight:600;line-height:1.25;
+        box-shadow:0 0 0 1px rgba(255,255,255,.15);animation:pin .45s cubic-bezier(.2,.8,.2,1) both}
+  .pill.out{animation:pout .5s ease forwards}
+  .pill i{font-style:normal;width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;border-radius:50%;
+          font-size:14px;font-weight:800;background:var(--ok)}
+  .pill.no i{background:var(--no)}
+  .pill.busy i{background:var(--amber);animation:spin 1.2s linear infinite}
+  .pill b{font-weight:800}
+  .pill em{font-style:normal;opacity:.75;font-weight:600}
+  .pill .t{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;max-width:384px}
+  @keyframes pin{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+  @keyframes pout{to{opacity:0;transform:translateY(-8px)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* ── presenter controls: top right, on hover ── */
+  #ctl{position:absolute;top:14px;right:14px;display:flex;gap:6px;z-index:6;opacity:0;transition:opacity .2s ease}
+  #stage:hover #ctl, #ctl.show{opacity:1}
+  #ctl button{font:inherit;font-size:14px;font-weight:700;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);
+              background:#fff;border:1.5px solid var(--rule)}
+  #ctl button:hover{border-color:var(--accent)}
+  #ctl button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  #ctl .ver{align-self:center;font-size:13px;font-weight:700;color:var(--muted);background:#fff;padding:0 8px;height:34px;display:flex;align-items:center;border:1.5px solid var(--rule)}
+  /* ── version bars: the very bottom, right of the left column ── */
+  #bars{position:absolute;left:330px;width:926px;bottom:0;height:24px;display:flex;align-items:flex-end;gap:3px;
+        padding-bottom:7px;z-index:4}
+  #bars span{flex:0 1 26px;min-width:3px;height:100%;position:relative;cursor:pointer;display:flex;align-items:flex-end}
+  #bars span::before{content:'';display:block;width:100%;height:4px;background:rgba(13,42,47,.22);
+        box-shadow:0 0 0 1px rgba(255,255,255,.6);transition:height .15s ease,background-color .15s ease}
+  #bars span:hover::before{height:8px;background:var(--accent)}
+  #bars span.live::before{background:var(--navy)}
+  #bars span.view::before{height:8px;background:#BF831A}
+  #bars span:hover::after{content:attr(data-v);position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+        font-size:11px;font-weight:800;line-height:1;color:var(--navy);background:#fff;padding:3px 5px;border:1px solid var(--rule);white-space:nowrap}
+  #bars.sample span{cursor:default}
+  #ctl .ver.old{color:#fff;background:var(--navy);border-color:var(--navy);cursor:pointer}
+  #msg{position:absolute;top:56px;right:14px;max-width:420px;padding:8px 12px;background:#FDECEC;color:#A42328;
+       font-size:14px;font-weight:700;z-index:6}
+  [hidden]{display:none !important}
+  @media (prefers-reduced-motion:reduce){.slide{transition:none}.pill,.pill.out{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <iframe id="base" sandbox="allow-scripts" tabindex="-1" title="The background" aria-hidden="true"></iframe>
+  <iframe class="slide" id="fa" sandbox="allow-scripts" tabindex="-1" title="The slide"></iframe>
+  <iframe class="slide back" id="fb" sandbox="allow-scripts" tabindex="-1" title="The next version"></iframe>
+  <div id="lock">
+    <div class="plate" id="lkp-logo"><img id="lklogo" alt="" hidden></div>
+    <div class="plate" id="lkp-title"><div id="lktitle" data-edit="lock.title"></div></div>
+    <div class="plate" id="lkp-name"><i></i><div id="lksub"></div><div id="lkedsub" data-edit="lock.subtitle" data-figcheck="ignore" aria-hidden="true"></div></div>
+  </div>
+  <div id="feed" data-figcheck="ignore"></div>
+  <div id="bars" data-figcheck="ignore" title="Versions: [ and ] step, L back to live"></div>
+  <div id="card">
+    <div class="k" id="khead">Check in &amp; improve</div>
+    <div id="qr"><div class="ph">The QR appears when the slide is presented</div></div>
+    <div id="join"></div>
+    <div id="counts" data-figcheck="ignore">
+      <div><b id="nin">0</b><span>here</span></div>
+      <div><b id="nidea">0</b><span>ideas</span></div>
+      <div><b id="nver">1</b><span>version</span></div>
+    </div>
+  </div>
+  <div id="ctl" data-figcheck="ignore">
+    <span class="ver" id="state">Live</span>
+    <button id="bpause" tabindex="-1" title="P">Pause</button>
+    <button id="bundo" tabindex="-1" title="U">Undo</button>
+    <button id="breset" tabindex="-1" title="R twice">Reset</button>
+  </div>
+  <div id="msg" hidden></div>
+</div>
+<script>
+/* ═══════════════════════════ CONTENT ═══════════════════════════ */
+const CONFIG = /*CONFIG*/{
+  "seed": "<!doctype html><html><head><style>body{margin:0;width:1280px;height:720px;font-family:Manrope,sans-serif;color:#0D2A2F}h1{position:absolute;left:64px;top:180px;margin:0;font-weight:400;font-size:58px;line-height:1.12}</style></head><body><h1>Improve this slide</h1></body></html>",
+  "base": "",
+  "lock": {"title": "Welcome", "subtitle": "{{date}}"},
+  "logos": {},
+  "sample": {"in": 47, "ideas": 23, "versions": 7}
+}/*END*/;
+/* ---- editable text (the deck's EMBED_TEXT_BRIDGE) --------------------------------
+   CONFIG holds the defaults; the deck's overrides (the embed's `texts`, reworded by
+   double-click on the edit canvas) win, and reach the phone page too (same keys in
+   remix-phone.html). Keys: lock.title, lock.subtitle. The value is plain text, a line
+   break where CONFIG has <br>, {{date}} unfilled. The title carries data-edit itself;
+   the name is drawn with the date filled in, so a transparent box over it (#lkedsub)
+   holds the raw string. After an edit the bridge calls TESSERA_REFIT (paintLock). */
+const TX = (k, d) => { const E = window.TESSERA_EMBED;
+  return E && typeof E.text === 'function' ? E.text(k, d == null ? '' : d) : (d == null ? '' : d); };
+/* CONFIG's <br>-only HTML as plain text (a <template> is inert: nothing in it loads) */
+const plain = h => { const t = document.createElement('template'); t.innerHTML = String(h || '').replace(/<br\s*\/?>/gi, '\n'); return t.content.textContent; };
+/* ═══════════════════════════ SETUP ═════════════════════════════ */
+const $ = id => document.getElementById(id);
+const EMB = (window.TESSERA_EMBED && window.TESSERA_EMBED.poll) || null;
+const PREV = EMB && EMB.previous;
+// only this slide's own activity: its question starts with "Interactive title"
+const CODE = (PREV && /^Interactive title/.test(PREV.question || '') && PREV.code) || '';
+const SERVICE = String((EMB && EMB.service) || '').replace(/\/+$/, '');
+const KEY = (EMB && EMB.lecturer) || '';
+const LIVE = !!(EMB && SERVICE && CODE);
+const BATCH = 6, TICK = 3000;
+const SAMPLE_VERS = Math.max(1, Math.min(40, (CONFIG.sample && CONFIG.sample.versions) || 7));
+const FONTS = $('fonts').textContent;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const today = () => { const d = new Date(); return `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`; };
+const SEED = CONFIG.seed.replace(/\{\{date\}\}/g, today());
+
+/* The locked plates and the QR card (x0, y0, x1, y1), as in the CSS: the checker skips text under them. */
+const ZONES = [[40, 28, 176, 86], [40, 100, 310, 166], [40, 166, 310, 230]];
+const CARD = [40, 250, 310, 640];
+
+/* ═══════════════════════════ THE SLIDE FRAMES ══════════════════ */
+/* The model's HTML goes in under a CSP of our own: no script but the checker (by nonce),
+   no network, fonts and images only as data. A later <meta> in the model's page can only
+   add restrictions, never lift these. */
+function nonce() { const a = new Uint8Array(12); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); }
+const CHECKER = (token) => `(function(){
+  var W=1280,H=720,T=${JSON.stringify(token)},Z=${JSON.stringify(ZONES.concat([CARD]))};
+  function rgba(c){var m=String(c).match(/rgba?\\(([^)]+)\\)/);if(!m)return null;var p=m[1].split(/[ ,\\/]+/).filter(Boolean).map(parseFloat);return [p[0],p[1],p[2],p.length>3?p[3]:1];}
+  function shown(el){var o=1;for(var e=el;e&&e.nodeType===1;e=e.parentElement){var cs=getComputedStyle(e);
+    if(cs.display==='none'||cs.visibility==='hidden'||cs.visibility==='collapse')return false;o*=parseFloat(cs.opacity);
+    if(/opacity\\(0(\\.0+)?\\)|brightness\\(0(\\.0+)?\\)/.test(cs.filter))return false;
+    var b=cs.filter.match(/blur\\(([\\d.]+)px\\)/);if(b&&parseFloat(b[1])>6)return false;}
+    return o>0.2;}
+  function bgOf(el){for(var e=el;e&&e.nodeType===1;e=e.parentElement){var cs=getComputedStyle(e);
+    if(cs.backgroundImage&&cs.backgroundImage!=='none')return null;var c=rgba(cs.backgroundColor);if(c&&c[3]>0.5)return c;}return [255,255,255,1];}
+  function inked(el){var cs=getComputedStyle(el);var clip=(cs.webkitBackgroundClip||cs.backgroundClip||'');
+    if(/text/.test(clip))return true;var c=rgba(cs.webkitTextFillColor||cs.color)||rgba(cs.color);if(!c||c[3]<0.3){
+      return !!(cs.webkitTextStroke&&/[1-9]/.test(cs.webkitTextStrokeWidth||''))||(cs.textShadow&&cs.textShadow!=='none');}
+    var bg=bgOf(el);if(!bg)return true;var d=Math.abs(c[0]-bg[0])+Math.abs(c[1]-bg[1])+Math.abs(c[2]-bg[2]);return d>70;}
+  function check(){var chars=0,why='no readable text on top';if(!document.body)return {ok:false,why:'no body'};
+    var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),n,r=document.createRange();
+    while((n=w.nextNode())){var t=n.nodeValue.replace(/\\s+/g,'');if(!t)continue;var el=n.parentElement;if(!el||!shown(el)||!inked(el))continue;
+      r.selectNodeContents(n);var rs=r.getClientRects();
+      for(var i=0;i<rs.length;i++){var q=rs[i];if(q.width<3||q.height<8)continue;var x=q.left+q.width/2,y=q.top+q.height/2;
+        if(x<0||y<0||x>W||y>H)continue;if(Z.some(function(z){return x>=z[0]&&x<=z[2]&&y>=z[1]&&y<=z[3];}))continue;
+        var top=document.elementFromPoint(x,y);if(!top)continue;
+        if(top===el||el.contains(top)||top.contains(el)){chars+=t.length;break;}}
+      if(chars>=4)return {ok:true,chars:chars};}
+    return {ok:false,why:why,chars:chars};}
+  var tries=0;function go(){var res;try{res=check();}catch(e){res={ok:true,why:'checker error'};}
+    if(res.ok||++tries>=4){parent.postMessage({remixCheck:T,ok:res.ok,why:res.why||''},'*');return;}setTimeout(go,700);}
+  function start(){setTimeout(go,700);}
+  if(document.readyState==='complete')start();else addEventListener('load',start);
+})();`;
+function wrap(html, token) {
+  let s = String(html || '');
+  for (const [k, v] of Object.entries(CONFIG.logos || {})) s = s.split(`logo:${k}"`).join(`${v}"`).split(`logo:${k}'`).join(`${v}'`);
+  const n = nonce();
+  const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'nonce-${n}'">`
+    + `<style>${FONTS}\nhtml,body{margin:0;width:1280px;height:720px;overflow:hidden}</style>`;
+  const tail = token ? `<script nonce="${n}">${CHECKER(token)}<\/script>` : '';
+  if (/<head[^>]*>/i.test(s)) s = s.replace(/<head[^>]*>/i, m => m + head);
+  else if (/<html[^>]*>/i.test(s)) s = s.replace(/<html[^>]*>/i, m => m + '<head>' + head + '</head>');
+  else s = '<!doctype html><html><head>' + head + '</head><body>' + s + '</body></html>';
+  if (/<\/body\s*>/i.test(s)) s = s.replace(/<\/body\s*>(?![\s\S]*<\/body\s*>)/i, () => tail + '</body>');
+  else s += tail;
+  return s;
+}
+let front = $('fa'), back = $('fb');
+const waiting = new Map();   // token -> resolve
+addEventListener('message', e => {
+  const d = e.data;
+  if (!d || typeof d.remixCheck !== 'string' || !waiting.has(d.remixCheck)) return;
+  if (e.source !== back.contentWindow && e.source !== front.contentWindow) return;
+  waiting.get(d.remixCheck)({ ok: !!d.ok, why: d.why || '' });
+  waiting.delete(d.remixCheck);
+});
+/* Draw html in the back frame and wait for its checker: {ok, why}. A frame that never answers
+   (it hung or the CSP killed the checker) counts as fine after 6 s: the server already refused
+   a slide with no text at all, so this check only catches the clever covers. */
+function render(html) {
+  return new Promise(resolve => {
+    const token = nonce();
+    const t = setTimeout(() => { waiting.delete(token); resolve({ ok: true, why: 'no answer' }); }, 6000);
+    waiting.set(token, r => { clearTimeout(t); resolve(r); });
+    back.srcdoc = wrap(html, token);
+  });
+}
+function swap() {
+  back.classList.remove('back'); front.classList.add('back');
+  [front, back] = [back, front];
+}
+let shownVer = 0, shownHtml = '';   // the live version (the server's), as this screen knows it
+let drawnHtml = '', drawSeq = 0;     // what the front frame shows: the live version, or an old one
+let viewing = 0;                     // an old version on screen instead of the live one (0: live)
+/* Draw html in front (through the back frame and a cross-fade). A draw overtaken by a later
+   one does not swap. */
+async function draw(html, check) {
+  if (html === drawnHtml) return { ok: true };
+  const my = ++drawSeq;
+  const res = await render(html);
+  if (check && !res.ok) return res;
+  if (my !== drawSeq) return Object.assign({ stale: true }, res);
+  swap(); drawnHtml = html;
+  $('lock').classList.toggle('bare', String(html).trim() === SEED.trim());
+  return res;
+}
+/* The live version changed. While an old version is on screen it is only checked and kept.
+   A show overtaken by a later one (the first, network-free draw of the original) changes nothing. */
+let showSeq = 0;
+async function show(html, ver, check) {
+  const my = ++showSeq;
+  let res = { ok: true };
+  if (!viewing) res = await draw(html, check);
+  else if (check && html !== shownHtml) res = await render(html);
+  if (check && !res.ok) return res;
+  if (my !== showSeq) return res;
+  shownHtml = html; shownVer = ver; track(ver, html); paintCounts(); paintState();
+  return res;
+}
+
+/* ═══════════════════════════ VERSIONS ══════════════════════════ */
+/* The versions the server keeps (its hist, then the live one), oldest first. Undo drops the
+   top, so a new live version replaces every one at or above its number. Versions the server
+   no longer keeps but this screen showed stay at the start. */
+let stack = [];
+function track(ver, html) {
+  if (!ver) return;
+  stack = stack.filter(e => e.ver < ver); stack.push({ ver, html });
+  if (viewing && !stack.some(e => e.ver === viewing)) viewing = 0;
+  paintBars();
+}
+async function loadHist(fresh) {
+  try {
+    const d = await call('GET', `/api/remix?c=${encodeURIComponent(CODE)}&hist=1`);
+    if (!d.ver || d.ver !== shownVer || !Array.isArray(d.hist)) return;
+    const list = d.hist.filter(e => e && e.ver > 0 && e.ver < d.ver && typeof e.html === 'string').map(e => ({ ver: e.ver, html: e.html }));
+    const first = list.length ? list[0].ver : d.ver;
+    stack = (fresh ? [] : stack.filter(e => e.ver < first)).concat(list, [{ ver: shownVer, html: shownHtml }]);
+    if (viewing && !stack.some(e => e.ver === viewing)) toLive();
+    paintBars();
+  } catch (e) { /* the bars keep what this screen saw */ }
+}
+function paintBars() {
+  const bars = $('bars');
+  const list = LIVE ? stack : Array.from({ length: SAMPLE_VERS }, (_, k) => ({ ver: k + 1 }));
+  const live = LIVE ? shownVer : SAMPLE_VERS;
+  while (bars.children.length > list.length) bars.lastChild.remove();
+  while (bars.children.length < list.length) bars.appendChild(document.createElement('span'));
+  list.forEach((e, k) => {
+    const b = bars.children[k];
+    b.dataset.v = e.ver === live ? `${e.ver} · live` : String(e.ver);
+    b.className = e.ver === live ? 'live' : (e.ver === viewing ? 'view' : '');
+  });
+}
+function paintState() {
+  const st = $('state');
+  st.textContent = viewing ? `Version ${viewing} of ${shownVer}` : paused ? 'Paused' : 'Live';
+  st.classList.toggle('old', !!viewing);
+  st.title = viewing ? 'Back to live (L)' : '';
+  $('ctl').classList.toggle('show', paused || !!viewing);
+}
+/* Show an old version: view only, the server does not change; applying waits. */
+async function view(ver) {
+  if (!LIVE) return;
+  const e = stack.find(x => x.ver === ver);
+  if (!e) return;
+  if (ver === shownVer) return toLive();
+  viewing = ver; paintBars(); paintState(); paintCounts();
+  await draw(e.html, false);
+}
+function toLive() {
+  if (!viewing) return;
+  viewing = 0; paintBars(); paintState(); paintCounts();
+  draw(shownHtml, false);
+  applyNext();
+}
+function step(d) {
+  if (!LIVE || !stack.length) return;
+  const vs = stack.map(e => e.ver);
+  let i = vs.indexOf(viewing || shownVer); if (i < 0) i = vs.length - 1;
+  view(vs[Math.max(0, Math.min(vs.length - 1, i + d))]);
+}
+
+/* ═══════════════════════════ FEED ══════════════════════════════ */
+function pill(kind, html, ms) {
+  const el = document.createElement('div');
+  el.className = 'pill ' + kind;
+  el.innerHTML = `<i>${kind === 'no' ? '✕' : kind === 'busy' ? '↻' : '✓'}</i><span class="t">${html}</span>`;
+  const feed = $('feed');
+  feed.insertBefore(el, feed.firstChild);
+  while (feed.children.length > 5) feed.lastChild.remove();
+  if (ms) setTimeout(() => drop(el), ms);
+  return el;
+}
+function drop(el) { if (!el || !el.isConnected) return; el.classList.add('out'); setTimeout(() => el.remove(), 520); }
+const who = i => i.name ? `<b>${esc(i.name.split(' ')[0])}</b>: ` : '';
+function note(text) { const m = $('msg'); m.textContent = text; m.hidden = !text; }
+
+/* ═══════════════════════════ COUNTS ════════════════════════════ */
+let nIn = 0, nIdeas = 0;
+function paintCounts() {
+  $('nin').textContent = nIn; $('nidea').textContent = nIdeas; $('nver').textContent = viewing || shownVer || 1;
+}
+
+/* ═══════════════════════════ THE SERVICE ═══════════════════════ */
+/* The lecturer key goes as x-tessera-lecturer. A poll service from before the rename lists
+   only its old header name in CORS, so its preflight fails: a request carrying the key that
+   fails on the network is sent once more under that name. */
+const OLD_LECTURER_HEADER = 'x-bento-lecturer'; // decks written before the rename / the old service only allow this name
+async function lfetch(url, opts = {}) {
+  try { return await fetch(url, opts); }
+  catch (err) {
+    const h = Object.assign({}, opts.headers || {});
+    if (!h['x-tessera-lecturer'] || (err && err.name === 'AbortError')) throw err;
+    h[OLD_LECTURER_HEADER] = h['x-tessera-lecturer']; delete h['x-tessera-lecturer'];
+    return fetch(url, Object.assign({}, opts, { headers: h }));
+  }
+}
+async function call(method, path, body) {
+  const ctl = new AbortController();
+  const stop = setTimeout(() => ctl.abort(), method === 'POST' ? 70000 : 9000);
+  try {
+    const r = await lfetch(SERVICE + path, {
+      method, cache: 'no-store', signal: ctl.signal,
+      headers: Object.assign(body ? { 'content-type': 'application/json' } : {}, KEY ? { 'x-tessera-lecturer': KEY } : {}),
+      body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(d.error || ('HTTP ' + r.status)), { status: r.status });
+    return d;
+  } finally { clearTimeout(stop); }
+}
+const remix = body => call('POST', '/api/remix', Object.assign({ code: CODE }, body));
+
+/* ═══════════════════════════ THE QUEUE ═════════════════════════ */
+const done = new Set();          // iids sent to the model (from the server's `done`, then ours)
+let ideas = [];                  // every idea in the bucket, oldest first
+let paused = false, busy = false, ready = false;
+function readBucket(answers) {
+  const people = new Set(), list = [];
+  for (const a of answers || []) {
+    let o; try { o = JSON.parse(a.text); } catch (e) { continue; }
+    if (!o || o.v !== 1) continue;
+    if (o.t === 'in') people.add(String(o.email || o.name || o.pid).toLowerCase().trim());
+    else if (o.t === 'idea' && o.iid && o.idea) {
+      list.push({ iid: String(o.iid), pid: String(o.pid || ''), name: String(o.name || a.name || '').slice(0, 60), idea: String(o.idea).slice(0, 280) });
+    }
+  }
+  nIn = people.size; nIdeas = list.length; ideas = list; paintCounts();
+}
+function nextBatch() {
+  const pids = new Set(), out = [];
+  for (const i of ideas) {
+    if (done.has(i.iid) || pids.has(i.pid)) continue;
+    pids.add(i.pid); out.push(i);
+    if (out.length >= BATCH) break;
+  }
+  return out;
+}
+async function applyNext() {
+  if (busy || paused || viewing || !ready) return;
+  const batch = nextBatch();
+  if (!batch.length) return;
+  busy = true;
+  batch.forEach(i => done.add(i.iid));
+  const waitPill = pill('busy', batch.length === 1
+    ? `${who(batch[0])}${esc(batch[0].idea)} <em>· Haiku is editing…</em>`
+    : `Haiku is applying <b>${batch.length} ideas</b>… <em>${esc(batch.map(i => i.name.split(' ')[0]).filter(Boolean).join(', '))}</em>`);
+  try {
+    const r = await remix({ op: 'apply', ideas: batch.map(({ iid, name, idea }) => ({ iid, name, idea })) });
+    let skipped = r.skipped || [];
+    let applied = r.applied || [];
+    if (r.ver !== shownVer) {
+      const res = await show(r.html, r.ver, true);
+      if (!res.ok) {
+        const back = await remix({ op: 'reject', ver: r.ver, why: 'it would leave the slide blank' }).catch(() => null);
+        if (back) shownVer = back.ver;
+        skipped = skipped.concat(applied.map(iid => ({ iid, why: 'it would leave the slide blank' })));
+        applied = [];
+      }
+    }
+    drop(waitPill);
+    const byId = new Map(batch.map(i => [i.iid, i]));
+    applied.forEach(iid => { const i = byId.get(iid); if (i) pill('ok', `${who(i)}${esc(i.idea)}`, 9000); });
+    skipped.forEach(k => { const i = byId.get(k.iid); if (i) pill('no', `${who(i)}${esc(i.idea)} <em>· ${esc(k.why)}</em>`, 9000); });
+    note('');
+  } catch (e) {
+    drop(waitPill);
+    // a failed call: give the ideas another go on the next tick, unless the server says no for good
+    if (!(e.status === 400 || e.status === 429)) batch.forEach(i => done.delete(i.iid));
+    note(e.status === 401 ? 'Enter the lecturer key in the deck to run the slide' : `Could not edit the slide: ${e.message}`);
+    await new Promise(r => setTimeout(r, 4000));
+  } finally {
+    busy = false;
+  }
+}
+let pulling = false, ticks = 0;
+/* Another copy of the deck may be presenting too (a second screen): follow the server's version. */
+async function sync() {
+  try {
+    const st = await call('GET', `/api/remix?c=${encodeURIComponent(CODE)}&v=${shownVer}`);
+    if (!busy && st.ver && !st.same && st.html) { await show(st.html, st.ver, false); await loadHist(false); }
+  } catch (e) { /* next time */ }
+}
+async function tick() {
+  if (pulling || document.visibilityState !== 'visible') return;
+  pulling = true;
+  try {
+    const d = await call('GET', `/api/poll?c=${encodeURIComponent(CODE)}`);
+    if (d.answersWithheld) { note('Enter the lecturer key in the deck to run the slide'); return; }
+    readBucket(d.answers);
+    applyNext();
+    if (++ticks % 5 === 0 && !busy) sync();
+  } catch (e) { /* keep going; the next tick tries again */ }
+  finally { pulling = false; }
+}
+async function start() {
+  if (!shownHtml) show(SEED, 1, false);     // the original at once, whatever the network does
+  try {
+    let st = await call('GET', `/api/remix?c=${encodeURIComponent(CODE)}&done=1`);
+    if (!st.ver) st = await remix({ op: 'seed', html: SEED });
+    // an original from an older build that no idea has touched yet: put this build's original in its place
+    else if (!(st.log || []).length && String(st.html || '').trim() !== SEED.trim()) {
+      const done = st.done;
+      st = Object.assign(await remix({ op: 'seed', html: SEED, force: true }), { done });
+    }
+    (st.done || []).forEach(i => done.add(i));
+    await show(st.html, st.ver, false);
+    await loadHist(true);
+    ready = true;
+    tick();
+  } catch (e) {
+    note(e.status === 401 ? 'Enter the lecturer key in the deck to run the slide' : `Not connected: ${e.message}`);
+    setTimeout(start, 5000);
+  }
+}
+
+/* ═══════════════════════════ CONTROLS ══════════════════════════ */
+function setPaused(p) {
+  paused = p;
+  $('bpause').textContent = p ? 'Resume' : 'Pause';
+  $('bpause').classList.toggle('on', p);
+  paintState();
+  if (!p) applyNext();
+}
+async function undo() {
+  if (!LIVE || busy) return;
+  busy = true;
+  try { const r = await remix({ op: 'undo' }); leaveView(); await show(r.html, r.ver, false); pill('ok', `Undone <em>· back to version ${r.ver}</em>`, 4000); }
+  catch (e) { note(e.message); } finally { busy = false; }
+}
+/* Undo and reset act on the live slide: an old version on screen gives way first. */
+function leaveView() { if (viewing) { viewing = 0; paintBars(); paintState(); paintCounts(); } }
+let resetArmed = 0;
+async function reset() {
+  if (!LIVE || busy) return;
+  if (Date.now() - resetArmed > 3000) { resetArmed = Date.now(); $('breset').textContent = 'Sure?'; setTimeout(() => { $('breset').textContent = 'Reset'; }, 3000); return; }
+  resetArmed = 0; $('breset').textContent = 'Reset';
+  busy = true;
+  try { const r = await remix({ op: 'seed', html: SEED, force: true }); leaveView(); await show(r.html, r.ver, false); pill('ok', 'Back to the original slide <em>· Undo brings the last one back</em>', 5000); }
+  catch (e) { note(e.message); } finally { busy = false; }
+}
+const press = (id, fn) => {
+  $(id).addEventListener('mousedown', e => e.preventDefault());
+  $(id).addEventListener('click', e => { fn(); e.currentTarget.blur(); });
+};
+press('bpause', () => setPaused(!paused));
+press('bundo', undo);
+press('breset', reset);
+$('bars').addEventListener('click', e => {
+  const b = e.target.closest('#bars span'); if (!b) return;
+  const k = Array.prototype.indexOf.call($('bars').children, b);
+  if (stack[k]) view(stack[k].ver);
+});
+$('state').addEventListener('click', () => { if (viewing) toLive(); });
+const LEAVE = { ArrowRight: 1, ArrowLeft: 1, PageDown: 1, PageUp: 1 };
+const handBack = () => { try { if (parent !== window) parent.focus(); } catch (e) {} };
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const k = (e.key || '').toLowerCase();
+  if (k === 'p') setPaused(!paused);
+  else if (k === 'u') undo();
+  else if (k === 'r') reset();
+  else if (k === '[') step(-1);
+  else if (k === ']') step(1);
+  else if (k === 'l') toLive();
+  else { if (!LEAVE[e.key]) handBack(); return; }
+  e.preventDefault();
+});
+
+/* ═══════════════════════════ SIZE ══════════════════════════════ */
+let fitW = 0, fitH = 0;
+function fit() {
+  const w = innerWidth, h = innerHeight;
+  if (!w || !h || (w === fitW && h === fitH)) return;
+  fitW = w; fitH = h;
+  $('stage').style.transform = `translate(-50%,-50%) scale(${Math.min(w / 1280, h / 720)})`;
+}
+addEventListener('resize', fit); addEventListener('load', fit);
+if (window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
+setInterval(fit, 1000);
+function frame() { fit(); requestAnimationFrame(frame); }
+
+/* ═══════════════════════════ THE LOCKED TITLE ══════════════════ */
+(function lock() {
+  const L = CONFIG.lock || {};
+  const logo = Object.values(CONFIG.logos || {})[0];   // the first logo make_remix.py was given (--logo-asset)
+  if (logo) { $('lklogo').src = logo; $('lklogo').hidden = false; } else $('lkp-logo').hidden = true;
+  const box = $('lkp-title'), t = $('lktitle');
+  const fitTitle = () => { for (let px = 46; px >= 22; px -= 2) { t.style.fontSize = px + 'px'; if (t.offsetHeight + 6 <= box.clientHeight && t.scrollWidth <= t.clientWidth + 1) return; } };
+  // the builder escapes everything but <br>; the strings go in as text (white-space:pre-line keeps the breaks)
+  const paintLock = () => {
+    const title = TX('lock.title', plain(L.title)), sub = TX('lock.subtitle', plain(L.subtitle));
+    if (t.textContent !== title) t.textContent = title;
+    $('lksub').textContent = sub.replace(/\{\{date\}\}/g, today());
+    if ($('lkedsub').textContent !== sub) $('lkedsub').textContent = sub;
+    fitTitle();
+  };
+  paintLock(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitle);
+  window.TESSERA_REFIT = paintLock;    // the title or the name reworded on the edit canvas
+  if (CONFIG.base) $('base').srcdoc = CONFIG.base;      // the deck's own cover page: its script runs, sandboxed
+})();
+
+/* ═══════════════════════════ GO ════════════════════════════════ */
+(function join() {
+  const host = SERVICE.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  const s = (EMB && (EMB.session || (PREV && PREV.join))) || '';
+  if (!host || !s) return;
+  $('join').textContent = `${host}/${s}`;
+  $('qr').innerHTML = `<img alt="QR code to join" src="${SERVICE}/api/qr?c=${encodeURIComponent(s)}&fg=000A3C">`;
+  const fitJoin = () => { const el = $('join'); for (let px = 15; px >= 10; px--) { el.style.fontSize = px + 'px'; if (el.scrollWidth <= 242) return; } };
+  fitJoin(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitJoin);
+})();
+window.REMIX = { state: () => ({ live: LIVE, code: CODE, ver: shownVer, paused, busy, done: done.size, ideas: ideas.length, in: nIn }),
+                 wrap, render, show, readBucket, nextBatch, pill,
+                 versions: () => stack.map(e => e.ver), viewing: () => viewing, view, step, toLive };
+fit(); requestAnimationFrame(frame);
+if (LIVE) {
+  start();
+  setInterval(() => { if (!document.hidden) tick(); }, TICK);   // every read is billed: none while unseen
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+} else {
+  // the poster, the editor canvas: the original slide and a sample count, said so
+  show(SEED, SAMPLE_VERS, false);
+  nIn = CONFIG.sample.in; nIdeas = CONFIG.sample.ideas; paintCounts();
+  $('khead').textContent = 'Check in · sample';
+  $('ctl').hidden = true;
+  $('bars').classList.add('sample'); paintBars();
+}
+</script>
+</body>
+</html>

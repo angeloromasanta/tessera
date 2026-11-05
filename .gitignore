@@ -1,0 +1,67 @@
+# dependencies & build output.
+# No trailing slash on node_modules: `node_modules/` matches DIRECTORIES only,
+# so a node_modules SYMLINK (what you get pointing a worktree at another
+# checkout's deps) slipped past it and was committed once. Match both forms.
+node_modules
+dist/
+dist-single/
+
+# local test decks — never committed (may contain confidential content)
+testing/
+
+# os cruft
+.DS_Store
+*.tsbuildinfo
+
+# wrangler local dev state (cache + captured request metadata, R2/KV blobs) —
+# never commit
+.wrangler/
+# vercel local dev/link state (server/poll-app)
+.vercel/
+working/
+.dev.vars
+# Local env files — server/poll-app/.env.local holds the poll service's keys for
+# `vercel dev`. Secrets belong in a deploy platform's env vars, never in the tree:
+# this repo's product is a PUBLIC single-file HTML app, so anything committed here
+# is one build away from shipping inside a document someone can share onward.
+# Keep credentials in a .env, never in a notes file — a stray .md is covered by no
+# secret-scanning convention anywhere.
+.env
+.env.*
+!.env.example
+
+# Backups written by scripts/upgrade-deck.mjs --force.
+# The deck they back up is the source of truth; these are local safety nets.
+*.bak
+__pycache__/
+*.py[cod]
+
+# template/ — screenshots and state checks are regenerable (shoot.py, shoot_states.py)
+template/**/check/
+template/**/shots/
+template/build/
+*.bak
+
+# slide.py work copies, shots and .bak1-3 from editing template.html itself
+/build/
+*.bak[0-9]
+
+# --- authoring tools (tools/, kit/) ---
+# icon.py's download cache, the live mirror's deck list (local paths) and the
+# upload registry (local paths, timestamps): per machine, never committed
+tools/.icon-cache/
+tools/live/decks.json
+tools/.cf-registry.json
+# --- end authoring tools ---
+
+# --- your own work and machine state ---
+# Decks you author live in decks/ (TESSERA_DECKS): yours, never part of the repo.
+decks/
+# Claude Code per-user settings and launch configs
+.claude/settings.local.json
+.claude/launch.json
+# Python caches anywhere
+**/__pycache__/
+
+# Copies tools keep before rewriting a deck (tools/deckio.py backup)
+**/build/backups/

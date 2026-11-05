@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Join</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1e2a3a; --dim: #6b7684;
+    --line: #dfe4ea; --accent: #d97757; --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151b; --card: #182027; --ink: #eef2f6; --dim: #97a3b0;
+      --line: #2a343d; --accent: #e08a6d; --accent-ink: #17202a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    min-height: 100dvh; display: flex; flex-direction: column;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+  main { width: 100%; max-width: 34rem; margin: auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 20px;
+  }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  h1 { font-size: clamp(20px, 5.5vw, 27px); line-height: 1.25; margin: 0 0 18px; font-weight: 650; }
+  h1.pending { color: var(--dim); font-weight: 500; }
+  textarea, input[type=text] {
+    width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 11px; padding: 12px;
+  }
+  textarea { min-height: 8.5rem; resize: vertical; }
+  textarea:focus, input[type=text]:focus {
+    outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+  }
+  .row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .count { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .count.over { color: #c0392b; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    border: 0; border-radius: 11px; padding: 12px 20px; margin-left: auto;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); margin: 0; }
+  .note { font-size: 13px; color: var(--dim); margin: 14px 2px 0; }
+  .err { font-size: 14px; color: #c0392b; margin: 12px 0 0; }
+  .done { text-align: center; padding: 12px 0; }
+  .tick { font-size: 40px; line-height: 1; }
+  .done h2 { font-size: 19px; margin: 12px 0 6px; }
+  .done p { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
+  /* Wins over the display rules below it. Several of them (.who, .choices)
+     are single-class selectors declared later in this sheet, so without
+     !important they beat .hide on specificity ties and the element stays on
+     screen — which is how the "Answering as …" line came to be permanently
+     visible with no name in it. */
+  .hide { display: none !important; }
+
+  /* Choice: full-width targets. A phone held one-handed at the back of a
+     lecture hall is the device this has to be tappable on. */
+  .choices { display: flex; flex-direction: column; gap: 10px; }
+  .choice {
+    display: flex; align-items: center; gap: 12px; width: 100%; margin: 0;
+    text-align: left; font-weight: 500;
+    background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px;
+  }
+  .choice .key {
+    flex: 0 0 auto; width: 1.7em; height: 1.7em; border-radius: 8px;
+    background: var(--line); color: var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .82em; font-weight: 700;
+  }
+  .choice[aria-pressed=true] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+  .choice[aria-pressed=true] .key { background: rgba(255,255,255,.28); color: inherit; }
+
+  /* Rating: a number line you drag. A row of tap targets wrapped on narrow
+     phones — with an odd count the last number got a full-width row of its
+     own — and a slider cannot wrap at any width or scale length. Native
+     <input type=range> because it already handles touch dragging, keyboard
+     and screen readers better than anything hand-rolled here would. */
+  /* Fixed height so the card doesn't jump when the prompt becomes a number. */
+  .rate-value {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 46px; margin: 4px 0 10px;
+    font-size: 44px; font-weight: 700; line-height: 1;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  /* Before the thumb is moved there is no answer to show, so the space says
+     what to do instead — a huge greyed-out em dash just looked like a rule. */
+  .rate-value.unset { font-size: 15px; font-weight: 500; color: var(--dim); }
+  .rate-slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; margin: 0; background: transparent; display: block;
+  }
+  .rate-slider:focus { outline: none; }
+  .rate-slider::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 999px; background: var(--line);
+  }
+  .rate-slider::-moz-range-track {
+    height: 6px; border-radius: 999px; background: var(--line);
+  }
+  /* A thumb big enough to find with a thumb, at the back of a lecture hall,
+     one-handed. 30px comfortably clears the 24px minimum touch target. */
+  .rate-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 30px; height: 30px; margin-top: -12px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--card);
+    box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: grab;
+  }
+  .rate-slider::-moz-range-thumb {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); border: 3px solid var(--card);
+    box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: grab;
+  }
+  .rate-slider:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .rate-slider:disabled { opacity: .5; }
+  /* Ticks sit under the stops. The side padding is half the thumb, which is
+     how far the thumb's CENTRE is inset from each end of the track. */
+  .rate-ticks {
+    display: flex; justify-content: space-between;
+    padding: 8px 15px 0; font-size: 13px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .rate-ticks span { flex: 0 0 auto; }
+  .rate-ticks span.on { color: var(--accent); font-weight: 700; }
+  #rateSend { margin-left: auto; }
+  .ends { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; font-size: 13px; color: var(--dim); }
+
+  .who { display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--dim); margin: 0 0 12px; }
+  .who button { font: inherit; background: none; color: var(--accent); border: 0; padding: 0; margin: 0; text-decoration: underline; }
+  .wait { text-align: center; padding: 22px 0; color: var(--dim); }
+  .wait .dots { font-size: 30px; letter-spacing: .2em; }
+
+  /* Quiz: every question at once, then one send. The card keeps each question
+     visually separate on a long scroll. */
+  .qcard { border: 1px solid var(--line); border-radius: 13px; padding: 14px; margin-bottom: 12px; }
+  .qcard > p { margin: 0 0 10px; font-weight: 600; }
+  .qcard .num { color: var(--accent); font-weight: 700; }
+  #quizSend { width: 100%; margin: 4px 0 0; }
+
+  /* Activity: a self-contained page (a quiz, a game) the deck shipped inside
+     itself. It owns its own UI end to end, so this frame just gives it room. */
+  .activity-frame {
+    width: 100%; min-height: 60vh; border: 0; border-radius: 11px;
+    background: var(--bg); display: block;
+  }
+  /* An activity page that asks for the whole screen
+     (<meta name="tessera-activity" content="full">, e.g. the lab card) gets it:
+     no card, no kicker or question header, a frame exactly the viewport tall,
+     so the phone's width goes to the page's text, not to two sets of margins. */
+  body.full { padding: 0; }
+  body.full main { max-width: none; margin: 0; }
+  body.full .card { border: 0; border-radius: 0; padding: 0; background: transparent; }
+  body.full #kicker, body.full #who, body.full #question { display: none; }
+  body.full .activity-frame { height: 100dvh; min-height: 0; border-radius: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <p class="kicker" id="kicker">Audience question</p>
+    <p class="who hide" id="who"><span id="whoName"></span><button type="button" id="whoChange">not you?</button></p>
+
+    <!-- Waiting: a session with nothing being asked yet. -->
+    <div id="wait" class="wait hide">
+      <div class="dots">• • •</div>
+      <h2 style="font-size:18px;margin:10px 0 4px">You’re in.</h2>
+      <p id="waitNote" style="margin:0">The question will appear here when the speaker opens it.</p>
+    </div>
+
+    <!-- Name gate: asked once, then remembered on this phone for every talk. -->
+    <div id="nameGate" class="hide">
+      <h1 id="nameHead">What’s your name?</h1>
+      <input type="text" id="nameInput" maxlength="60" placeholder="Your name"
+             autocomplete="name" autocapitalize="words" enterkeyhint="go">
+      <div class="row">
+        <button class="ghost hide" id="nameClear" type="button">Use no name</button>
+        <button id="nameGo" disabled>Continue</button>
+      </div>
+      <p class="note" id="nameNote">Your name is remembered on this phone, so you only do this once.</p>
+    </div>
+
+    <!-- The question itself. -->
+    <div id="form" class="hide">
+      <h1 id="question" class="pending">Loading the question…</h1>
+
+      <div id="openWrap">
+        <textarea id="answer" placeholder="Type your answer…"
+                  autocomplete="off" autocapitalize="sentences"></textarea>
+        <div class="row">
+          <span class="count" id="count"></span>
+          <button id="send" disabled>Send</button>
+        </div>
+      </div>
+
+      <div id="choiceWrap" class="choices hide"></div>
+      <div class="row hide" id="choiceSendRow"><button id="choiceSend" disabled>Send</button></div>
+      <div id="ratingWrap" class="hide">
+        <div class="rate-value unset" id="rateValue">Drag the dot to choose</div>
+        <input type="range" class="rate-slider" id="rateSlider" step="1">
+        <div class="rate-ticks" id="rateTicks"></div>
+        <div class="ends"><span id="lowLabel"></span><span id="highLabel"></span></div>
+        <div class="row"><button id="rateSend" disabled>Send</button></div>
+      </div>
+      <div id="quizWrap" class="hide">
+        <div id="quizList"></div>
+        <button id="quizSend" disabled>Submit answers</button>
+        <p class="note" id="quizNote">Answer every question, then send them all at once.</p>
+      </div>
+      <div id="activityWrap" class="hide">
+        <iframe id="activityFrame" class="activity-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+          allow="camera *; microphone *; geolocation *; accelerometer *; gyroscope *; magnetometer *; fullscreen *; clipboard-write *"></iframe>
+      </div>
+
+      <p class="err hide" id="err"></p>
+      <p class="note" id="privacy">Anonymous — your name is not collected.</p>
+    </div>
+
+    <!-- After sending. -->
+    <div id="thanks" class="done hide">
+      <div class="tick">✓</div>
+      <h2 id="thanksHead">Thanks — your answer is in.</h2>
+      <p id="thanksNote">The speaker sees it on their slide.</p>
+      <button class="ghost hide" id="again">Add another answer</button>
+    </div>
+  </div>
+</main>
+
+<!-- The live link (tessera/slides/src/live-shim.js): this page's polling of
+     /api/session reaches the network only when the speaker moves. -->
+<script src="/live.js"></script>
+<script src="/legacy.js"></script>
+<script>
+/** The names pages and phones used before the rename (public/legacy.js). */
+const LEGACY = window.JOIN_LEGACY || {};
+/** A <meta name="NAME"> test for the current name and, when known, the old one. */
+const metaRe = (name, old, tail) => new RegExp('<meta\\b[^>]*\\bname\\s*=\\s*["\']?(?:' + name + (old ? '|' + old : '') + ')' + tail, 'i');
+/** The same script, as text, inlined into every activity page this page runs:
+ *  they poll too (a phone following the screen). */
+const liveSrc = fetch('/live.js').then((r) => (r.ok ? r.text() : '')).catch(() => '');
+/** The old globals as aliases of the new ones (slides/src/legacy-names.js,
+ *  synced to /legacy-names.js), inlined FIRST into every activity page, so a
+ *  page written before the rename finds the SDK and its info under the names it
+ *  knows. A missing file comes back as the join page (single-page app), so
+ *  only a JavaScript reply counts. */
+const namesSrc = fetch('/legacy-names.js')
+  .then((r) => (r.ok && /javascript/i.test(r.headers.get('content-type') || '') ? r.text() : ''))
+  .catch(() => '');
+/** The game SDK (slides/src/game-sdk.js), inlined after live.js into
+ *  an activity page that opts in with <meta name="tessera-game">. Fetched once,
+ *  on first need. A missing file comes back as the join page (the assets are a
+ *  single-page app), so only a JavaScript reply counts. */
+let gameSrcPromise = null;
+function gameSrc() {
+  return gameSrcPromise || (gameSrcPromise = fetch('/game.js')
+    .then((r) => (r.ok && /javascript/i.test(r.headers.get('content-type') || '') ? r.text() : ''))
+    .catch(() => ''));
+}
+const GAME_META = metaRe('tessera-game', LEGACY.gameMeta, '\\b');
+/** An activity page that asks for the whole screen. */
+const FULL_META = metaRe('tessera-activity', LEGACY.activityMeta, '["\']?[^>]+content=["\']?full');
+// The code arrives either as a path (/abc123, served by the assets' single-page fallback —
+// shortest thing to read off a slide) or as ?c=abc123.
+const params = new URLSearchParams(location.search);
+const fromPath = location.pathname.replace(/^\/+|\/+$/g, '');
+const code = (params.get('c') || fromPath || '').trim().toLowerCase();
+
+// A SESSION code (one QR for the whole talk) is either minted with a leading
+// `s` — the alphabet question codes are drawn from has no `s` — or chosen by
+// the lecturer (`my-class`). A minted code, and any name a question code
+// could never be (a hyphen, more than 12 characters), is known to be a session
+// with no round trip, which matters in the case that has none to make: someone
+// scanning the QR before the speaker has opened anything. Only a short plain
+// name is ambiguous, and boot asks the server about that one (`exists`).
+const QUESTION_CODE = /^[a-z0-9]{4,12}$/;
+const JOIN_CODE = /^[a-z0-9](?:[a-z0-9-]{1,22}[a-z0-9])$/;
+let isSession = /^s[a-z0-9]{4,11}$/.test(code) || (JOIN_CODE.test(code) && !QUESTION_CODE.test(code));
+const POLL_MS = 2500;
+/** Must match MAX_ANSWER_CHARS in api/_lib.js — the server is the authority and
+ *  rejects anything longer; this only stops the phone finding out the hard way. */
+const MAX_ANSWER_CHARS = 2000;
+/** Ditto MAX_UPLOAD_BYTES — passed through to activity pages so a page that
+ *  takes a photo knows how far to downscale before POSTing /api/upload. */
+const MAX_UPLOAD_BYTES = 600 * 1024;
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  kicker: $('kicker'), who: $('who'), whoName: $('whoName'), whoChange: $('whoChange'),
+  wait: $('wait'), waitNote: $('waitNote'),
+  nameGate: $('nameGate'), nameInput: $('nameInput'), nameGo: $('nameGo'),
+  nameHead: $('nameHead'), nameNote: $('nameNote'), nameClear: $('nameClear'),
+  form: $('form'), question: $('question'), err: $('err'), privacy: $('privacy'),
+  openWrap: $('openWrap'), answer: $('answer'), count: $('count'), send: $('send'),
+  choiceWrap: $('choiceWrap'), choiceSendRow: $('choiceSendRow'), choiceSend: $('choiceSend'),
+  ratingWrap: $('ratingWrap'),
+  rateValue: $('rateValue'), rateSlider: $('rateSlider'), rateTicks: $('rateTicks'),
+  rateSend: $('rateSend'),
+  lowLabel: $('lowLabel'), highLabel: $('highLabel'),
+  quizWrap: $('quizWrap'), quizList: $('quizList'), quizSend: $('quizSend'), quizNote: $('quizNote'),
+  activityWrap: $('activityWrap'), activityFrame: $('activityFrame'),
+  thanks: $('thanks'), thanksHead: $('thanksHead'), thanksNote: $('thanksNote'), again: $('again'),
+};
+
+/** The question currently being asked, in the shape /api/session returns. */
+let active = null;
+/** Signature of `active` — what a re-render is keyed on. */
+let signature = '';
+let name = '';
+/** Question codes this phone has already answered, so a refresh (or coming
+ *  back to a question the speaker returned to) doesn't invite a second vote in
+ *  a tally. Open text is exempt: more than one contribution is the point. */
+let answered = new Set();
+/** Activity code whose page is currently loaded into the iframe, so a
+ *  re-render (a name-gate submit, a tab refocus) doesn't reload — and lose —
+ *  a quiz someone is halfway through. */
+let loadedActivityCode = '';
+/** The current quiz's picks, one 0-based option index per question (-1 = not
+ *  answered yet). Rebuilt whenever the quiz on screen changes. */
+let quizPicks = [];
+/** Whether the rating slider has actually been moved. Until it has, the thumb
+ *  is only parked somewhere — there is no answer to send. */
+let ratePicked = false;
+/** `multi` choice: which of `active.options` are currently pressed, parallel
+ *  to that array — rebuilt whenever the choice question on screen changes. */
+let choicePicked = [];
+/** True while the name gate is open because the person ASKED to change their
+ *  name, rather than because the question demands one. */
+let renaming = false;
+
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
+};
+
+/** A value this phone stored under the old prefix (public/legacy.js), or ''.
+ *  Read once and copied to the new key; the old key is left as it was. */
+function oldKey(rest) {
+  return LEGACY.storagePrefix ? store.get(LEGACY.storagePrefix + rest) : '';
+}
+
+// The name belongs to the PERSON, not to one talk: a student types it once and
+// every future presentation already knows them. (It was once stored per join
+// code, which meant re-typing it at the start of every session.)
+const NAME_KEY = 'tessera-name';
+
+// The device token: made once per phone and kept, so a game knows a phone that
+// reloads is the same player. Activity pages get it as TESSERA_ACTIVITY.player
+// and send it as `x-tessera-player`; the server derives a per-game player id from
+// it and never shows it to anyone else. Without storage, one per page load.
+const DEVICE_KEY = 'tessera-device';
+const DEVICE_RE = /^[A-Za-z0-9_-]{24}$/;
+/** Question codes answered on this phone, per join code: ANSWERED_KEY + code. */
+const ANSWERED_KEY = 'tessera-answered-';
+const device = (() => {
+  let t = store.get(DEVICE_KEY);
+  if (DEVICE_RE.test(t)) return t;
+  // A phone that joined before the rename keeps its token (and so its player).
+  t = oldKey('device');
+  if (DEVICE_RE.test(t)) { store.set(DEVICE_KEY, t); return t; }
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  t = '';
+  for (const x of crypto.getRandomValues(new Uint8Array(24))) t += A[x & 63];
+  store.set(DEVICE_KEY, t);
+  return t;
+})();
+
+function loadState() {
+  name = store.get(NAME_KEY);
+  // Adopt a name saved before the rename, or by the old per-code scheme, so
+  // nobody who already answered something on this phone is asked again.
+  if (!name) {
+    const before = oldKey('name') || oldKey('name-' + code);
+    if (before) { name = before; store.set(NAME_KEY, before); }
+  }
+  try { answered = new Set(JSON.parse(store.get(ANSWERED_KEY + code) || oldKey('answered-' + code) || '[]')); }
+  catch { answered = new Set(); }
+}
+
+function setName(next) {
+  name = next;
+  if (next) store.set(NAME_KEY, next); else store.del(NAME_KEY);
+}
+
+/** What "already answered" is remembered against. The QUESTION rides along
+ *  with the code so that two questions which ended up sharing an answer bucket
+ *  (a hazard of older decks) are still asked separately, instead of the second
+ *  one being silently swallowed as "you already voted". */
+function answerKey(a) {
+  return a.code + '|' + (a.question || '');
+}
+
+function markAnswered(a) {
+  answered.add(answerKey(a));
+  store.set(ANSWERED_KEY + code, JSON.stringify([...answered].slice(-100)));
+}
+
+function show(node, on) { node.classList.toggle('hide', !on); }
+
+function fail(msg) {
+  el.err.textContent = msg;
+  show(el.err, true);
+}
+
+function netMessage(e) {
+  return e && e.message === 'Failed to fetch' ? 'No connection — try again.' : (e && e.message) || String(e);
+}
+
+// --- rendering ----------------------------------------------------------------
+
+function sigOf(a) {
+  return a ? JSON.stringify([a.code, a.question, a.kind, a.options || [], a.multi, a.min, a.max, a.requireName, a.questions || []]) : '';
+}
+
+/** The name gate is up either because the question demands a name and there
+ *  isn't one, or because the person tapped "not you?". */
+function gateOpen() {
+  return renaming || (!!active && active.requireName && !name);
+}
+
+function showNameGate() {
+  show(el.wait, false);
+  show(el.form, false);
+  show(el.thanks, false);
+  show(el.who, false);
+  show(el.nameGate, true);
+  const required = !!active && active.requireName;
+  el.nameHead.textContent = name ? 'Change your name' : 'What’s your name?';
+  el.nameNote.textContent = required
+    ? 'The speaker asked for names with these answers. It is remembered on this phone for future talks too.'
+    : 'Remembered on this phone, so you only do this once — this talk and the next.';
+  el.nameInput.value = name;
+  el.nameGo.disabled = !name.trim();
+  // A way back out: clearing to anonymous when a name isn't demanded, so
+  // "not you?" is never a one-way door into a form you can't leave.
+  show(el.nameClear, !required);
+  el.nameClear.textContent = name ? 'Use no name' : 'Cancel';
+  el.nameInput.focus();
+}
+
+/** Everything the page shows is a function of (active, name, answered), so
+ *  there is exactly one place that decides which panel is up. */
+function render() {
+  show(el.err, false);
+  document.body.classList.remove('full');
+  el.kicker.textContent = 'Audience question · ' + code;
+
+  // The gate wins over everything, including the waiting card: someone who
+  // just tapped "not you?" is mid-task and must be able to finish.
+  if (gateOpen()) { showNameGate(); return; }
+
+  if (!active) {
+    show(el.wait, true);
+    show(el.nameGate, false);
+    show(el.form, false);
+    show(el.thanks, false);
+    show(el.who, !!name);
+    el.whoName.textContent = 'Answering as ' + name;
+    return;
+  }
+
+  show(el.who, !!name);
+  el.whoName.textContent = 'Answering as ' + name;
+
+  // Already voted on this tally — show it rather than inviting a double vote.
+  // Activity is exempt: it never calls markAnswered, its iframe owns its own
+  // submitted state, and reloading it here would wipe a quiz in progress.
+  if (active.kind !== 'open' && active.kind !== 'activity' && answered.has(answerKey(active))) {
+    show(el.wait, false);
+    show(el.nameGate, false);
+    show(el.form, false);
+    show(el.thanks, true);
+    el.thanksHead.textContent = 'Thanks — your answer is in.';
+    el.thanksNote.textContent = isSession
+      ? 'The next question will appear here.'
+      : 'The speaker sees it on their slide.';
+    show(el.again, false);
+    return;
+  }
+
+  show(el.wait, false);
+  show(el.nameGate, false);
+  show(el.thanks, false);
+  show(el.form, true);
+
+  el.question.textContent = active.question || 'Answer the question on screen';
+  el.question.classList.toggle('pending', !active.question);
+  el.privacy.textContent = active.requireName
+    ? 'Your name is sent with this answer.'
+    : 'Anonymous — your name is not collected.';
+  show(el.privacy, active.kind !== 'activity');
+
+  show(el.openWrap, active.kind === 'open');
+  show(el.choiceWrap, active.kind === 'choice');
+  show(el.choiceSendRow, active.kind === 'choice' && !!active.multi);
+  show(el.ratingWrap, active.kind === 'rating');
+  show(el.quizWrap, active.kind === 'quiz');
+  show(el.activityWrap, active.kind === 'activity');
+
+  if (active.kind === 'open') {
+    el.answer.value = '';
+    el.count.textContent = '0 / ' + MAX_ANSWER_CHARS;
+    el.count.classList.remove('over');
+    el.send.disabled = true;
+    el.send.textContent = 'Send';
+  } else if (active.kind === 'choice') {
+    el.choiceWrap.textContent = '';
+    const options = active.options || [];
+    // `multi` picks are collected here and sent together on Send; a plain
+    // choice keeps the old one-tap-and-you're-done flow untouched.
+    choicePicked = options.map(() => false);
+    el.choiceSend.disabled = true;
+    el.choiceSend.textContent = 'Send';
+    options.forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.className = 'choice';
+      b.type = 'button';
+      b.setAttribute('aria-pressed', 'false');
+      const key = document.createElement('span');
+      key.className = 'key';
+      key.textContent = String(i + 1);
+      const label = document.createElement('span');
+      label.textContent = opt;
+      b.append(key, label);
+      if (active.multi) {
+        b.addEventListener('click', () => {
+          choicePicked[i] = !choicePicked[i];
+          b.setAttribute('aria-pressed', choicePicked[i] ? 'true' : 'false');
+          el.choiceSend.disabled = !choicePicked.some(Boolean);
+        });
+      } else {
+        b.addEventListener('click', () => submit(opt, b));
+      }
+      el.choiceWrap.appendChild(b);
+    });
+  } else if (active.kind === 'rating') {
+    const min = Number(active.min ?? 1);
+    const max = Number(active.max ?? 5);
+    el.rateSlider.min = String(min);
+    el.rateSlider.max = String(max);
+    el.rateSlider.disabled = false;
+    // Park the thumb in the middle but report NO value yet: a slider that
+    // arrives showing "3" has answered the question for them, and a room of
+    // untouched sliders would all send the midpoint.
+    el.rateSlider.value = String(Math.round((min + max) / 2));
+    ratePicked = false;
+    el.rateValue.textContent = 'Drag the dot to choose';
+    el.rateValue.classList.add('unset');
+    el.rateSend.disabled = true;
+    el.rateSend.textContent = 'Send';
+    paintRateTicks();
+    el.lowLabel.textContent = active.minLabel || '';
+    el.highLabel.textContent = active.maxLabel || '';
+  } else if (active.kind === 'quiz') {
+    renderQuiz(active);
+  } else if (active.kind === 'activity') {
+    loadActivity(active);
+    applyFull();
+  }
+}
+
+// --- rating: a number line you drag -------------------------------------------
+
+/** The numbers under the track, with the current stop marked. Rebuilt on every
+ *  move: a scale is at most 11 stops, so there is nothing here worth diffing. */
+function paintRateTicks() {
+  if (!active) return;
+  const min = Number(active.min ?? 1);
+  const max = Number(active.max ?? 5);
+  const now = Number(el.rateSlider.value);
+  el.rateTicks.textContent = '';
+  for (let v = min; v <= max; v++) {
+    const s = document.createElement('span');
+    s.textContent = String(v);
+    if (ratePicked && v === now) s.className = 'on';
+    el.rateTicks.appendChild(s);
+  }
+}
+
+function onRateMove() {
+  ratePicked = true;
+  el.rateValue.textContent = el.rateSlider.value;
+  el.rateValue.classList.remove('unset');
+  el.rateSend.disabled = false;
+  paintRateTicks();
+}
+
+// --- quiz: every question at once, one send -----------------------------------
+
+/**
+ * Draw the whole quiz. Nothing here knows which option is right — the deck
+ * kept that to itself — so this collects picks and posts them; the marking and
+ * the score distribution happen on the slide.
+ */
+function renderQuiz(a) {
+  const questions = a.questions || [];
+  quizPicks = questions.map(() => -1);
+  el.quizList.textContent = '';
+
+  questions.forEach((item, qi) => {
+    const card = document.createElement('div');
+    card.className = 'qcard';
+
+    const head = document.createElement('p');
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = (qi + 1) + '. ';
+    head.append(num, document.createTextNode(item.q || ''));
+    card.appendChild(head);
+
+    const opts = document.createElement('div');
+    opts.className = 'choices';
+    (item.options || []).forEach((opt, oi) => {
+      const b = document.createElement('button');
+      b.className = 'choice';
+      b.type = 'button';
+      b.setAttribute('aria-pressed', 'false');
+      const key = document.createElement('span');
+      key.className = 'key';
+      key.textContent = String(oi + 1);
+      const label = document.createElement('span');
+      label.textContent = opt;
+      b.append(key, label);
+      b.addEventListener('click', () => {
+        quizPicks[qi] = oi;
+        opts.querySelectorAll('.choice').forEach((n, ni) => {
+          n.setAttribute('aria-pressed', ni === oi ? 'true' : 'false');
+        });
+        // Answers can be changed right up until they are sent — a quiz on a
+        // phone is read in a hurry, and a mis-tap that locks is a bad mark
+        // somebody did not earn.
+        el.quizSend.disabled = quizPicks.some((p) => p < 0);
+      });
+      opts.appendChild(b);
+    });
+    card.appendChild(opts);
+    el.quizList.appendChild(card);
+  });
+
+  el.quizSend.disabled = true;
+  el.quizSend.textContent = 'Submit answers';
+  el.quizNote.textContent = questions.length
+    ? 'Answer every question, then send them all at once.'
+    : 'The speaker has not finished writing this quiz.';
+}
+
+async function submitQuiz() {
+  if (!active || quizPicks.some((p) => p < 0)) return;
+  el.quizSend.disabled = true;
+  el.quizSend.textContent = 'Sending…';
+  show(el.err, false);
+  try {
+    await postAnswer(JSON.stringify({ picks: quizPicks }));
+    markAnswered(active);
+    show(el.form, false);
+    show(el.thanks, true);
+    el.thanksHead.textContent = 'Thanks — your answers are in.';
+    // No score here on purpose: the marking is on the slide, so the room finds
+    // out together rather than each phone spoiling it a moment early.
+    el.thanksNote.textContent = 'The results go up on the screen.';
+    show(el.again, false);
+  } catch (e) {
+    fail(netMessage(e));
+    el.quizSend.disabled = false;
+    el.quizSend.textContent = 'Submit answers';
+  }
+}
+
+// --- multi choice: several picks, one send ------------------------------------
+
+/** `multi` sends `text` as a JSON array of the picked option strings — the ONE
+ *  thing that differs from a plain choice's wire format (model.ts tallyChoices
+ *  reads it back). Options are sent in the author's order, not tap order. */
+async function submitChoice() {
+  if (!active || !choicePicked.some(Boolean)) return;
+  const picks = (active.options || []).filter((_, i) => choicePicked[i]);
+  const buttons = [...el.choiceWrap.querySelectorAll('button')];
+  for (const b of buttons) b.disabled = true;
+  el.choiceSend.disabled = true;
+  el.choiceSend.textContent = 'Sending…';
+  show(el.err, false);
+  try {
+    await postAnswer(JSON.stringify(picks));
+    markAnswered(active);
+    show(el.form, false);
+    show(el.thanks, true);
+    el.thanksHead.textContent = 'Thanks — your answer is in.';
+    el.thanksNote.textContent = isSession
+      ? 'The next question will appear here.'
+      : 'The speaker sees it on their slide.';
+    show(el.again, false);
+  } catch (e) {
+    fail(netMessage(e));
+    for (const b of buttons) b.disabled = false;
+    el.choiceSend.disabled = false;
+  } finally {
+    el.choiceSend.textContent = 'Send';
+  }
+}
+
+// --- activity: a self-contained page the deck shipped inside itself -----------
+
+/** Fetch the activity's HTML once per code and hand it to a sandboxed iframe.
+ *  `allow-scripts` without `allow-same-origin` gives it an opaque origin — it
+ *  can run JS and fetch (both same-origin-relative and cross-origin calls
+ *  work from an opaque origin; only DOM/storage access to the real origin is
+ *  blocked), but it can never reach this page's own state. */
+/** The code whose loaded page asked for the whole screen. */
+let fullActivityCode = '';
+function applyFull() {
+  document.body.classList.toggle('full', !!active && active.kind === 'activity'
+    && fullActivityCode === active.code && loadedActivityCode === active.code);
+}
+function loadActivity(active) {
+  if (loadedActivityCode === active.code) return;
+  loadedActivityCode = active.code;
+  el.activityFrame.srcdoc = '<p style="font:14px sans-serif;color:#888;padding:24px">Loading…</p>';
+  Promise.all([fetch('/api/poll?c=' + encodeURIComponent(active.code), { cache: 'no-store' }).then((r) => r.json()), liveSrc, namesSrc])
+    .then(([d, shim, names]) => {
+      const html = (d && d.html) || '';
+      // A game page (<meta name="tessera-game">) also gets the game SDK.
+      return (html && GAME_META.test(html) ? gameSrc() : Promise.resolve(''))
+        .then((game) => [d, shim, game, names]);
+    })
+    .then(([d, shim, game, names]) => {
+      if (loadedActivityCode !== active.code) return; // superseded while in flight
+      const html = d.html || '';
+      if (!html) {
+        el.activityFrame.srcdoc = '<p style="font:14px sans-serif;color:#888;padding:24px">Not ready yet — try again in a moment.</p>';
+        loadedActivityCode = '';
+        return;
+      }
+      // The page is handed its bucket, the name the join page collected, and
+      // the ceilings it has to write within — so an activity does not have to
+      // hardcode limits that live in api/_lib.js and can move.
+      const host = {
+        code: active.code,
+        name,
+        player: device,
+        limits: { answer: MAX_ANSWER_CHARS, upload: MAX_UPLOAD_BYTES },
+      };
+      // A page written before the rename reads the same object under its old name.
+      const alias = LEGACY.activityGlobal ? 'window.' + LEGACY.activityGlobal + '=window.TESSERA_ACTIVITY;' : '';
+      const init = (names ? '<script>' + names + '<' + '/script>' : '')
+        + '<script>window.TESSERA_ACTIVITY=' + JSON.stringify(host) + ';' + alias + '<' + '/script>'
+        + (shim ? '<script>' + shim + '<' + '/script>' : '')
+        + (game ? '<script>' + game + '<' + '/script>' : '');
+      el.activityFrame.srcdoc = init + html;
+      fullActivityCode = FULL_META.test(html) ? active.code : '';
+      applyFull();
+    })
+    .catch(() => {
+      el.activityFrame.srcdoc = '<p style="font:14px sans-serif;color:#c0392b;padding:24px">Could not load — check the connection.</p>';
+      loadedActivityCode = '';
+    });
+}
+
+// --- sending ------------------------------------------------------------------
+
+/** The one place an answer leaves this page, whatever kind produced it. The
+ *  name rides along ONLY when the question asked for one — a name typed for a
+ *  graded quiz must not follow someone onto an anonymous opinion poll. */
+async function postAnswer(text) {
+  const r = await fetch('/api/answer', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      code: active.code,
+      text,
+      question: active.question || '',
+      name: active.requireName ? name : '',
+    }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+}
+
+/** One path for the single-answer kinds: the answer is always a string.
+ *  `pressed` is the button that was tapped, so the choice/rating UI can
+ *  confirm the tap instantly instead of waiting on the network. */
+async function submit(text, pressed) {
+  if (!active || !String(text).trim()) return;
+  const buttons = [...el.choiceWrap.querySelectorAll('button')];
+  for (const b of buttons) b.disabled = true;
+  if (pressed) pressed.setAttribute('aria-pressed', 'true');
+  el.send.disabled = true;
+  el.send.textContent = 'Sending…';
+  // The rating slider locks while its answer is in flight, so a second drag
+  // can't queue a different number behind the one already being sent.
+  el.rateSlider.disabled = true;
+  el.rateSend.disabled = true;
+  el.rateSend.textContent = 'Sending…';
+  show(el.err, false);
+
+  try {
+    await postAnswer(text);
+
+    markAnswered(active);
+    show(el.form, false);
+    show(el.thanks, true);
+    el.thanksHead.textContent = 'Thanks — your answer is in.';
+    el.thanksNote.textContent = isSession
+      ? 'The next question will appear here.'
+      : 'The speaker sees it on their slide.';
+    // Open text can take another contribution; a tally cannot.
+    show(el.again, active.kind === 'open');
+  } catch (e) {
+    fail(netMessage(e));
+    for (const b of buttons) b.disabled = false;
+    if (pressed) pressed.setAttribute('aria-pressed', 'false');
+    el.send.disabled = false;
+    el.rateSlider.disabled = false;
+    el.rateSend.disabled = false;
+  } finally {
+    el.send.textContent = 'Send';
+    el.rateSend.textContent = 'Send';
+  }
+}
+
+// --- following the speaker ------------------------------------------------------
+
+async function poll() {
+  try {
+    const r = await fetch('/api/session?s=' + encodeURIComponent(code), { cache: 'no-store' });
+    const d = await r.json();
+    const next = d.active || null;
+    const sig = sigOf(next);
+    // Re-render only when the question actually changed. Otherwise a half-typed
+    // answer would be wiped every 2.5 seconds, which is the kind of bug that
+    // makes a room stop participating.
+    if (sig !== signature) {
+      signature = sig;
+      active = next;
+      render();
+    }
+  } catch {
+    // Silent: a phone that drops off wifi for ten seconds should reconnect,
+    // not be told about it. A failed SEND is what deserves a message.
+  }
+}
+
+// --- boot -----------------------------------------------------------------------
+
+function follow() {
+    render(); // the "you're in" card, until the speaker opens something
+    poll();
+    setInterval(poll, POLL_MS);
+    // A phone that was in a pocket for a whole slide should catch up the
+    // moment it is looked at, not up to POLL_MS later.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+}
+
+function single() {
+  // A single-question code (a deck written before sessions, or one question
+  // shared on its own). Fetch the question once; there is nothing to follow.
+  fetch('/api/poll?c=' + encodeURIComponent(code), { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((d) => { active = { code, question: d.question || '', kind: 'open' }; render(); })
+    .catch(() => { active = { code, question: '', kind: 'open' }; render(); });
+}
+
+if (!JOIN_CODE.test(code) && !QUESTION_CODE.test(code)) {
+  el.question.textContent = 'That link is missing a valid join code.';
+  show(el.form, true);
+  el.answer.disabled = true;
+} else {
+  loadState();
+  if (isSession) {
+    follow();
+  } else {
+    // A short plain name: a lecturer's own join code, or a question code.
+    fetch('/api/session?s=' + encodeURIComponent(code), { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => { isSession = !!d.exists; })
+      .catch(() => {})
+      .then(() => { if (isSession) follow(); else single(); });
+  }
+}
+
+el.answer.maxLength = MAX_ANSWER_CHARS;
+el.answer.addEventListener('input', () => {
+  const n = el.answer.value.length;
+  el.count.textContent = n + ' / ' + MAX_ANSWER_CHARS;
+  el.count.classList.toggle('over', n >= MAX_ANSWER_CHARS);
+  el.send.disabled = !el.answer.value.trim();
+});
+
+// ⌘/Ctrl+Enter sends, so a phone keyboard's newline key still inserts newlines.
+el.answer.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !el.send.disabled) el.send.click();
+});
+
+el.send.addEventListener('click', () => submit(el.answer.value.trim(), null));
+
+el.nameInput.addEventListener('input', () => { el.nameGo.disabled = !el.nameInput.value.trim(); });
+el.nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !el.nameGo.disabled) el.nameGo.click();
+});
+el.nameGo.addEventListener('click', () => {
+  const next = el.nameInput.value.trim().replace(/\s+/g, ' ').slice(0, 60);
+  if (!next) return;
+  setName(next);
+  renaming = false;
+  render();
+});
+// "Use no name" when a name isn't required — and plain "Cancel" when there was
+// nothing to clear in the first place.
+el.nameClear.addEventListener('click', () => {
+  setName('');
+  renaming = false;
+  render();
+});
+// "not you?" — the whole point of which is to get the gate back, so that a
+// shared or borrowed phone can become somebody else.
+el.whoChange.addEventListener('click', () => {
+  renaming = true;
+  render();
+});
+el.quizSend.addEventListener('click', () => { void submitQuiz(); });
+el.choiceSend.addEventListener('click', () => { void submitChoice(); });
+
+// `input` fires continuously through a drag (and on every arrow key), so the
+// big number tracks the thumb rather than jumping only when it is let go.
+el.rateSlider.addEventListener('input', onRateMove);
+el.rateSend.addEventListener('click', () => {
+  if (ratePicked) void submit(el.rateSlider.value, null);
+});
+
+el.again.addEventListener('click', () => {
+  show(el.thanks, false);
+  show(el.form, true);
+  el.answer.value = '';
+  el.count.textContent = '0 / ' + MAX_ANSWER_CHARS;
+  el.send.disabled = true;
+  el.answer.focus();
+});
+</script>
+</body>
+</html>
