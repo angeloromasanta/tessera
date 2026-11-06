@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Lab slides: share a screenshot, view the outputs.** The lab phone page
+  gets *Share your result* (from Working on; Finished scrolls to it): the
+  picture goes to `/api/upload`, then a check-in that carries it and the
+  current status. The lab card gets *View outputs (N)*: a wall of the shared
+  screenshots over the card, one large on a click, arrows to move on, the
+  countdown still running. It reads nothing extra (the room's own poll read)
+  and fetches pictures only when opened. `make_lab.py` rebuilds older labs
+  and updates their speaker note; `mock_service.py` now keeps uploaded
+  pictures and serves them at `/api/blob`.
+
 - **Requests can be edited and stopped.** A sent request shows its whole
   text; clicking it edits it (Enter saves, Escape cancels). An edit while the
   agent works on it reaches that agent; an edit of a finished one sends it

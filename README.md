@@ -12,7 +12,7 @@ On top of that, Tessera adds what classroom and workshop decks need:
 | | |
 |---|---|
 | **Live polls** | the room scans one QR code and answers on their phones: open text (summarized by AI on stage, or clustered into a live "hive"), multiple choice, rating, quiz, a 2×2 matrix |
-| **Activities and games** | a whole self-contained HTML page the deck ships to every phone: a group pot, a prompt game, a drawing round, a lab with a timer |
+| **Activities and games** | a whole self-contained HTML page the deck ships to every phone: a group pot, a prompt game, a drawing round, a lab with a timer whose room shares screenshots of what they made |
 | **Running figures** | `embed` elements: animated, stepped, interactive diagrams (a hype cycle that builds on click, a simulation, a countdown timer) inside a slide |
 | **An editor built for agents** | the agent builds the deck; you read it, fix text in place and type change requests beside each slide. A local bridge lets an agent patch the open deck live, with conflict checks |
 | **A poll service you own** | a small Cloudflare Worker on the free plan. One command deploys it to your own account; a limit fails instead of billing |

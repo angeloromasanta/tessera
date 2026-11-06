@@ -33,6 +33,9 @@ the lecturer key and the player token under the new or the old header name.
     python mock_service.py --self-test        # the store's semantics, no browser, no SDK
     python mock_service.py --self-test --browser   # also through Playwright's route
 
+/api/upload keeps the picture in memory and /api/blob serves it back (a shared
+screenshot shows on the screen); DELETE /api/poll clears both.
+
 Not mocked: /api/live (no socket: pages fall back to their timers), /api/draw,
 /api/help, /api/remix, /api/cluster, /api/summarize (404).
 """
@@ -68,6 +71,7 @@ TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 PID_RE = re.compile(r"^[a-z2-7]{12}$")
 MAX_ANSWER_CHARS, MAX_NAME_CHARS, MAX_ANSWERS = 2000, 60, 500
 MAX_ACTIVITY_HTML_CHARS = 60_000
+MAX_UPLOAD_BYTES = 600 * 1024                 # decoded bytes per picture (api/_lib.js)
 MAX_PLAYERS, MAX_MOVES, MAX_MOVE_CHARS = 500, 10_000, 4_000
 MAX_STATE_CHARS, MAX_PRIVATE_CHARS, MAX_MOVES_PER_READ = 100_000, 4_000, 2_000
 MAX_AI_INPUT, MAX_AI_SYSTEM, MAX_AI_TOKENS = 4_000, 8_000, 1_500
@@ -167,6 +171,7 @@ class MockService:
         self.answers: dict[str, list] = {}       # code -> [{id, text, at, name?}]
         self.sessions: dict[str, dict] = {}      # s -> {active, at}
         self.games: dict[str, Game] = {}
+        self.blobs: dict[str, dict] = {}         # code -> {id: (mime, bytes)}: what /api/upload kept
         self.pages: dict[str, str] = {}          # path -> html this origin serves
         self.ai = ai or {}                       # task -> str | {"text", "json"} | fn(task, body) -> either
         self.ai_calls: list[dict] = []
@@ -217,7 +222,8 @@ class MockService:
                 return 200, ("text/javascript", (LIBS / f"{m.group(1)}.js").read_text(encoding="utf-8"))
             route = {"/api/answer": self.r_answer, "/api/poll": self.r_poll, "/api/session": self.r_session,
                      "/api/game": self.r_game, "/api/ai": self.r_ai, "/api/qr": self.r_qr,
-                     "/api/lecturer": self.r_lecturer, "/api/upload": self.r_upload}.get(u.path)
+                     "/api/lecturer": self.r_lecturer, "/api/upload": self.r_upload,
+                     "/api/blob": self.r_blob}.get(u.path)
             if not route:
                 return 404, {"error": "not mocked: " + u.path}
             return route(method, q, h, body)
@@ -276,9 +282,10 @@ class MockService:
         if method == "DELETE":
             self.need_key(h)
             cleared = len(self.answers.pop(code, []))
+            images = len(self.blobs.pop(code, {}))
             if code in self.games:            # Clear responses also resets the game
                 self.games[code].reset()
-            return 200, {"cleared": cleared, "images": 0}
+            return 200, {"cleared": cleared, "images": images}
         if method not in ("GET", "HEAD"):
             fail(405, "method not allowed")
         poll, ans = self.polls.get(code, {}), self.answers.get(code, [])
@@ -331,9 +338,28 @@ class MockService:
         if method != "POST":
             fail(405, "method not allowed")
         code = self.code_of(q, b)
+        m = re.fullmatch(r"data:([a-z0-9.+-]+/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)", str(b.get("dataUrl") or "").strip(), re.I)
+        if not m:
+            fail(400, "expected a base64 image data URL")
+        mime = m.group(1).lower()
+        if not mime.startswith("image/"):
+            fail(415, f"unsupported type {mime}")
+        data = base64.b64decode(re.sub(r"\s+", "", m.group(2)))
+        if len(data) > MAX_UPLOAD_BYTES:
+            fail(413, "image too large")
+        if not data:
+            fail(400, "empty image")
         self.n += 1
-        return 200, {"url": f"{self.origin}/api/blob?c={code}&id=b{self.n}", "id": f"b{self.n}", "bytes": 0,
-                     "mime": "image/jpeg"}
+        bid = f"b{self.n}"
+        self.blobs.setdefault(code, {})[bid] = (mime, data)
+        return 200, {"url": f"{self.origin}/api/blob?c={code}&id={bid}", "id": bid, "bytes": len(data), "mime": mime}
+
+    def r_blob(self, method, q, h, b):
+        code = self.code_of(q, {})
+        hit = self.blobs.get(code, {}).get(str(q.get("id") or ""))
+        if not hit:
+            fail(404, "not found")
+        return 200, hit
 
     # /api/game  (docs/game.md)
     def r_game(self, method, q, h, b):
@@ -589,7 +615,7 @@ def screen_html(svc: MockService, html: str, code: str, *, key: str | None = Non
 def phone_html(svc: MockService, html: str, code: str, name: str = "", token: str | None = None) -> str:
     """The page as the join page's activity frame gets it: TESSERA_ACTIVITY, then the SDK, then the page."""
     host = {"code": code, "name": name, "player": token or device_token(),
-            "limits": {"answer": MAX_ANSWER_CHARS, "upload": 600 * 1024}}
+            "limits": {"answer": MAX_ANSWER_CHARS, "upload": MAX_UPLOAD_BYTES}}
     return "<script>" + both(ACTIVITY, legacy.ACTIVITY_GLOBAL, js_literal(host)) + ";</script>" + svc.with_sdk(html) + html
 
 

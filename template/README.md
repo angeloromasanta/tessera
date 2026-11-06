@@ -91,7 +91,8 @@ and a `--config` for `scripts/build-flow-slide.mjs`.
 
 Not spliced, built by their tools and kept in the file: `sl-lab` (a hands-on
 lab: task, prompts, countdown, the room's Lost / Working on it / Finished bar,
-an AI helper on every phone; `tools/make_lab.py` from `lab.json`),
+a wall of the screenshots the room shared, an AI helper on every phone;
+`tools/make_lab.py` from `lab.json`),
 `sl-game-pot` and `sl-game-prompt` (the group-pot and prompt games on the game
 layer, `docs/game.md`; `tools/make_game.py` from `games/*.json`, pages in
 `kit/engage/`).

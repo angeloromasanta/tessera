@@ -51,7 +51,7 @@ Slides that are patterns without a layout of their own: `sl-howto` (three
 numbered pictures with captions), `sl-table` (the table look, below),
 `sl-poll-hive` and `sl-poll-matrix` (an open question shown as a live clustered
 hive, or on the presenter's axes), `sl-lab` (task, prompts, countdown, the
-room's status, an AI helper on every phone), `sl-game-pot` and
+room's status and the screenshots it shared, an AI helper on every phone), `sl-game-pot` and
 `sl-game-prompt` (two classroom games), `sl-embed-evolution`,
 `sl-embed-perceptron` (worked figures). Reuse them with `slide.py copy`.
 

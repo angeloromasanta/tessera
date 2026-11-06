@@ -66,10 +66,24 @@ room panel is hidden (`<html data-offline>`); rebuild an older card with `make_l
   (`[..]` placeholders in red), a tip, the countdown (Space starts it, −/+ set
   minutes) and, under it, the live bar of the room: Lost, Working on it,
   Finished (each phone's latest status). Without the lecturer key it says so.
+- **Outputs**: **View outputs (N)**, bottom right of the card, opens a wall of
+  the screenshots the room shared over the card (the countdown keeps running
+  beside it): click a tile to show it large, ← / → move on (past the ends:
+  back to all), Esc or a click on the picture goes back, Close (or Esc again)
+  back to the card; Hide takes one off this screen only. The pictures come in
+  the room's own `/api/poll` read, never a read of their own, and are fetched
+  only once the wall opens. No key, no button (as the room). Offline (the
+  poster, the editor without a service) it shows six sample screenshots, so it
+  can be rehearsed.
 - **Phone** (`$KIT/engage/lab-phone.html`): the three status buttons; an ask box
   that takes text and/or a photo of the laptop screen (**Camera** opens the
   phone's camera, **Upload** the gallery; shrunk on the phone, never stored) answered by `POST /api/help` (Haiku 5.5); Lost jumps to that
   box; Finished asks the helper for three next steps, each with a prompt.
+  **Share your result** appears from Working on (Finished scrolls to it): a
+  screenshot, shrunk under 600 kB, goes to `POST /api/upload` (a public link,
+  kept until the bucket is cleared; the phone says the class will see it), then
+  a check-in that carries it, `{v:1, pid, st, u, c?, n?}`. It carries the
+  current status, so the room still counts each phone's latest answer.
   It carries `<meta name="tessera-activity" content="full">`, so the join page
   gives it the whole screen (no card, no question header).
   Any activity page can opt in the same way.
@@ -92,7 +106,11 @@ lab from the template: `slide.py copy live sl-lab --after ID`, then a
 labs.json entry with `"slide": NEWID`. **Write `context` from the speaker
 notes**: the goal, what success looks like, the tools, the usual problems and
 their fixes; it is what makes the helper useful. Rehearse the phone offline:
-open `build/engage/lab-ID-phone.html?fake`.
+open `build/engage/lab-ID-phone.html?fake` (a shared screenshot stays on the
+phone); the screen with phones and pictures end to end: `$T/mock_service.py`
+(its `/api/upload` keeps the picture and `/api/blob` serves it).
+A screenshot wall without a lab (a slide that only collects pictures) is the
+same pattern: [engagement.md](engagement.md#images-from-the-phones).
 
 ## Interactive title: attendance, then the room rewrites the slide
 

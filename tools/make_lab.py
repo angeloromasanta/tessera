@@ -1,13 +1,16 @@
-"""Lab slides: a lab card with a timer, the room's status, and an AI helper on every phone.
+"""Lab slides: a lab card with a timer, the room's status and shared screenshots, and an AI helper on every phone.
 
     python tools/make_lab.py DECK_DIR/build/labs.json [--deck DECK.html] [--build-only] [--out DIR] [ID ...]
 
 One slide per lab: a hidden `activity` poll under a 1280x500 embed. The screen
 (template kit/engage/lab.html) shows the instruction, the prompt(s) to type, a countdown,
-and a live bar of where the room is: Lost / Working on it / Finished. The phone
-(template kit/engage/lab-phone.html) lets each student set that status, ask the lab helper
-a question with or without a photo of their screen (POST /api/help, a small model), and,
-on Finished, get three ideas for what to do next. One entry per lab:
+a live bar of where the room is: Lost / Working on it / Finished, and a "View outputs"
+button that opens a wall of the screenshots the room shared (read with the room, no
+request of its own). The phone (template kit/engage/lab-phone.html) lets each student set
+that status, ask the lab helper a question with or without a photo of their screen
+(POST /api/help, a small model), share a screenshot of the result with the class
+(POST /api/upload, from Working on), and, on Finished, get three ideas for what to do
+next. One entry per lab:
 
     {"id": "lab2",                    # asset keys page-lab-ID, img-lab-ID, activity-lab-ID
      "slide": "slide-mv1z70km-3znx4", # the slide to arm. An existing one keeps its title and notes;
@@ -55,8 +58,15 @@ KEYS = ("id", "heading", "title", "minutes", "do", "steps", "types", "tip", "con
 POLL_ID = "lab-poll"
 QUESTION = "Lab check-in"                     # lab.html reads the poll only when its question starts with this
 NOTE = ("Room check and AI helper: phones show Lost / Working on it / Finished and an ask box (text or a photo of "
-        "the screen, answered by an AI model); Finished gives three ideas for what to do next. The bar under the "
-        "timer is the room. Needs present mode and the lecturer key; the helper opens when this slide is shown.")
+        "the screen, answered by an AI model); Finished gives three ideas for what to do next and opens Share your "
+        "result (a screenshot for the class). The bar under the timer is the room; View outputs (bottom right of the "
+        "card) shows the shared screenshots: click one to show it large, arrows for the next, Esc or Close to go "
+        "back. Needs present mode and the lecturer key; the helper opens when this slide is shown.")
+OLD_NOTES = (   # earlier wordings of NOTE: a re-armed slide gets the current one in their place
+    "Room check and AI helper: phones show Lost / Working on it / Finished and an ask box (text or a photo of "
+    "the screen, answered by an AI model); Finished gives three ideas for what to do next. The bar under the "
+    "timer is the room. Needs present mode and the lecturer key; the helper opens when this slide is shown.",
+)
 NOTES = ("Lab, one screen: the task, the prompt to type and the timer (Space starts it). " + NOTE)
 
 
@@ -153,6 +163,10 @@ def arm(deck, sid, lab, fresh):
         slide["notes"] = lab.get("notes") or NOTES
     elif "Room check and AI helper" not in notes:
         slide["notes"] = notes.rstrip() + "\n• " + NOTE if notes.strip() else NOTE
+    else:
+        for old in OLD_NOTES:
+            notes = notes.replace(old, NOTE)
+        slide["notes"] = notes
     work.write_text(json.dumps(slide, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
     run(TOOLS / "slide.py", "push", deck, sid)
     return code, bool(old)

@@ -49,7 +49,7 @@ question's own code instead (older behaviour, still supported).
 | a temperature check | `rating` | live average and spread |
 | a knowledge check | `quiz` | distribution of **scores**; `correct` never reaches a phone |
 | a guess at a number, then the truth (a study's result) | `activity`, ready-made: "Guess the number" | the spread of the guesses, the room's median, then the study's number |
-| a hands-on lab: the task, a timer, where the room is, help on every phone | `activity`, ready-made: "Lab slides" | the lab card, a countdown and a live Lost / Working on it / Finished bar; phones get an AI helper (text or a photo of the screen) and, on Finished, three next steps |
+| a hands-on lab: the task, a timer, where the room is, help on every phone | `activity`, ready-made: "Lab slides" | the lab card, a countdown and a live Lost / Working on it / Finished bar, and a wall of the screenshots the room shared; phones get an AI helper (text or a photo of the screen), a way to share a screenshot of the result and, on Finished, three next steps |
 | attendance, then the room rewrites the slide on screen with an AI | `activity`, ready-made: "Interactive title" | the slide itself, rewritten live by Haiku from the room's ideas, with a QR card and the check-in count |
 | a game, or a form nothing above expresses | `activity` | a leaderboard ranked by each phone's `score` |
 
@@ -319,6 +319,10 @@ const { url } = await up.json();      // public, unguessable, dies with the buck
 Images only, **600 kB** decoded, counting against the 500-per-bucket cap:
 downscale on the phone first (canvas ~1000px, JPEG q0.7). Links from chat
 tools are often behind a login: give the display embed a file-drop fallback.
+The lab slide has this built in (*Share your result* on the phone, *View
+outputs* on the card: [engagement-pages.md](engagement-pages.md#lab-slides-timer-room-check-ai-helper)).
+A display that shows the pictures reads them from the poll it already reads,
+and loads them only when they are shown.
 
 ## Activity pages and games
 
