@@ -37,7 +37,9 @@ A deck (`*.html`) keeps its document in ONE block near the top:
 **Legacy names.** Decks written before the rename use older names for the
 block, the format and the page globals, and remain readable: every reader
 takes the new name first and the old one second, every writer writes the new
-one. The list is [legacy.md](legacy.md); write only the names on this page.
+one. The reverse does not hold: a page written with the new globals does not
+work in an older shell, so re-host a deck before building a page into it
+(the tools refuse otherwise). The list is [legacy.md](legacy.md); write only the names on this page.
 
 Edit it with `slide.py` (see [../editing.md](../editing.md), "Which edit path"), which escapes
 every `<` as backslash-`u003c` so the block never contains `</script>`.

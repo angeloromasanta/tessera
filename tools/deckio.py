@@ -81,11 +81,55 @@ def load(path) -> dict:
     return read(Path(path).read_text(encoding="utf-8"))
 
 
+# what a page built for the current shell reads; a shell from before the
+# rename never sets these (it sets the legacy names), see old_shell_pages()
+NEW_PAGE_GLOBAL = re.compile(r"\bTESSERA_(?:EMBED|STEPPED|STEPS|REFIT|GAME\w*)\b")
+
+
+def is_old_shell_tag(open_tag: str) -> bool:
+    """The block's opening tag (DOC_RE group 1) names the shell that wrote it:
+    each shell saves under its own id, and upgrade-deck.mjs rewrites it."""
+    return f'id="{legacy.DOC_ID}"' in open_tag
+
+
+def embed_assets(doc) -> set:
+    """The asset keys the embeds of `doc` show."""
+    return {e.get("asset") for s in doc.get("slides", []) for e in s.get("elements", [])
+            if e.get("type") == "embed" and e.get("asset")}
+
+
+def old_shell_pages(doc, only=None) -> list[str]:
+    """Embed-page assets of `doc` written for the current shell (they read the
+    new globals and not the legacy one). In a shell from before the rename such
+    a page gets no poll, texts or step keys and shows its sample state.
+    `only`: limit to these asset keys."""
+    assets = doc.get("assets", {})
+    keys = embed_assets(doc)
+    return sorted(k for k in keys if (only is None or k in only)
+                  and isinstance(assets.get(k), str) and not assets[k].startswith("data:")
+                  and NEW_PAGE_GLOBAL.search(assets[k]) and legacy.EMBED_GLOBAL not in assets[k])
+
+
+def old_shell_message(name: str, keys) -> str:
+    return (f"refused: {name} runs a shell from before the rename, which never hands a page "
+            f"window.TESSERA_EMBED, so {', '.join(keys)} would show its sample state (no live "
+            "poll, texts or step keys).\nRe-host the deck once, then re-run:\n"
+            f"  node <tessera>/scripts/upgrade-deck.mjs \"{name if name.endswith('.html') else 'DECK.html'}\"\n"
+            "An open deck is fine: wait for dirty=False in `slide.py ls`, re-host, then reload "
+            "every tab of it (docs/guide/editing.md, \"A deck on an older shell\"). "
+            "A template on the old shell makes every new deck old: re-host it too.")
+
+
 def splice(text: str, doc) -> str:
-    """`text` with its block's JSON replaced by `doc` (tags kept as they are)."""
+    """`text` with its block's JSON replaced by `doc` (tags kept as they are).
+    Refuses to put pages built for the current shell into an older shell."""
     m = DOC_RE.search(text)
     if not m:
         raise SystemExit(f"no #{DOC_ID} block")
+    if is_old_shell_tag(m.group(1)):
+        bad = old_shell_pages(doc)
+        if bad:
+            raise SystemExit(old_shell_message("this deck (or its template)", bad))
     return text[:m.start(2)] + encode(doc) + text[m.end(2):]
 
 

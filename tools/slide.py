@@ -271,6 +271,7 @@ class FileDeck:
         with self._lock():
             text, doc = self._read()
             new = apply_patches(doc, patches)  # Conflict propagates
+            _check_shell(self.path, doc, new)
             payload = json.dumps(new, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
             m = DOC_RE.search(text)
             out = text[:m.start(2)] + payload + text[m.end(2):]
@@ -337,6 +338,10 @@ class LiveDeck:
         if bad:
             raise SystemExit("the live editor only accepts slides/assets/title/theme/layouts/fonts/requests; "
                              f"refused: {', '.join(_fmt(p['path']) for p in bad)}")
+        try:
+            _check_shell(self.path, self.doc, apply_patches(self.doc, patches))
+        except Conflict:
+            pass  # stale local copy: the editor itself answers with the conflict
         req = {"id": uuid.uuid4().hex, "docId": self.doc.get("docId"), "agent": agent, "patches": patches}
         for attempt in range(40):
             r = self.b.call("/request", {"sessionId": self.sid, "kind": "patch", "request": req}, timeout=30)
@@ -504,6 +509,31 @@ def _lines(patches) -> str:
 
 def agent_name(args):
     return args.agent or config.get("TESSERA_AGENT") or "claude"
+
+
+def shell_is_current(path: Path) -> bool:
+    """True when the deck file runs a shell built after the rename (see
+    deckio.is_old_shell_tag; the shell's own code is deflated)."""
+    m = DOC_RE.search(Path(path).read_text(encoding="utf-8"))
+    return not m or not deckio.is_old_shell_tag(m.group(1))
+
+
+def _check_shell(path, doc, new_doc):
+    """Refuse an embed page written for the current shell going into a deck whose
+    shell predates the rename: it would find no poll, texts or lecturer key and
+    quietly show its sample state (a lab's "sample" room, a results figure's
+    sample answers). Compatibility runs one way: a new shell reads old pages, an
+    old shell cannot serve new ones. Called by both decks' apply(), which every
+    write goes through (commit, push, copy; make_lab and the figure tools use
+    those)."""
+    old = doc.get("assets", {})
+    # a page asset that changed, or one an embed starts showing (make_lab uploads
+    # the page first, then pushes the slide that shows it)
+    changed = {k for k, v in new_doc.get("assets", {}).items() if old.get(k) != v}
+    changed |= deckio.embed_assets(new_doc) - deckio.embed_assets(doc)
+    bad = deckio.old_shell_pages(new_doc, only=changed) if changed else []
+    if bad and not shell_is_current(path):
+        raise SystemExit(deckio.old_shell_message(str(path), bad))
 
 
 def commit(deck, new_doc, args, structure=False):
@@ -1211,6 +1241,9 @@ def doctor(doc) -> list[str]:
 def cmd_doctor(args):
     deck = open_target(args.target)
     found = doctor(deck.doc)
+    if not shell_is_current(deck.path):
+        found.insert(0, f"! {deck.path.name} runs a shell from before the rename: pages built today show "
+                        f"their sample state in it. Re-host: node <tessera>/scripts/upgrade-deck.mjs \"{deck.path}\"")
     for line in found:
         print(line)
     if found:

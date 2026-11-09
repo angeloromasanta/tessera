@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **No more new pages in an old shell.** A page built with the current globals
+  (`TESSERA_EMBED` and the rest) shows its sample state in a deck whose shell
+  predates the rename, which only sets the old names. `slide.py` (every write:
+  set, push, copy, asset; so `make_lab.py` and the figure tools too) and
+  `deckio.splice` now refuse to land such a page and print the re-host command;
+  `slide.py doctor` reports an old shell. The guide (`editing.md`,
+  `reference/legacy.md`, `reference/agents.md`) now says compatibility runs one
+  way, and that a template on the old shell makes every new deck old.
+
 - **Lab slides: share a screenshot, view the outputs.** The lab phone page
   gets *Share your result* (from Working on; Finished scrolls to it): the
   picture goes to `/api/upload`, then a check-in that carries it and the

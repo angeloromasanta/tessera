@@ -74,8 +74,14 @@ once**; never batch finished slides in `build/` for one compile at the end.
 - **Several tabs of one deck** sync with each other by docId: send each
   command **once**, to `DECK.html`. Repeating it per tab makes duplicate `-2`
   slides and push conflicts. Never stop a tab or ask for one to be closed.
-- **A deck on an older shell** (no comment field beside each slide):
-  re-host the saved file with `node $TESSERA/scripts/upgrade-deck.mjs DECK.html`.
+- **A deck on an older shell** (its block carries the old id, see
+  [reference/legacy.md](reference/legacy.md); `slide.py doctor` says so). A page built today (a lab, figure, game or results page from the
+  current kit or tools) reads `window.TESSERA_EMBED`, which an older shell never
+  sets: the page quietly falls back to its sample state (a lab's "sample" room,
+  sample answers, no step keys). `slide.py` therefore refuses to land such a page
+  into an older shell, and so does every tool that writes a deck. Re-host
+  **before** building into a deck, and re-host the template too, or every deck
+  made from it starts old. Re-host the saved file with `node $TESSERA/scripts/upgrade-deck.mjs DECK.html`.
   This works **while the deck is open**: wait for `dirty=False` in `slide.py ls`,
   re-host, then ask for a reload of the tab. The editor's save replaces only the
   `#tessera-doc` block, so it never puts the old shell back. A protected field

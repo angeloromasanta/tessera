@@ -5,6 +5,13 @@ the poll service, the tools) takes the new name first and the old one second;
 every writer writes the new name. Never write an old name into a deck or a
 page.
 
+**Compatibility runs one way.** A current shell serves old pages (it sets both
+names), but an older shell sets only the old globals: a page built today finds
+no `TESSERA_EMBED` in it and shows its sample state. `slide.py` and
+`deckio.splice` refuse that combination; re-host the deck (and its template)
+with `scripts/upgrade-deck.mjs` first ([../editing.md](../editing.md), "A deck
+on an older shell").
+
 | new | old |
 |---|---|
 | `<script type="application/tessera+json" id="tessera-doc">` | `application/bento+json`, `id="bento-doc"` |
