@@ -176,6 +176,8 @@ export function staticNotes(doc) {
   return [
     'AI AGENTS -- READ THIS BEFORE EDITING. These notes live in the DOCUMENT, so they survive re-hosting; the HTML comments in the head belong to the app shell and are replaced every time this deck is re-hosted on a newer shell. If the head and these notes disagree, THESE WIN. The two notes headed LAYOUTS IN THIS FILE and SLIDES IN THIS FILE are generated from this document itself each time the notes are stamped, so they describe what is actually here.',
 
+    sourceNote(),
+
     'WHAT THIS FILE IS. A tessera deck: one self-contained HTML file that is both the document and the app that edits it. This file is the tessera slide template (or a deck made from it). Tessera adds a poll element (live audience questions and games) and an embed element (a live web page inside a slide) that the guides of the editor it was forked from have never heard of; follow these notes and the tessera guides, not those.',
 
     'NO IN-APP UPDATES. Re-host this file only with tessera\'s own node scripts/upgrade-deck.mjs; a shell from another build may have no poll and no embed element and would break this deck.',
@@ -208,8 +210,15 @@ export function staticNotes(doc) {
 
     'SELF-AUDIT BEFORE YOU FINISH: numbers rendered as text that should be a chart; consecutive slides on one subject that should share ids plus transition:"morph"; at least one motion moment, especially on the cover; a drill-down that would work better as a state slide; the side margins and the palette; speaker notes on every slide.',
 
-    'FULLER GUIDES. The tessera repository has the authoring guide in docs/guide/ (docs/guide/reference/agents.md is the full format guide, docs/guide/reference/TEMPLATE.md this template\'s conventions) and python tools in tools/ that compile, screenshot and splice slides deterministically. With none of that available, everything above can still be done by editing this JSON block by hand.',
+    `FULLER GUIDES. The tessera repository (${REPO}) has the authoring guide in docs/guide/ (docs/guide/reference/agents.md is the full format guide, docs/guide/reference/TEMPLATE.md this template's conventions) and python tools in tools/ that compile, screenshot and splice slides deterministically. With none of that available, everything above can still be done by editing this JSON block by hand.`,
   ]
+}
+
+/** Where the docs, the tools and newer versions live. Exported so a brand
+ *  kit's notes module carries the same note (one owner). */
+export const REPO = 'https://github.com/angeloromasanta/tessera'
+export function sourceNote() {
+  return `SOURCE, DOCS AND UPDATES -- CHECK FIRST. Tessera is open source (MIT): ${REPO} . Before non-trivial work, if you can reach the network, read there: README.md (quick start), docs/guide/README.md (the authoring guide: anatomy, slide.py, parallel agents, figures, polls and games, converting a pptx, publishing), docs/guide/reference/agents.md (the full format) and CHANGELOG.md (what changed after this file was made). Raw files: ${REPO}/raw/main/PATH . Where the repo's guide and these notes disagree on METHOD, the guide is newer; these notes stay right about THIS file (its layouts, slides and house rules). Clone it (git clone ${REPO}.git) for the tools: tools/slide.py reads and writes one slide at a time, on disk or in the open editor, and tools/shoot.py takes screenshots. Run python tools/slide.py doctor on this file before building into it: it reports an app shell too old for pages built today, and the fix is node scripts/upgrade-deck.mjs FILE (keeps the document, replaces the shell). Without network access, these notes are enough to edit this file by hand.`
 }
 
 /** The complete briefing for one document: house rules, then the generated
@@ -218,7 +227,7 @@ export function agentNotes(doc) {
   const s = staticNotes(doc)
   const g = generatedNotes(doc)
   // Inventory goes right after the opening notes, before the conventions that refer to it.
-  return [...s.slice(0, 4), ...g, ...s.slice(4)]
+  return [...s.slice(0, 5), ...g, ...s.slice(5)]
 }
 
 export default agentNotes

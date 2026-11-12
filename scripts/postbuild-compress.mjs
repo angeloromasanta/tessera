@@ -84,12 +84,35 @@ const splashCss = (() => {
   return m ? m[1] : ''
 })()
 
+// Where an agent reading any deck finds the docs, the tools and newer versions.
+// One owner: the in-document notes (scripts/template-agent-notes.mjs) say the same.
+const REPO = 'https://github.com/angeloromasanta/tessera'
+const shellVersion = JSON.parse(readFileSync(new URL('../slides/package.json', import.meta.url), 'utf8')).version
+const builtOn = new Date().toISOString().slice(0, 10)
+
 const SLIDES_TOOLING = `<!--
   ════════════════════════════════════════════════════════════════════════
   AI AGENTS / TOOLING — READ THIS BEFORE EDITING THIS DECK
   ════════════════════════════════════════════════════════════════════════
   This file is a Tessera deck: one HTML file that is both the document and
   the app (editor, presenter, live polls and games, interactive figures).
+
+  SOURCE, DOCS AND UPDATES — CHECK FIRST
+  · Tessera is open source (MIT): ${REPO}
+    This app shell is version ${shellVersion}, built ${builtOn}.
+  · Before non-trivial work, if you can reach the network, read there:
+    README.md (quick start), docs/guide/README.md (the authoring guide:
+    anatomy, slide.py, figures, polls and games, conversion, publishing),
+    docs/guide/reference/agents.md (the full format) and CHANGELOG.md (what
+    changed after this shell was built). Raw files: ${REPO}/raw/main/PATH
+  · Clone it for the tools: tools/slide.py reads and writes one slide at a
+    time (on disk or in the open editor), tools/shoot.py takes screenshots.
+    "python tools/slide.py doctor THIS.html" reports a shell too old for
+    pages built today; "node scripts/upgrade-deck.mjs THIS.html" re-hosts the
+    deck on the current shell (the document is kept, the shell replaced).
+  · Where the repo's guide and this comment disagree on method, the guide is
+    newer. No network? This comment and the document's "agentNotes" are
+    enough to edit the JSON by hand.
 
   CHANGE REQUESTS — YOUR TO-DO LIST
   · People ask for changes in the slide list (beside the slide, or in its
@@ -111,7 +134,7 @@ const SLIDES_TOOLING = `<!--
     Change only what the request asks for. Never delete a request.
   · In a running file: window.tessera.requests.list({open:true}) and
     window.tessera.requests.reply(id, text, "done", "<agent name>").
-  · The local agent bridge (docs/agent-live.md in the source) reports how many
+  · The local agent bridge (docs/agent-live.md in the repo above) reports how many
     are open ("pending") and lets a listener wait for new ones.
 
   FIGURE TEXT — EDITABLE BY THE PERSON

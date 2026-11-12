@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Every deck points back to the repo.** The shell's head comment and the
+  template's in-document agent notes (`SOURCE, DOCS AND UPDATES`, the
+  second note) give the repository URL, which docs to read first, the
+  CHANGELOG to compare against, and the `doctor` / `upgrade-deck` pair for an
+  old shell; the head comment also states the shell version and build date.
+  A brand kit's notes module imports `sourceNote()` from
+  `scripts/template-agent-notes.mjs` so its decks say the same.
+
 - **No more new pages in an old shell.** A page built with the current globals
   (`TESSERA_EMBED` and the rest) shows its sample state in a deck whose shell
   predates the rename, which only sets the old names. `slide.py` (every write:
