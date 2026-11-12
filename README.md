@@ -31,7 +31,7 @@ python tools/slide.py fork decks/my-talk/my-talk.html --polls  # its own deck: n
 ```
 
 Open `decks/my-talk/my-talk.html` in Chrome or Edge and edit. `template.html`
-is the default template: 22 example slides across 15 layouts, the palette, two
+is the default template: a hidden "Start here" page on connecting your agent, then 22 example slides across 15 layouts, the palette, two
 open-licence typefaces (Fraunces, Manrope), polls, the live hive, a lab and two
 games. Its conventions are in [docs/guide/reference/TEMPLATE.md](docs/guide/reference/TEMPLATE.md).
 
