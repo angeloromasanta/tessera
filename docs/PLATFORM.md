@@ -83,7 +83,7 @@ their edits over BroadcastChannel through the in-house CRDT
 (`slides/src/sync/`, `docs/collab-design.md`). Nothing leaves the machine.
 
 - Engine changes (`sync/crdt.ts`) require the convergence rig
-  (`node scripts/test-sync.ts`) before merge. No exceptions.
+  (`node --experimental-strip-types scripts/test-sync.ts`) before merge. No exceptions.
 - Files saved by older shells may carry `doc.collab` relay credentials; keep
   the field, never connect with it.
 

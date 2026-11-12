@@ -1,0 +1,37 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install fonttools
+      - name: release check (no personal data, brand or commercial fonts)
+        run: node scripts/release-check.mjs
+      - name: typecheck and build the shell
+        working-directory: slides
+        run: npm ci && npx tsc --noEmit -p . && npm run build:single
+      - name: CRDT convergence rig
+        run: node --experimental-strip-types scripts/test-sync.ts
+      - name: poll service unit tests
+        working-directory: server/poll-worker
+        run: |
+          npm ci
+          node scripts/sync.mjs
+          for t in draw help ai remix legacy; do node test/$t.test.mjs; done
+      - name: quick start (fork the template, list it, doctor)
+        run: |
+          mkdir -p decks/ci && cp template.html decks/ci/ci.html
+          python tools/slide.py fork decks/ci/ci.html --polls
+          python tools/slide.py ls decks/ci/ci.html
+          python tools/slide.py doctor decks/ci/ci.html

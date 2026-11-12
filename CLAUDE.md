@@ -41,7 +41,7 @@ the new field.
 - `#tessera-doc` stays plaintext and regex-extractable; no literal script-close
   tag in a bundle or the document (the JSON escapes every `<`). Never
   regenerate a `docId`.
-- `node scripts/test-sync.ts` after any change to `slides/src/sync/crdt.ts`.
+- `node --experimental-strip-types scripts/test-sync.ts` after any change to `slides/src/sync/crdt.ts`.
 - New UI strings go into every catalog under `slides/src/i18n/`.
 - Re-stamp agent notes (`node scripts/stamp-agent-notes.mjs`) after a
   convention, layout or slide change in `template.html`.

@@ -7,6 +7,8 @@ the presenter and the editor. Double-click it and it opens in its own editor; no
 account, no install, no server. The whole document is plain JSON inside the
 file, so an AI agent can build and edit a deck as easily as a person can.
 
+![The editor: slides with a request box beside each, the open slide and its speaker notes](docs/img/editor.png)
+
 On top of that, Tessera adds what classroom and workshop decks need:
 
 | | |
@@ -19,7 +21,7 @@ On top of that, Tessera adds what classroom and workshop decks need:
 
 ## Quick start
 
-Node 20+ and npm; Python 3 for the authoring tools.
+Node 22.12+ and npm; Python 3 for the authoring tools.
 
 ```bash
 git clone https://github.com/angeloromasanta/tessera.git && cd tessera
@@ -91,7 +93,7 @@ decks/               your decks (gitignored)
 ```bash
 cd slides && npm run dev                   # dev server
 npm run build:single && cd .. && node scripts/upgrade-deck.mjs template.html   # re-host the template
-node scripts/test-sync.ts                  # CRDT convergence rig
+node --experimental-strip-types scripts/test-sync.ts   # CRDT convergence rig
 cd server/poll-worker && npm test          # poll service unit + e2e tests
 node scripts/release-check.mjs             # no personal data, brand or commercial fonts in the tree
 ```
