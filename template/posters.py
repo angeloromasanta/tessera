@@ -110,8 +110,11 @@ def main() -> None:
                 errors = shoot_live(src, out, w, h, 2500, None)
             else:
                 clicks = "0" if key.startswith("page-lab") else "last"
+                # a page whose last state lands in a slow sequence says how long to wait
+                settle = re.search(r'<meta name="poster-settle" content="([\d.]+)"', page)
                 r = subprocess.run([sys.executable, str(SHOOT), str(src), "--page", "--size", f"{w}x{h}",
-                                    "--clicks", clicks, "--settle", "1.5", "--out", str(out)],
+                                    "--clicks", clicks, "--settle", settle[1] if settle else "1.5",
+                                    "--out", str(out)],
                                    capture_output=True, text=True)
                 if r.returncode:
                     raise SystemExit(f"{key}: shoot.py failed\n{r.stdout}\n{r.stderr}")

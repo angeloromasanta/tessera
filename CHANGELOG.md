@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **The template's "Start here" page is an animated how-to.** Four columns
+  that play by themselves for a reader who is not technical: put the file in
+  one folder, open it in the Claude or ChatGPT desktop app and ask it to
+  connect, ask for slides on your topic, comment beside a slide and say "Do my
+  comments" (`template/figures/start-here.html`). `template/posters.py` waits
+  for a page's `<meta name="poster-settle">` before shooting its poster.
+
 ## 0.2.0 — 2026-11-15 First public release
 
 - **Every deck points back to the repo.** The shell's head comment and the

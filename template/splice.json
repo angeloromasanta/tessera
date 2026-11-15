@@ -25,6 +25,7 @@
   "figures": {
     "page-adoption-curve": "@examples/adoption-curve.html",
     "page-evolution": "@examples/evolution.html",
-    "page-perceptron": "@examples/perceptron.html"
+    "page-perceptron": "@examples/perceptron.html",
+    "page-start-here": "template/figures/start-here.html"
   }
 }

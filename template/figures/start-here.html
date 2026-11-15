@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Start here: four steps to connect your AI agent</title>
+<!-- The template's hidden first slide: how a person (not an agent) gets from
+     this file to a working deck, in four columns that play one after another
+     by themselves (a click steps too). State 0 shows the four steps' names, so
+     the page reads before it moves. Plain words: the reader is not technical. -->
+<meta name="figcheck-allow" content="state0">
+<!-- step 4 lands over ~2.6 s: template/posters.py waits this long before the poster -->
+<meta name="poster-settle" content="3.2">
+<style>
+@font-face{font-family:Manrope;font-weight:200 800;src:url(MANROPE) format('woff2')}
+:root{
+  --ink:#1A2326;      /* all dark text */
+  --navy:#0D2A2F;     /* dark FILLS only (a header bar, a dark card) */
+  --accent:#0F6B73;   /* structure, emphasis fills, arrows, header rules */
+  --sky:#2B6CB0;      /* a second blue, only when categories need one */
+  --muted:#5A6467;    /* secondary text, eyebrows, legends */
+  --faint:#A7AFB1;    /* disabled / greyed-out text */
+  --line:#C7CFD1;     /* axes, dead marks */
+  --rule:#D7DEDF;     /* hairlines, dividers */
+  --tint:#F1F5F5;     /* neutral card fill */
+  --blue-tint:#E2F0F1;
+  --amber:#BF831A;  --amber-text:#8E5F00; --amber-tint:#FCF0DA;
+  --green:#3B9457;  --green-text:#2B7041; --green-tint:#E3F2E6;
+  --coral:#D2553A;  --coral-text:#A83A20; --coral-tint:#FBE8E2;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#fff;overflow:hidden;
+  font-family:Manrope,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+#stage{height:100%;display:flex;flex-direction:column;cursor:pointer;
+  user-select:none;-webkit-user-select:none;padding:0 28px 4px}
+svg{flex:1;width:100%;min-height:0;display:block}
+#world{transform-box:view-box;transform-origin:0 0;
+  transition:transform 1s cubic-bezier(.4,0,.2,1)}
+.el{opacity:0;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+.el.on{opacity:1}
+.draw{stroke-dashoffset:var(--len);transition:stroke-dashoffset 1s cubic-bezier(.35,0,.25,1),opacity .25s}
+.draw.on{stroke-dashoffset:0}
+.rise,.fall,.fromL,.fromR,.pop,.fly{
+  transition:opacity .4s ease, transform .6s cubic-bezier(.22,1,.36,1)}
+.rise:not(.on){transform:translateY(22px)}
+.fall:not(.on){transform:translateY(-22px)}
+.fromL:not(.on){transform:translateX(-34px)}
+.fromR:not(.on){transform:translateX(34px)}
+.pop,.fly{transform-box:fill-box;transform-origin:center}
+.pop:not(.on){transform:scale(.72)}
+.fly{transition:transform .85s cubic-bezier(.22,1,.36,1),opacity .3s ease}
+.fly:not(.on){transform:translate(var(--dx,0),var(--dy,0)) scale(var(--s0,.12))}
+/* a bar that grows up out of its baseline */
+.grow{transform-box:fill-box;transform-origin:50% 100%;
+  transition:opacity .2s ease, transform .7s cubic-bezier(.22,1,.36,1)}
+.grow:not(.on){transform:scaleY(.04)}
+.march{stroke-dasharray:10 8;animation:march 1.1s linear infinite}
+@keyframes march{to{stroke-dashoffset:-18}}
+.breathe{animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.5}}
+/* the frame around the step being shown: its stroke pulses, it travels */
+.ring{animation:ring 2.4s ease-in-out infinite}
+@keyframes ring{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
+.posed{transform-box:fill-box;transform-origin:center;
+  transition:opacity .45s ease,transform .8s cubic-bezier(.22,1,.36,1)}
+.el.on.posed{transform:translate(var(--tx,0),var(--ty,0))
+  scale(var(--sc,1)) rotate(var(--rot,0deg))}
+.el.on.dim{opacity:.22}
+.el.on.dead{opacity:.34}
+circle.dead,rect.dead,path.dead[fill]:not([fill="none"]){fill:var(--line)}
+path.dead,line.dead,polyline.dead{stroke:var(--line)}
+.sel{stroke:var(--ink);stroke-width:3}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:.15s!important}
+  .rise,.fall,.fromL,.fromR,.pop,.fly,.grow{transform:none!important}
+}
+.head{font-weight:700;font-size:26px;fill:var(--ink)}
+.eyebrow,.axis{font-weight:600;font-size:16px;fill:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase}
+.lbl{font-weight:700;font-size:20px;fill:var(--ink)}
+.sub{font-weight:500;font-size:17px;fill:var(--muted)}
+.callout{font-weight:700;font-size:20px;fill:var(--accent)}
+.big{font-weight:700;font-size:52px;fill:var(--ink)}
+.on-dark{fill:#fff}  .on-dark.sub{fill-opacity:.85}
+.card{fill:var(--tint)}
+/* figure-specific roles: a file or window name, a chat message */
+.file{font-weight:600;font-size:16px;fill:var(--ink)}
+.file.muted{fill:var(--muted)}
+.msg{font-weight:600;font-size:17px;fill:var(--ink)}
+.msg.ok{font-weight:700;fill:var(--green-text)}
+#bar{flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:6px 0 4px;font-size:13px;color:var(--muted)}
+#dots{display:flex;gap:7px}
+#dots i{width:8px;height:8px;border-radius:50%;background:var(--rule);transition:background .3s}
+#dots i.on{background:var(--accent)}
+#hint{margin-left:auto;opacity:.75}
+</style></head>
+<body>
+<div id="stage">
+<svg id="fig" viewBox="0 0 1280 480" preserveAspectRatio="xMidYMid meet">
+  <g id="world" data-figcheck="camera">
+    <g id="links"></g>
+    <g id="shapes"></g>
+    <g id="labels"></g>
+  </g>
+</svg>
+<div id="bar"><div id="dots"></div><div id="hint"></div></div>
+</div>
+
+<script>
+// The files the person was sent. One line, so a brand kit can swap it.
+const FILES = ["template.html"];
+// The four steps: words under each column. Every line is an editable label.
+const COPY = [
+  { head: 'Make one folder',     sub: ['Save this .html file, and', 'anything sent with it,', 'in one new folder.'] },
+  { head: 'Connect your agent',  sub: ['Open that folder in the', 'Claude or ChatGPT', 'desktop app and ask it.'] },
+  { head: 'Ask for your slides', sub: ['Say what your talk is', 'about. The slides land', 'in this file as you watch.'] },
+  { head: 'Comment to improve',  sub: ['Type a change beside any', 'slide, then tell the agent', '“Do my comments.”'] },
+];
+// Geometry: four columns across the frame, a stage card on top, words below.
+const X0 = 56, CW = 274, GAP = 24, STEP = CW + GAP, CARD_Y = 8, CARD_H = 292;
+const col = k => X0 + k * STEP;
+const PLAY_MS = [2600, 4800, 4800, 4800, 6500];   // how long each state holds when it plays by itself
+
+const SVG = 'http://www.w3.org/2000/svg';
+const C = (() => {
+  const root = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ':root');
+  return Object.fromEntries([...root.style].filter(p => p.startsWith('--'))
+    .map(p => [p.slice(2), root.style.getPropertyValue(p).trim()]));
+})();
+const layer = { links: document.getElementById('links'),
+                shapes: document.getElementById('shapes'),
+                labels: document.getElementById('labels') };
+function mk(tag, attrs, parent) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  (parent || layer.shapes).appendChild(e);
+  return e;
+}
+const T = (k, d) => (window.TESSERA_EMBED && TESSERA_EMBED.text) ? TESSERA_EMBED.text(k, d) : d;
+function txt(key, text, attrs, parent = layer.labels) {
+  const t = mk('text', { ...attrs, 'data-edit': key }, parent);
+  t.textContent = T(key, text);
+  return t;
+}
+const FIT = [];
+function refit() { FIT.forEach(f => f()); }
+window.TESSERA_REFIT = refit;
+document.fonts.ready.then(refit);
+document.fonts.addEventListener('loadingdone', refit);
+new ResizeObserver(refit).observe(document.getElementById('fig'));
+
+const spotlight = (ids, s = 2.4) => Object.fromEntries(ids.map(id => [id, { s }]));
+function onto(id, toId) {
+  const a = document.getElementById(id), b = document.getElementById(toId);
+  if (!a || !b) return {};
+  try {
+    const p = a.getBBox(), q = b.getBBox();
+    return { x: +(q.x + q.width / 2 - p.x - p.width / 2).toFixed(1),
+             y: +(q.y + q.height / 2 - p.y - p.height / 2).toFixed(1) };
+  } catch (err) { return {}; }
+}
+function stagger(ids, ms = 40, base = 0) {
+  ids.forEach((id, k) => {
+    const e = typeof id === 'string' ? document.getElementById(id) : id;
+    if (e) e.style.transitionDelay = (base + k * ms) + 'ms';
+  });
+}
+const VBW = 1280, VBH = 480;
+const FULL = [0, 0, VBW, VBH];
+const world = document.getElementById('world');
+function camFit(ids, pad = 26) {
+  const bs = ids.map(id => document.getElementById(id)).filter(Boolean)
+    .map(e => { try { return e.getBBox(); } catch (err) { return null; } }).filter(Boolean);
+  if (!bs.length) return FULL;
+  let x0 = Math.min(...bs.map(b => b.x)) - pad,
+      y0 = Math.min(...bs.map(b => b.y)) - pad,
+      w = Math.max(...bs.map(b => b.x + b.width)) + pad - x0,
+      h = Math.max(...bs.map(b => b.y + b.height)) + pad - y0;
+  const A = VBW / VBH;
+  if (w / h < A) { const n = h * A; x0 -= (n - w) / 2; w = n; }
+  else           { const n = w / A; y0 -= (n - h) / 2; h = n; }
+  return [x0, y0, w, h];
+}
+function camTo(rect) {
+  const [x, y, w, h] = rect;
+  const s = Math.min(VBW / w, VBH / h, 3.2);
+  world.style.transform = `translate(${(VBW / 2 - s * (x + w / 2)).toFixed(2)}px,`
+    + `${(VBH / 2 - s * (y + h / 2)).toFixed(2)}px) scale(${s.toFixed(4)})`;
+}
+
+/* ---- small parts ------------------------------------------------------ */
+const fill = v => `fill:var(--${v})`;
+// A chat message: a rounded bubble sized from its lines (measured on FIT).
+// align 'right' = the person speaking (anchored at its right edge x), 'left' = the agent.
+function bubble(id, keys, lines, x, y, { align = 'right', bg = 'blue-tint', cls = 'msg', icon = null, parent } = {}) {
+  const g = mk('g', { class: 'el rise', id }, parent);
+  const r = mk('rect', { rx: 12, style: fill(bg) }, g);
+  const ix = icon ? 30 : 0;
+  const ts = lines.map((s, n) => txt(keys[n], s, { class: cls, x: align === 'right' ? x - 14 : x + 14 + ix,
+    y: y + 26 + n * 23, 'text-anchor': align === 'right' ? 'end' : 'start' }, g));
+  let ic = null;
+  if (icon) ic = icon(g);
+  const fit = () => {
+    let w = 0; ts.forEach(t => { try { w = Math.max(w, t.getBBox().width); } catch (e) {} });
+    w = Math.max(w, 20) + 28 + ix;
+    r.setAttribute('x', align === 'right' ? x - w : x); r.setAttribute('y', y);
+    r.setAttribute('width', w); r.setAttribute('height', 16 + lines.length * 23);
+    if (ic) ic.setAttribute('transform', `translate(${x + 14},${y + 8 + (lines.length * 23 - 20) / 2})`);
+  };
+  fit(); FIT.push(fit);
+  return g;
+}
+// A green tick in a circle, 20 across, drawn at (0,0)-(20,20).
+function tick(parent) {
+  const g = mk('g', {}, parent);
+  mk('circle', { cx: 10, cy: 10, r: 10, style: fill('green') }, g);
+  mk('path', { d: 'M5.5,10.5 L8.8,13.6 L14.6,7', fill: 'none', stroke: '#fff', 'stroke-width': 2.4,
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+  return g;
+}
+// An app or browser window: frame, title bar with three dots and a name.
+function win(x, y, w, h, key, name, parent) {
+  mk('rect', { x, y, width: w, height: h, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, parent);
+  mk('path', { d: `M${x + 1},${y + 33} V${y + 10} a9,9 0 0 1 9,-9 H${x + w - 10} a9,9 0 0 1 9,9 V${y + 33} Z`, style: fill('tint') }, parent);
+  mk('line', { x1: x, y1: y + 33, x2: x + w, y2: y + 33, style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, parent);
+  [0, 1, 2].forEach(n => mk('circle', { cx: x + 18 + n * 13, cy: y + 17, r: 4.5, style: fill('line') }, parent));
+  txt(key, name, { class: 'file muted', x: x + 60, y: y + 22 }, parent);
+}
+// A slide thumbnail: frame, title bar, two text lines. Returns the group.
+function thumb(g, x, y, w, h, { title = true } = {}) {
+  mk('rect', { x, y, width: w, height: h, rx: 3, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, g);
+  if (title) mk('rect', { x: x + w * .1, y: y + h * .16, width: w * .45, height: Math.max(4, h * .1), rx: 1.5, style: fill('accent') }, g);
+  mk('rect', { x: x + w * .1, y: y + h * .42, width: w * .7, height: Math.max(3, h * .06), rx: 1.5, style: fill('line') }, g);
+  mk('rect', { x: x + w * .1, y: y + h * .58, width: w * .5, height: Math.max(3, h * .06), rx: 1.5, style: fill('line') }, g);
+  return g;
+}
+function folderGlyph(g, x, y, w, h) {
+  mk('rect', { x, y: y - h * .18, width: w * .4, height: h * .3, rx: 3, style: fill('amber') }, g);
+  mk('rect', { x, y, width: w, height: h, rx: 4, style: fill('amber') }, g);
+}
+
+/* ---- the frame: four stage cards, numbers, the words under each ------- */
+for (let k = 0; k < 4; k++) {
+  const x = col(k);
+  mk('rect', { class: 'card', x, y: CARD_Y, width: CW, height: CARD_H, rx: 8 });
+  mk('circle', { cx: x + 16, cy: 336, r: 16, style: fill('accent') });
+  mk('text', { class: 'lbl on-dark', x: x + 16, y: 343, 'text-anchor': 'middle', 'data-no-edit': '' }).textContent = k + 1;
+  txt(`s${k + 1}-head`, COPY[k].head, { class: 'lbl', x: x + 42, y: 343 });
+  COPY[k].sub.forEach((s, n) => txt(`s${k + 1}-sub${n + 1}`, s, { class: 'sub', x, y: 378 + n * 23 }));
+}
+// the frame that travels to the step being shown
+const hl = mk('g', { class: 'el', id: 'hl' }, layer.links);
+mk('rect', { class: 'ring', x: col(0) - 6, y: CARD_Y - 6, width: CW + 12, height: 442, rx: 12,
+  fill: 'none', style: 'stroke:var(--accent)', 'stroke-width': 3 }, hl);
+
+/* ---- 1. the files fall into one folder -------------------------------- */
+const A = [];
+{
+  const x = col(0), g = mk('g', {});
+  mk('rect', { x: x + 17, y: 116, width: 80, height: 28, rx: 6, style: fill('amber') }, g);
+  mk('rect', { x: x + 17, y: 132, width: 240, height: 138, rx: 8, style: fill('amber') }, g);
+  const ys = FILES.length === 1 ? [154] : FILES.map((_, n) => 146 + n * 32);
+  FILES.forEach((name, n) => {
+    const f = mk('g', { class: 'el fly', id: `a-f${n + 1}` }, g);
+    f.style.setProperty('--dy', `${-(ys[n] + 70)}px`); f.style.setProperty('--s0', 1);
+    mk('rect', { x: x + 27, y: ys[n], width: 220, height: 44, rx: 6, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, f);
+    mk('path', { d: `M${x + 40},${ys[n] + 10} h13 l6,6 v18 h-19 z`, style: fill(/\.zip$/i.test(name) ? 'sky' : 'accent') }, f);
+    txt(`f${n + 1}`, name, { class: 'file', x: x + 69, y: ys[n] + 27 }, f);
+    A.push(f.id);
+  });
+  mk('rect', { x: x + 17, y: 210, width: 240, height: 60, rx: 8, style: 'fill:var(--amber-tint);stroke:var(--amber)', 'stroke-width': 2 }, g);
+  txt('folder', 'My talk', { class: 'lbl', x: x + 137, y: 247, 'text-anchor': 'middle', style: fill('amber-text') }, g);
+  stagger(A, 380, 150);
+}
+
+/* ---- 2. the folder goes into the app; ask it to connect ---------------- */
+const B = ['b-folder', 'b-ask', 'b-ok'];
+{
+  const x = col(1), g = mk('g', {});
+  win(x + 14, 24, 246, 262, 'app', 'Claude or ChatGPT', g);
+  const f = mk('g', { class: 'el fly', id: 'b-folder' }, g);
+  f.style.setProperty('--dx', '-250px'); f.style.setProperty('--dy', '120px'); f.style.setProperty('--s0', 1.6);
+  folderGlyph(f, x + 30, 76, 26, 18);
+  txt('folder', 'My talk', { class: 'file', x: x + 64, y: 91 }, f);
+  bubble('b-ask', ['b-ask1', 'b-ask2'], ['Read this deck’s notes', 'and connect to it.'], x + 248, 112, { parent: g });
+  bubble('b-ok', ['b-ok'], ['Connected'], x + 26, 196, { align: 'left', bg: 'green-tint', cls: 'msg ok', icon: tick, parent: g });
+  stagger(B, 600, 0);
+}
+
+/* ---- 3. ask for slides; they fly into the deck ------------------------- */
+const Cs = ['c-ask'];
+{
+  const x = col(2), g = mk('g', {});
+  win(x + 14, 108, 246, 178, 'deck', FILES[0], g);
+  bubble('c-ask', ['c-ask1', 'c-ask2'], ['Make 10 slides about', 'my topic.'], x + 260, 24, { parent: g });
+  const bx = x + 190, by = 60;                          // the request the slides come out of
+  for (let n = 0; n < 6; n++) {
+    const tx = x + 30 + (n % 3) * 76, ty = 156 + Math.floor(n / 3) * 56, w = 66, h = 42;
+    const t = thumb(mk('g', { class: 'el fly', id: `c-s${n + 1}` }, g), tx, ty, w, h);
+    t.style.setProperty('--dx', `${bx - (tx + w / 2)}px`); t.style.setProperty('--dy', `${by - (ty + h / 2)}px`);
+    t.style.setProperty('--s0', .25);
+    Cs.push(t.id);
+  }
+  stagger(Cs.slice(1), 170, 700);
+}
+
+/* ---- 4. a comment beside each slide; the agent does them --------------- */
+const D = ['d-c1', 'd-c2', 'd-ask', 'd-b1', 'd-b2', 'd-b3', 'd-k1', 'd-k2'];
+{
+  const x = col(3), g = mk('g', {});
+  const rows = [26, 104];
+  rows.forEach((y, r) => {
+    thumb(g, x + 14, y, 108, 62, { title: r === 0 });
+    mk('rect', { x: x + 132, y, width: 128, height: 62, rx: 6, fill: '#fff', style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, g);
+  });
+  // slide 2's title, which the agent shortens (posed, so it is a mark from the start)
+  mk('rect', { class: 'el', id: 'd-t2', x: x + 25, y: 114, width: 74, height: 6, rx: 1.5, style: fill('accent') }, g);
+  const c1 = mk('g', { class: 'el fromL', id: 'd-c1' }, g);
+  txt('d-c1', 'Add a chart', { class: 'file', x: x + 144, y: 62 }, c1);
+  const c2 = mk('g', { class: 'el fromL', id: 'd-c2' }, g);
+  txt('d-c2', 'Shorter title', { class: 'file', x: x + 144, y: 140 }, c2);
+  bubble('d-ask', ['d-ask'], ['Do my comments.'], x + 260, 196, { parent: g });
+  // the chart the first comment asked for grows on slide 1
+  [[0, 10, 'accent'], [1, 16, 'sky'], [2, 22, 'accent']].forEach(([n, h, c]) =>
+    mk('rect', { class: 'el grow', id: `d-b${n + 1}`, x: x + 84 + n * 10, y: 82 - h, width: 7, height: h, style: fill(c) }, g));
+  [26, 104].forEach((y, r) => { const k = mk('g', { class: 'el pop', id: `d-k${r + 1}` }, g); tick(k).setAttribute('transform', `translate(${x + 248},${y - 8})`); });
+  stagger(['d-c1', 'd-c2'], 350, 0);
+  stagger(['d-ask'], 0, 800);
+  stagger(['d-b1', 'd-b2', 'd-b3'], 120, 1400);
+  document.getElementById('d-t2').style.transitionDelay = '1500ms';
+  stagger(['d-k1', 'd-k2'], 180, 1900);
+}
+
+// State 0 shows the four steps' names (the frame). Each click (or the timer)
+// plays the next column; the frame around it travels there. Past step 4 every
+// mark goes back where it came from and the loop starts again.
+const S1 = ['d-t2', 'hl', ...A];
+const S2 = [...S1, ...B];
+const S3 = [...S2, ...Cs];
+const S4 = [...S3, ...D];
+const steps = [
+  { on: ['d-t2'] },
+  { on: S1, pose: { hl: { x: 0 } } },
+  { on: S2, pose: { hl: { x: STEP } } },
+  { on: S3, pose: { hl: { x: 2 * STEP } } },
+  { on: S4, pose: { hl: { x: 3 * STEP }, 'd-t2': { x: -14, s: .62 } } },
+];
+
+/* ---- engine: nothing below needs editing ----------------------------- */
+document.querySelectorAll('.draw').forEach(p => {
+  const L = p.getTotalLength();                 // self-measuring, so no magic
+  p.style.strokeDasharray = L + ' ' + L;        // dash numbers to maintain
+  p.style.setProperty('--len', L);
+});
+
+let i = 0;
+const els = [...document.querySelectorAll('.el')];
+// Only marks some step actually poses get .posed, so nothing else can change
+// behaviour — in particular a mark carrying its own transform attribute.
+const POSED = new Set();
+steps.forEach(s => Object.keys(s.pose || {}).forEach(id => POSED.add(id)));
+POSED.forEach(id => document.getElementById(id)?.classList.add('posed'));
+function setPose(e, p) {
+  e.style.setProperty('--tx', (p.x || 0) + 'px');   // px in SVG CSS = 1 viewBox unit
+  e.style.setProperty('--ty', (p.y || 0) + 'px');
+  e.style.setProperty('--sc', p.s == null ? 1 : p.s);
+  e.style.setProperty('--rot', (p.r || 0) + 'deg');
+}
+const dotBox = document.getElementById('dots');
+dotBox.innerHTML = steps.map(() => '<i></i>').join('');
+const dots = [...dotBox.children];
+function draw() {
+  refit();
+  const s = steps[i];
+  els.forEach(e => {
+    e.classList.toggle('on', s.on.includes(e.id));
+    for (const k of ['dim', 'dead', 'sel'])
+      e.classList.toggle(k, (s[k] || []).includes(e.id));
+    if (POSED.has(e.id)) {
+      const p = (s.pose || {})[e.id];
+      setPose(e, (typeof p === 'function' ? p() : p) || {});
+    }
+  });
+  if (s.do) s.do(s);
+  camTo(typeof s.cam === 'function' ? s.cam() : (s.cam || FULL));
+  dots.forEach((d, n) => d.classList.toggle('on', n <= i));
+  document.getElementById('hint').textContent =
+    i === steps.length - 1 ? 'click to restart' : 'click to advance';
+}
+function go(n) { i = (n + steps.length) % steps.length; draw(); }
+// A click steps. On the deck's edit canvas the deck itself tells a click on a
+// label from a double-click (which edits it): no guard is needed here.
+document.getElementById('stage').addEventListener('click', () => go(i + 1));
+// Keys step the build and STOP at either end, leaving the key unhandled: in a
+// deck that is what moves the show to the next (or previous) slide, like
+// PowerPoint animations. TESSERA_STEPPED tells the deck to offer this page its
+// arrow keys first. A click still wraps back to the start.
+window.TESSERA_STEPPED = true;
+addEventListener('keydown', e => {
+  const fwd = ['ArrowRight', ' ', 'Enter', 'PageDown'].includes(e.key);
+  const back = ['ArrowLeft', 'PageUp'].includes(e.key);
+  if (fwd && i < steps.length - 1) { go(i + 1); e.preventDefault(); }
+  if (back && i > 0) { go(i - 1); e.preventDefault(); }
+  if (e.key === 'Home') { go(0); e.preventDefault(); }
+});
+draw();
+
+/* ---- plays by itself ------------------------------------------------------
+   The person reading this has never clicked a figure: each state holds for
+   PLAY_MS[i], then the next one plays; a click steps at once and the timer
+   starts over from there. Hidden tab, reduced motion or a test browser: no timer. */
+const hint = document.getElementById('hint');
+let timer = 0;
+function play() {
+  clearTimeout(timer);
+  hint.textContent = 'plays by itself · click for the next step';
+  // a test browser (figcheck, shoot, posters) steps by clicks only
+  if (document.hidden || navigator.webdriver || /Headless/.test(navigator.userAgent) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  timer = setTimeout(() => { go(i + 1); play(); }, PLAY_MS[i] || 4800);
+}
+document.getElementById('stage').addEventListener('click', play);
+addEventListener('keydown', play);
+document.addEventListener('visibilitychange', play);
+play();
+</script>
+</body></html>
