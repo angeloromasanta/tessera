@@ -257,6 +257,24 @@ function fileGlyph(g, x, y, name, w = 19, h = 24) {
   const c = /\.zip$/i.test(name) ? 'sky' : /\.html?$/i.test(name) ? 'accent' : 'line';
   mk('path', { d: `M${x},${y} h${w - 6} l6,6 v${h - 6} h-${w} z`, style: fill(c) }, g);
 }
+// A pointy-top hexagon centred on (cx, cy), radius r: the title slide's tile.
+function hexPath(cx, cy, r) {
+  return 'M' + [0, 1, 2, 3, 4, 5].map(i => { const a = Math.PI / 3 * i - Math.PI / 2;
+    return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`; }).join(' L') + ' Z';
+}
+// A field of hexagons, cols × rows from (x, y), with a few gaps; colour and
+// delay come back per tile from tile(c, r, cx, cy) -> [colour, delay] or null.
+function hexField(g, x, y, R, cols, rows, tile) {
+  const HW = Math.sqrt(3) * R;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const cx = x + c * HW + (r % 2) * HW / 2, cy = y + r * 1.5 * R, t = tile(c, r, cx, cy);
+    if (!t) continue;
+    const h = mk('path', { d: hexPath(cx, cy, R - Math.max(1.5, R * .1)), style: fill(t[0]) }, g);
+    if (t[1] != null) play(h, 'popin', t[1]);
+  }
+}
+const HEXES = (c, r) => { const h = (c * 7 + r * 11 + c * r) % 9;
+  return h === 0 ? null : c === 4 && r === 3 ? 'amber' : h < 3 ? 'accent' : h < 5 ? 'sky' : 'blue-tint'; };
 // a scene's own header: the step's number, name and one line
 function header(g, k) {
   mk('circle', { cx: 76, cy: 30, r: 20, style: fill('accent') }, g);
@@ -291,10 +309,13 @@ for (let k = 0; k < 4; k++) {
 { // 2. the folder in the app, connected
   const x = col(1);
   win(ov, x + 14, 24, 246, 262, 'app', 'Claude or ChatGPT');
-  folderGlyph(ov, x + 30, 76, 26, 18);
-  txt('folder', 'My talk', { class: 'file', x: x + 64, y: 91 }, ov);
-  bubble(ov, ['b-ask1', 'b-ask2'], ['Read this deck’s notes', 'and connect to it.'], x + 248, 112);
-  bubble(ov, ['b-ok'], ['Connected'], x + 26, 196, { align: 'left', bg: 'green-tint', cls: 'msg ok', icon: tick });
+  bubble(ov, ['b-ask1', 'b-ask2'], ['Read this deck’s notes', 'and connect to it.'], x + 248, 70);
+  bubble(ov, ['b-ok'], ['Connected'], x + 26, 144, { align: 'left', bg: 'green-tint', cls: 'msg ok', icon: tick });
+  // the box to type in, and the folder picker under it
+  mk('rect', { x: x + 26, y: 198, width: 222, height: 34, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, ov);
+  mk('rect', { x: x + 26, y: 242, width: 124, height: 32, rx: 8, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, ov);
+  folderGlyph(ov, x + 36, 253, 20, 14);
+  txt('folder', 'My talk', { class: 'file', x: x + 64, y: 264 }, ov);
 }
 { // 3. the request, the slides in the deck
   const x = col(2);
@@ -302,19 +323,16 @@ for (let k = 0; k < 4; k++) {
   bubble(ov, ['c-ask1', 'c-ask2'], ['Make 10 slides about', 'my topic.'], x + 260, 24);
   for (let n = 0; n < 6; n++) thumb(ov, x + 30 + (n % 3) * 76, 156 + Math.floor(n / 3) * 56, 66, 42);
 }
-{ // 4. comments beside the slides, done
+{ // 4. the comment, the slide it changed
   const x = col(3);
-  [26, 104].forEach((y, r) => {
-    thumb(ov, x + 14, y, 108, 62, { title: r === 0 });
-    mk('rect', { x: x + 132, y, width: 128, height: 62, rx: 6, fill: '#fff', style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, ov);
-  });
-  mk('rect', { x: x + 25, y: 114, width: 46, height: 6, rx: 1.5, style: fill('accent') }, ov);
-  txt('d-c1', 'Add a chart', { class: 'file', x: x + 144, y: 62 }, ov);
-  txt('d-c2', 'Shorter title', { class: 'file', x: x + 144, y: 140 }, ov);
-  bubble(ov, ['d-ask'], ['Do my comments.'], x + 260, 196);
-  [[0, 10, 'accent'], [1, 16, 'sky'], [2, 22, 'accent']].forEach(([n, h, c]) =>
-    mk('rect', { x: x + 84 + n * 10, y: 82 - h, width: 7, height: h, style: fill(c) }, ov));
-  [26, 104].forEach(y => tick(ov).setAttribute('transform', `translate(${x + 248},${y - 8})`));
+  mk('rect', { x: x + 14, y: 26, width: 246, height: 44, rx: 6, fill: '#fff', style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, ov);
+  txt('d-cm', 'Make it more interactive', { class: 'file', x: x + 26, y: 54 }, ov);
+  mk('rect', { x: x + 14, y: 86, width: 246, height: 132, rx: 4, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, ov);
+  mk('rect', { x: x + 28, y: 108, width: 84, height: 9, rx: 2, style: fill('accent') }, ov);
+  mk('rect', { x: x + 28, y: 126, width: 64, height: 5, rx: 2, style: fill('line') }, ov);
+  hexField(ov, x + 134, 112, 9, 7, 7, (c, r) => { const t = HEXES(c, r); return t && [t, null]; });
+  tick(ov).setAttribute('transform', `translate(${x + 248},${76})`);
+  bubble(ov, ['d-ask'], ['Do my comments.'], x + 260, 236);
 }
 
 /* ---- scene 1: the files go into a new folder ---------------------------- */
@@ -355,32 +373,33 @@ for (let k = 0; k < 4; k++) {
   mk('path', { d: 'M57,129 H276 V459 H66 a9,9 0 0 1 -9,-9 Z', style: fill('tint') }, g);
   txt('a-new', '+  New chat', { class: 'callout', x: 80, y: 168 }, g);
   [150, 118, 136, 96].forEach((w, n) => mk('rect', { x: 80, y: 204 + n * 30, width: w, height: 10, rx: 5, style: fill('rule') }, g));
-  // the folder picker, its list, the choice
-  txt('a-pick', 'Work in a folder', { class: 'sub', x: 320, y: 150 }, g);
-  mk('rect', { x: 320, y: 158, width: 330, height: 46, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, g);
-  play(txt('a-choose', 'Choose a folder…', { class: 'hint', x: 342, y: 188 }, g), 'gone', 1.9);
-  mk('path', { d: 'M620,178 l7,8 l7,-8', fill: 'none', style: 'stroke:var(--muted)', 'stroke-width': 2.4, 'stroke-linecap': 'round' }, g);
+  // the box to type in
+  mk('rect', { x: 320, y: 318, width: 870, height: 52, rx: 14, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, g);
+  play(txt('a-ask0', 'Ask anything', { class: 'hint', x: 344, y: 351 }, g), 'gone', 2.8);
+  // under it, the folder picker; its list opens upward, the choice drops into it
+  mk('rect', { x: 320, y: 384, width: 290, height: 42, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, g);
+  folderGlyph(g, 344, 398, 24, 17, 'line');
+  play(txt('a-choose', 'Choose a folder…', { class: 'hint', x: 380, y: 413 }, g), 'gone', 1.9);
+  mk('path', { d: 'M580,398 l7,8 l7,-8', fill: 'none', style: 'stroke:var(--muted)', 'stroke-width': 2.4, 'stroke-linecap': 'round' }, g);
   const list = play(G(play(G(g), 'gone', 2.6)), 'in', .4);   // one animation per element: in, then the parent goes
-  mk('rect', { x: 320, y: 212, width: 330, height: 172, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, list);
+  mk('rect', { x: 320, y: 196, width: 330, height: 176, rx: 10, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, list);
   const names = [['Desktop', 0], ['Documents', 0], ['My talk', 26], ['Downloads', 0]];
-  play(mk('rect', { x: 328, y: 220 + 2 * 40, width: 314, height: 38, rx: 8, style: fill('blue-tint') }, list), 'in', 1.1);
+  play(mk('rect', { x: 328, y: 204 + 2 * 40, width: 314, height: 38, rx: 8, style: fill('blue-tint') }, list), 'in', 1.1);
   names.forEach(([n, ind], r) => {
-    folderGlyph(list, 344 + ind, 232 + r * 40, 24, 17);
-    txt(r === 2 ? 'folder' : `a-dir${r}`, n, { class: 'name', x: 380 + ind, y: 246 + r * 40 }, list);
+    folderGlyph(list, 344 + ind, 216 + r * 40, 24, 17);
+    txt(r === 2 ? 'folder' : `a-dir${r}`, n, { class: 'name', x: 380 + ind, y: 230 + r * 40 }, list);
   });
-  const chip = play(G(g), 'flyin', 1.7, { fx: '26px', fy: '138px' });
-  mk('rect', { x: 326, y: 162, width: 280, height: 38, fill: '#fff' }, chip);
-  folderGlyph(chip, 344, 174, 24, 17);
-  txt('folder', 'My talk', { class: 'name', x: 380, y: 188 }, chip);
+  const chip = play(G(g), 'flyin', 1.7, { fx: '26px', fy: '-102px' });
+  mk('rect', { x: 336, y: 390, width: 124, height: 32, rx: 6, fill: '#fff' }, chip);
+  folderGlyph(chip, 344, 398, 24, 17);
+  txt('folder', 'My talk', { class: 'name', x: 380, y: 412 }, chip);
   // the request typed, sent, answered
-  mk('rect', { x: 320, y: 396, width: 870, height: 52, rx: 14, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, g);
-  play(txt('a-ask0', 'Ask anything', { class: 'hint', x: 344, y: 429 }, g), 'gone', 2.8);
-  play(typed(g, 'sc2-ask', 'Read this deck’s notes and connect to it.', 344, 429, 'say', 'white', 2.9, 1.5), 'gone', 4.7);
+  play(typed(g, 'sc2-ask', 'Read this deck’s notes and connect to it.', 344, 351, 'say', 'white', 2.9, 1.5), 'gone', 4.7);
   const send = play(G(g), 'pulse', 4.4);
-  mk('circle', { cx: 1158, cy: 422, r: 18, style: fill('accent') }, send);
-  mk('path', { d: 'M1158,431 V413 M1151,420 l7,-7 l7,7', fill: 'none', stroke: '#fff', 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, send);
-  play(bubble(g, ['sc2-ask'], ['Read this deck’s notes and connect to it.'], 1190, 236, { cls: 'say', lh: 27 }), 'in', 4.8);
-  play(bubble(g, ['sc2-ok1', 'sc2-ok2'], ['Connected: I have read this deck’s notes.', 'Keep it open in Chrome or Edge.'], 320, 296,
+  mk('circle', { cx: 1158, cy: 344, r: 18, style: fill('accent') }, send);
+  mk('path', { d: 'M1158,353 V335 M1151,342 l7,-7 l7,7', fill: 'none', stroke: '#fff', 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, send);
+  play(bubble(g, ['sc2-ask'], ['Read this deck’s notes and connect to it.'], 1190, 150, { cls: 'say', lh: 27 }), 'in', 4.8);
+  play(bubble(g, ['sc2-ok1', 'sc2-ok2'], ['Connected: I have read this deck’s notes.', 'Keep it open in Chrome or Edge.'], 320, 212,
     { align: 'left', bg: 'green-tint', cls: 'say', lh: 27, icon: tick }), 'in', 5.6);
 }
 
@@ -413,42 +432,48 @@ for (let k = 0; k < 4; k++) {
   mk('circle', { cx: 1120, cy: 288, r: 16, style: fill('amber') }, pic);
 }
 
-/* ---- scene 4: comments beside the slides, the agent doing them ---------- */
+/* ---- scene 4: one comment, the same slide before and after -------------- */
 {
   const g = document.getElementById('sc4');
   header(g, 3);
   win(g, 56, 90, 1168, 370, 'deck', FILES[0], 40);
-  txt('e-slide', 'Slide', { class: 'eyebrow', x: 76, y: 156 }, g);
-  txt('e-what', 'What should change?', { class: 'eyebrow', x: 212, y: 156 }, g);
-  const rowY = [166, 242, 318];
-  rowY.forEach((y, r) => {
-    thumb(g, 76, y, 118, 64, { title: r !== 2, sel: r === 1 });
-    mk('rect', { x: 208, y, width: 250, height: 64, rx: 6, fill: '#fff', style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, g);
-    const ph = txt(`e-ph${r}`, 'Add a comment…', { class: 'hint', x: 222, y: y + 39, style: 'font-size:18px' }, g);
-    if (r) play(ph, 'gone', r === 1 ? .4 : 1.5);
-  });
-  // slide 3's title, which the agent shortens
-  play(mk('rect', { x: 76 + 11.8, y: 318 + 10.2, width: 53, height: 6.4, rx: 1.5, style: fill('accent') }, g), 'shrinkx', 4.4);
-  typed(g, 'd-c1', 'Add a chart', 222, 281, 'name', 'white', .4, .9);
-  typed(g, 'd-c2', 'Shorter title', 222, 357, 'name', 'white', 1.5, .9);
-  // the agent, asked
+  // the comment beside the slide
+  txt('e-what', 'What should change?', { class: 'eyebrow', x: 76, y: 160 }, g);
+  mk('rect', { x: 76, y: 172, width: 382, height: 64, rx: 8, fill: '#fff', style: 'stroke:var(--rule)', 'stroke-width': 1.5 }, g);
+  play(txt('e-ph', 'Add a comment…', { class: 'hint', x: 94, y: 212 }, g), 'gone', .4);
+  typed(g, 'd-cm', 'Make it more interactive', 94, 212, 'name', 'white', .4, 1.2);
+  tick(play(G(G(g, { transform: 'translate(424,194)' })), 'popin', 5.2));
+  // the agent, asked; its answer
   mk('rect', { x: 76, y: 398, width: 382, height: 50, rx: 14, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 2 }, g);
-  play(txt('e-ask0', 'Ask Claude or ChatGPT', { class: 'hint', x: 96, y: 430, style: 'font-size:18px' }, g), 'gone', 2.6);
-  typed(g, 'd-ask', 'Do my comments.', 96, 430, 'name', 'white', 2.7, .9);
-  const send = play(G(g), 'pulse', 3.7);
+  play(txt('e-ask0', 'Ask Claude or ChatGPT', { class: 'hint', x: 96, y: 430, style: 'font-size:18px' }, g), 'gone', 1.9);
+  play(typed(g, 'd-ask', 'Do my comments.', 96, 430, 'name', 'white', 2.0, .9), 'gone', 3.2);
+  const send = play(G(g), 'pulse', 2.9);
   mk('circle', { cx: 430, cy: 423, r: 16, style: fill('accent') }, send);
   mk('path', { d: 'M430,431 V415 M424,421 l6,-6 l6,6', fill: 'none', stroke: '#fff', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, send);
-  // the open slide (the second), changing
-  mk('rect', { x: 484, y: 140, width: 720, height: 306, rx: 4, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, g);
-  mk('rect', { x: 524, y: 180, width: 330, height: 24, rx: 3, style: fill('accent') }, g);
-  [[236, 290], [266, 250], [296, 270], [326, 210]].forEach(([y, w]) =>
-    mk('rect', { x: 524, y, width: w, height: 9, rx: 3, style: fill('rule') }, g));
-  play(mk('line', { x1: 880, y1: 414, x2: 1170, y2: 414, style: 'stroke:var(--line)', 'stroke-width': 2 }, g), 'wipe', 3.9);
-  [[0, 70, 'accent'], [1, 120, 'sky'], [2, 170, 'accent'], [3, 220, 'sky']].forEach(([n, h, c]) =>
-    play(mk('rect', { x: 900 + n * 66, y: 414 - h, width: 46, height: h, style: fill(c) }, g), 'growin', 4.0 + .15 * n));
-  [[0, 10, 'accent'], [1, 16, 'sky'], [2, 22, 'accent']].forEach(([n, h, c]) =>
-    play(mk('rect', { x: 162 + n * 8, y: 300 - h, width: 6, height: h, style: fill(c) }, g), 'growin', 4.2 + .1 * n));
-  [242, 318].forEach((y, r) => tick(play(G(G(g, { transform: `translate(430,${y + 22})` })), 'popin', 4.8 + .2 * r)));
+  play(bubble(g, ['d-ask'], ['Do my comments.'], 458, 256, { cls: 'say', lh: 27 }), 'in', 3.3);
+  play(bubble(g, ['e-done'], ['Done. Try clicking it.'], 76, 318, { align: 'left', bg: 'green-tint', cls: 'say ok', lh: 27, icon: tick }), 'in', 5.0);
+  // the slide: static before, the living hexagons after
+  play(txt('e-before', 'Before', { class: 'eyebrow', x: 484, y: 160 }, g), 'gone', 3.6);
+  play(txt('e-after', 'After', { class: 'eyebrow', x: 484, y: 160, style: fill('accent') }, g), 'in', 3.7);
+  mk('rect', { x: 484, y: 172, width: 720, height: 276, rx: 4, fill: '#fff', style: 'stroke:var(--line)', 'stroke-width': 1.5 }, g);
+  mk('rect', { x: 524, y: 208, width: 290, height: 24, rx: 3, style: fill('accent') }, g);
+  mk('rect', { x: 524, y: 250, width: 210, height: 10, rx: 3, style: fill('line') }, g);
+  [[296, 300], [326, 260], [356, 280], [386, 220]].forEach(([y, w], n) => {
+    const b = play(G(g), 'gone', 3.5 + .08 * n);
+    mk('circle', { cx: 530, cy: y + 4.5, r: 4.5, style: fill('line') }, b);
+    mk('rect', { x: 546, y, width: w, height: 9, rx: 3, style: fill('rule') }, b);
+  });
+  hexField(g, 884, 206, 19, 9, 8, (c, r, cx, cy) => { const t = HEXES(c, r);
+    return t && cx < 1182 && [t, 3.8 + Math.hypot(cx - 1030, cy - 310) / 400]; });
+  [[2, 2], [6, 4], [3, 6]].forEach(([c, r], n) => {   // agents on the field
+    const HW = Math.sqrt(3) * 19, cx = 884 + c * HW + (r % 2) * HW / 2, cy = 206 + r * 28.5;
+    play(mk('circle', { cx, cy, r: 6, style: fill('navy') }, g), 'popin', 4.4 + .1 * n);
+  });
+  // a click on the slide: a ring spreads from it
+  const HW = Math.sqrt(3) * 19, px = 884 + 4 * HW + HW / 2, py = 206 + 3 * 28.5;
+  play(mk('circle', { cx: px, cy: py, r: 26, fill: 'none', style: 'stroke:var(--amber)', 'stroke-width': 3 }, play(G(g), 'popin', 4.7)), 'pulse', 4.9);
+  play(mk('path', { d: `M${px + 6},${py + 6} l0,26 l7,-6 l5,11 l5,-2 l-5,-11 l9,-1 z`, fill: '#fff',
+    style: 'stroke:var(--ink)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, g), 'popin', 4.6);
 }
 
 /* ---- where each scene sits when it is not shown: shrunk onto its column -- */

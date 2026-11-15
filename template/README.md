@@ -85,7 +85,7 @@ and a `--config` for `scripts/build-flow-slide.mjs`.
 
 | slide | figure | source |
 |---|---|---|
-| `sl-start` (hidden, first) | four setup steps for the person who opens the template. Opens on an overview (the four steps side by side); each click zooms into one step drawn large as the screen the person will see, and plays it once (the folder, the desktop app choosing it, the request building slides, comments changing them); the last click returns to the overview. Nothing moves between clicks. `poster-settle` sets how long `posters.py` waits | `figures/start-here.html` |
+| `sl-start` (hidden, first) | four setup steps for the person who opens the template. Opens on an overview (the four steps side by side); each click zooms into one step drawn large as the screen the person will see, and plays it once (the folder; the desktop app choosing it in the picker under the message box; the request building slides; one comment turning a static slide into a moving one, before and after); the last click returns to the overview. Nothing moves between clicks. `poster-settle` sets how long `posters.py` waits | `figures/start-here.html` |
 | `sl-title` (layout `title`) | the living swarm: agents (flat black dots) building, inspecting and correcting a hex field on the right; a hexagon lattice a gold ring lights every 9 s; title and subtitle on the quiet left, entering with `fx.enter` | `figures/swarm-cover.html` |
 | `sl-poll-hive`, after `sl-poll` | a whole open question on one slide: its poll hidden beneath the live clustered hive | `figures/hive-cluster.html` + `data/sample-cluster.json` |
 | `sl-poll-matrix` | the same, answers placed on the presenter's own axes (one axis: beeswarm; two: 2×2) | `figures/hive-matrix.html` + `data/sample-matrix.json` |

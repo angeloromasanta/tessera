@@ -6,9 +6,10 @@
   who is not technical (`template/figures/start-here.html`). It opens on the
   four steps side by side; each click zooms into one step, drawn as the screen
   the person will see, and plays it: the file moved into one folder, that
-  folder chosen in the Claude or ChatGPT desktop app and the agent asked to
-  connect, a request building slides in the open deck, comments beside slides
-  and "Do my comments" changing them. The last click returns to the overview. `template/posters.py` waits
+  folder chosen in the Claude or ChatGPT desktop app (the picker under the
+  message box) and the agent asked to connect, a request building slides in
+  the open deck, and one comment ("Make it more interactive") turning a static
+  slide into a moving field of hexagons, before and after. The last click returns to the overview. `template/posters.py` waits
   for a page's `<meta name="poster-settle">` before shooting its poster.
 
 ## 0.2.0 — 2026-11-15 First public release
