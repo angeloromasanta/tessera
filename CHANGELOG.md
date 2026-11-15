@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-11-15 First public release
 
 - **Every deck points back to the repo.** The shell's head comment and the
   template's in-document agent notes (`SOURCE, DOCS AND UPDATES`, the
@@ -38,7 +38,7 @@
   thumbnail sets `hidden: true`: the slide stays in the deck, faded in the
   list, and the show, its counter and published copies skip it.
 
-## 0.1.0 — 2026-11-05 First public release
+## 0.1.0 — 2026-11-05 First release (private preview)
 
 Tessera is a single-file slide engine: a deck is one `.html` file that edits,
 saves and presents itself, built to be authored by an agent and corrected by a
