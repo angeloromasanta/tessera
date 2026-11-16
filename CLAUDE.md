@@ -14,6 +14,7 @@ an agent builds and a person fixes. `AGENTS.md` points here.
 | `slides/src/live-shim.js`, `game-sdk.js` | browser scripts every live page runs: the live link, the game SDK | `docs/game.md` |
 | `server/poll-worker/` | the poll + game + AI service (Cloudflare Workers Free) | `docs/server-setup.md`, its `README.md` |
 | `scripts/` | build, re-host (`upgrade-deck.mjs`), agent bridge, tests | `docs/agent-live.md` |
+| `.agents/skills/` | the agent skills for **making decks** (`tessera`, `tessera-*`); `.claude/skills/` is a copy | `python tools/skills.py --help` |
 
 ## Routines
 
@@ -42,6 +43,9 @@ the new field.
   tag in a bundle or the document (the JSON escapes every `<`). Never
   regenerate a `docId`.
 - `node --experimental-strip-types scripts/test-sync.ts` after any change to `slides/src/sync/crdt.ts`.
+- **Skills**: edit `.agents/skills/`, then `python tools/skills.py sync` and
+  `check` (the copies agree, `without-tools.md` runs on `template.html`). A
+  skill routes to the guide; a method belongs in `docs/guide/`, not in a skill.
 - New UI strings go into every catalog under `slides/src/i18n/`.
 - Re-stamp agent notes (`node scripts/stamp-agent-notes.mjs`) after a
   convention, layout or slide change in `template.html`.

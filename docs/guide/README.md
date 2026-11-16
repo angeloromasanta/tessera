@@ -104,4 +104,7 @@ value from it, and never paste one into a page or a test.
 - **A workspace may nest tessera** (`tessera/` beside its own `decks/`, its
   own `.env` and template) and add its own agent skills on top: a brand
   template, accounts and links, the author's preferences. Those skills link to
-  these pages instead of restating them, so each fact has one owner.
+  these pages instead of restating them, so each fact has one owner. The
+  general skills come from the checkout: `python tessera/tools/skills.py
+  install .` puts them in the workspace's `.agents/skills/` and
+  `.claude/skills/` (rerun after `git pull`).

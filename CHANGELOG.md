@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Agent skills ship with the repo.** `.agents/skills/` (read by Codex and
+  other agents) and its copy `.claude/skills/` (Claude Code) hold `tessera`,
+  the hub (setup, a new deck, which page of the guide for which job, the rules
+  agents keep breaking, and listening to the comments typed beside the slides:
+  a background listener where the harness can wake on it, otherwise one plain
+  "tell me *do my comments*"), and `tessera-figures`, `tessera-engage`,
+  `tessera-pictures` (the agent's own image tool first, `image_gen.py` only
+  with the person's key), `tessera-pptx` and `tessera-publish`. Each routes to
+  the guide instead of restating it. The hub's `without-tools.md` is a tested
+  Python-only path (no git or Node, or a chat sandbox): the deck's JSON,
+  slides from layouts by role, the editor's requests, and an animated-figure
+  builder that wraps marks and steps into the starter's engine with the
+  deck's own figure colours and body font. `tools/skills.py` keeps the two
+  copies equal (`sync`, `check`, which also runs the toolkit on
+  `template.html`) and installs the skills into a workspace (`install DEST`,
+  rerun after `git pull`; only `tessera*` folders are touched).
+
 - **The template's "Start here" page is an animated how-to** for a reader
   who is not technical (`template/figures/start-here.html`). It opens on the
   four steps side by side; each click zooms into one step, drawn as the screen

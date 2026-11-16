@@ -36,8 +36,17 @@ open-licence typefaces (Fraunces, Manrope), polls, the live hive, a lab and two
 games. Its conventions are in [docs/guide/reference/TEMPLATE.md](docs/guide/reference/TEMPLATE.md).
 
 **With an agent** (Claude Code, Codex, or any agent that reads files and runs
-commands): point it at [docs/guide/](docs/guide/README.md). The tools in
-`tools/` read and write one slide at a time, on disk or in the open editor:
+commands): open this folder in it. It finds the **skills** in
+[.agents/skills/](.agents/skills/) (Codex and others) and `.claude/skills/`
+(Claude Code): `tessera` (the hub: setup, new decks, the comments typed beside
+the slides), `tessera-figures`, `tessera-engage`, `tessera-pictures`,
+`tessera-pptx` and `tessera-publish`. They route to the guide in
+[docs/guide/](docs/guide/README.md). To use them from your own slides folder,
+`python tools/skills.py install <folder>` (again after each `git pull`); with
+no git or Node, or in a chat with only Python, the hub's
+[without-tools.md](.agents/skills/tessera/without-tools.md) does the job. The
+tools in `tools/` read and write one slide at a time, on disk or in the open
+editor:
 
 ```bash
 python tools/slide.py ls decks/my-talk/my-talk.html          # one line per slide
@@ -86,6 +95,7 @@ decks/               your decks (gitignored)
 - **[docs/OVERVIEW.md](docs/OVERVIEW.md)** — how the engine is wired, the
   gotchas, open issues. Then [format.md](docs/format.md),
   [PLATFORM.md](docs/PLATFORM.md), [DECISIONS.md](docs/DECISIONS.md).
+- **[.agents/skills/](.agents/skills/)** — the agent skills for making decks (above).
 - **[CLAUDE.md](CLAUDE.md)** — the working agreement for agents changing the engine.
 
 ## Development
