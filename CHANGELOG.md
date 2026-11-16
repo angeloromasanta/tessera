@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The Python-only path is a script, not code to paste.** The hub skill's
+  `scripts/deck.py` (load and save a deck's JSON, slides from layouts by role,
+  copied slides with fresh poll codes, the editor's requests, the
+  animated-figure builder; a small CLI: `summary`, `notes`, `layouts`,
+  `requests`, `check`) replaces the code blocks of `without-tools.md`, which
+  now documents it. `slide.py` runs from a copy of the tools without the
+  checkout (a skill bundle): with no agent bridge beside it, it edits the
+  file and says live editing is unavailable instead of failing.
+  `tools/skills.py check` imports `deck.py` and runs the guide's examples on
+  `template.html`.
+
 - **Agent skills ship with the repo.** `.agents/skills/` (read by Codex and
   other agents) and its copy `.claude/skills/` (Claude Code) hold `tessera`,
   the hub (setup, a new deck, which page of the guide for which job, the rules

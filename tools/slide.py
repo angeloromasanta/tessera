@@ -204,6 +204,9 @@ def _fmt(path) -> str:
 # ─────────────────────────────────────────────────────────────────── backends
 
 def _bridge():
+    if not BRIDGE.exists():
+        raise SystemExit("no live editing in this copy of the tools (a skill bundle without the "
+                         "tessera checkout): edit the file, and ask the person to reload the deck")
     spec = importlib.util.spec_from_file_location("agent_bridge", BRIDGE)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -403,7 +406,10 @@ def _sessions(b, uri=None, wait=6.0):
 
 
 def live_for_file(path: Path):
-    """The connected editor session that has this deck file open, or None."""
+    """The connected editor session that has this deck file open, or None.
+    A copy of the tools without the bridge (a skill bundle) has no live editor."""
+    if not BRIDGE.exists():
+        return None
     ss = _sessions(_bridge(), Path(path).resolve().as_uri())
     return LiveDeck(ss[0]["sessionId"]) if ss else None
 

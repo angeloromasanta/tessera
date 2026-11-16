@@ -1,7 +1,7 @@
 """The agent skills that ship with tessera: keep the copies agree, install them, test them.
 
     python tools/skills.py sync             copy .agents/skills/tessera* to .claude/skills/ (after editing)
-    python tools/skills.py check            the two copies agree, and without-tools.md runs on template.html
+    python tools/skills.py check            the two copies agree, and scripts/deck.py with without-tools.md's examples runs on template.html
     python tools/skills.py install DEST     put the skills in a workspace (DEST/.agents/skills and
                                             DEST/.claude/skills); run again after `git pull` to update
 
@@ -13,6 +13,8 @@ so a workspace's own skills beside them are left alone.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import filecmp
 import re
 import shutil
@@ -51,26 +53,31 @@ def same(a: Path, b: Path) -> bool:
 
 
 def check_toolkit() -> None:
-    """Run without-tools.md's code on template.html: a deck from layouts, a copied poll, a figure."""
-    text = (SRC / "tessera" / "without-tools.md").read_text(encoding="utf-8")
+    """Run the hub's scripts/deck.py, and without-tools.md's own examples, on
+    template.html: a deck from layouts, a copied poll, the worked figure."""
+    import importlib.util
+    skill = SRC / "tessera"
+    spec = importlib.util.spec_from_file_location("deck", skill / "scripts" / "deck.py")
+    deck = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(deck)
+    text = (skill / "without-tools.md").read_text(encoding="utf-8")
     blocks = re.findall(r"```python\n(.*?)```", text, re.S)
-    ns: dict = {}
-    exec(blocks[0], ns)                          # the toolkit
-    builder = next(b for b in blocks if "def figure_page" in b)
+    basic = next(b for b in blocks if "from deck import *" in b)
     example = next(b for b in blocks if "figure_page(doc, marks, script)" in b)
-    html, span, doc = ns["load"](str(REPO / "template.html"))
-    ns["doc"] = doc
-    exec(builder, ns)
-    cover = ns["from_layout"](doc, ns["layout_id"](doc, "title"))
-    body = ns["from_layout"](doc, ns["layout_id"](doc, "content"))
-    poll_slide = next(s["id"] for s in doc["slides"]
-                      if any(e["type"] == "poll" for e in s["elements"]) and not s.get("hidden"))
-    doc["slides"] = [cover, body, ns["copy_slide"](doc, poll_slide)]
-    exec(example, ns)
     with tempfile.TemporaryDirectory() as tmp:
+        ns = dict(vars(deck))
+        with contextlib.redirect_stdout(io.StringIO()):   # the example prints a slide list
+            exec(basic.replace("from deck import *", "").replace('"template.html"', repr(str(REPO / "template.html")))
+                 .replace('"agents-classroom.html"', repr(str(Path(tmp) / "basic.html"))), ns)
+        html, span, doc = deck.load(str(REPO / "template.html"))
+        ns["doc"] = doc
+        poll_slide = next(s["id"] for s in doc["slides"]
+                          if any(e["type"] == "poll" for e in s["elements"]) and not s.get("hidden"))
+        doc["slides"] = [deck.from_layout(doc, deck.layout_id(doc, "title")), deck.copy_slide(doc, poll_slide)]
+        exec(example, ns)
         out = Path(tmp) / "check.html"
-        ns["save"](html, span, doc, str(out))
-        ns["check"](str(out))
+        deck.save(html, span, doc, str(out))
+        deck.check(str(out))
 
 
 def main() -> int:
@@ -97,7 +104,7 @@ def main() -> int:
         if bad:
             sys.exit(f".claude/skills differs from .agents/skills ({', '.join(sorted(set(bad)))}): run `python tools/skills.py sync`")
         check_toolkit()
-        print("skills: copies agree, without-tools.md runs on template.html")
+        print("skills: copies agree, deck.py and without-tools.md run on template.html")
     return 0
 
 
