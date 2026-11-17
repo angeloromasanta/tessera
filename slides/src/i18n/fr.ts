@@ -962,4 +962,8 @@ export const fr: Catalog = {
   "Back to the slide (Esc)": "Retour à la diapositive (Échap)",
   "Maximize the list to reorder slides in a grid": "Agrandir la liste pour réordonner les diapositives en grille",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "Clic, Maj+clic ou Ctrl+clic pour choisir des diapositives, glisser pour les déplacer · double-clic en ouvre une · Échap revient",
+  "Present in a new tab": "Présenter dans un nouvel onglet",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "Le diaporama dans son propre onglet, celui-ci reste l’éditeur : ce que vous ou l’agent modifiez ici apparaît aussitôt à l’écran. Glissez l’onglet sur le projecteur et appuyez sur F pour le plein écran.",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "Impossible d’ouvrir un nouvel onglet — autorisez les pop-ups pour ce site.",
+  "Edit and send again": "Modifier et renvoyer",
 }

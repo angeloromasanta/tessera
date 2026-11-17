@@ -42,7 +42,9 @@ export function connectAgentBridge(store: Store, flush: () => void, presenting: 
     { token: loaded ? versionToken(loaded) : null, json: loaded }
   // The "Ask the agent" field is not an edit of the document: typing the next
   // request must never hold up the agent working on the last one.
-  const busy = () => pointer || composing || presenting() || (!!document.activeElement?.closest('input, textarea, select, [contenteditable="true"]') && !document.activeElement?.closest('.ed-agent-input')) || !!document.querySelector('dialog[open]')
+  // A show running in this tab does not hold edits back: it repaints the
+  // slides they change (present.ts, live). Only goTo waits for the show.
+  const busy = () => pointer || composing || (!!document.activeElement?.closest('input, textarea, select, [contenteditable="true"]') && !document.activeElement?.closest('.ed-agent-input')) || !!document.querySelector('dialog[open]')
   const agent = new AgentEditor(store, busy, flush)
   window.addEventListener('pointerdown', () => { pointer = true }, true)
   window.addEventListener('pointerup', () => { pointer = false }, true)

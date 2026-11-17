@@ -962,4 +962,8 @@ export const zhHant: Catalog = {
   "Back to the slide (Esc)": "返回投影片 (Esc)",
   "Maximize the list to reorder slides in a grid": "最大化清單，以格狀重新排列投影片",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "按一下、Shift+按一下或 Ctrl+按一下選取投影片，拖曳以移動 · 按兩下開啟 · Esc 返回",
+  "Present in a new tab": "在新分頁中簡報",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "在獨立分頁中放映，本分頁仍是編輯器：你或代理在這裡的修改會立即顯示在螢幕上。把該分頁拖到投影機上，按 F 全螢幕。",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "無法開啟新分頁 — 請允許此網站的彈出式視窗。",
+  "Edit and send again": "編輯並重新傳送",
 }

@@ -962,4 +962,8 @@ export const de: Catalog = {
   "Back to the slide (Esc)": "Zurück zur Folie (Esc)",
   "Maximize the list to reorder slides in a grid": "Liste maximieren, um Folien im Raster neu zu ordnen",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "Klicken, Umschalt- oder Strg-Klick wählt Folien, Ziehen verschiebt sie · Doppelklick öffnet eine · Esc kehrt zurück",
+  "Present in a new tab": "In einem neuen Tab präsentieren",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "Die Diashow in einem eigenen Tab, dieser bleibt der Editor: was Sie oder der Agent hier ändern, erscheint sofort auf dem Bildschirm. Ziehen Sie den Tab auf den Projektor und drücken Sie dort F für Vollbild.",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "Neuer Tab konnte nicht geöffnet werden — Pop-ups für diese Seite erlauben.",
+  "Edit and send again": "Bearbeiten und erneut senden",
 }

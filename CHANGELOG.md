@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Present in a new tab, and the show follows edits.** Present ▾ → Present
+  in a new tab presents the deck in a second tab while the first stays the
+  editor; every edit (yours or an agent's) repaints the changed slides in the
+  running show, which stays on its slide. Agent edits no longer wait for a
+  show to end.
+
+- **Finished requests shrink to their green orb.** In the review list a done
+  request is only its orb; hover it for the request and the agent's reply,
+  click it to edit and send again or delete.
+
 - **The Python-only path is a script, not code to paste.** The hub skill's
   `scripts/deck.py` (load and save a deck's JSON, slides from layouts by role,
   copied slides with fresh poll codes, the editor's requests, the

@@ -962,4 +962,8 @@ export const zhHans: Catalog = {
   "Back to the slide (Esc)": "返回幻灯片 (Esc)",
   "Maximize the list to reorder slides in a grid": "最大化列表，以网格重新排序幻灯片",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "单击、Shift+单击或 Ctrl+单击选择幻灯片，拖动以移动 · 双击打开 · Esc 返回",
+  "Present in a new tab": "在新标签页中演示",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "在单独的标签页中放映，本标签页仍是编辑器：你或智能体在这里的修改会立即显示在屏幕上。把该标签页拖到投影仪上，按 F 全屏。",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "无法打开新标签页 — 请允许此网站的弹出窗口。",
+  "Edit and send again": "编辑并重新发送",
 }

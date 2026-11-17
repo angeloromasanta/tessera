@@ -962,4 +962,8 @@ export const es: Catalog = {
   "Back to the slide (Esc)": "Volver a la diapositiva (Esc)",
   "Maximize the list to reorder slides in a grid": "Maximiza la lista para reordenar las diapositivas en cuadrícula",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "Clic, Mayús+clic o Ctrl+clic para elegir diapositivas, arrastra para moverlas · doble clic abre una · Esc vuelve",
+  "Present in a new tab": "Presentar en una pestaña nueva",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "La presentación en su propia pestaña, y esta sigue siendo el editor: lo que tú o el agente cambiéis aquí aparece en pantalla al momento. Arrastra la pestaña al proyector y pulsa F allí para pantalla completa.",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "No se pudo abrir una pestaña nueva — permite las ventanas emergentes para este sitio.",
+  "Edit and send again": "Editar y volver a enviar",
 }

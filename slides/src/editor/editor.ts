@@ -286,6 +286,7 @@ export class Editor {
     main.classList.add('ed-btn-primary')
     const wrap = dropdown(t('More ways to present'), group, (item, sep) => {
       item(ICONS.window, t('Present in this tab'), t('Fills this tab instead of going fullscreen — handy for testing or sharing a window'), () => this.present(false, false))
+      item(ICONS.slideshow, t('Present in a new tab'), t('The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.'), () => this.presentInNewTab())
       item(ICONS.presenter, t('Open speaker view'), t('Notes, controls and slide thumbnails in a separate window — drag it to a second screen. On macOS, open it before going fullscreen.'), () => this.openSpeakerView())
       sep('ed-join-only')
       item(ICONS.key, t('Join code'), t('Join code — the code the audience types to answer this deck’s polls'),
@@ -1147,22 +1148,57 @@ export class Editor {
     if (!w) this.toast(t('Couldn’t open the speaker view — allow pop-ups for this site.'))
   }
 
-  present(fromStart = false, fullscreen = true) {
+  /** Present in a new tab: this tab stays the editor. The new tab opens the
+   *  same file at `#present=<slide id>`; tab-to-tab sync brings it every edit
+   *  made here (or by an agent), and its show repaints the changed slides. */
+  presentInNewTab() {
+    if (this.store.dirty) void this.runAutosave()
+    const url = `${location.href.split('#')[0]}#present=${encodeURIComponent(this.store.slide?.id ?? '')}`
+    const w = window.open(url, '_blank')
+    if (!w) this.toast(t('Couldn’t open a new tab — allow pop-ups for this site.'))
+  }
+
+  /** The show of a tab opened by `presentInNewTab`: it fills the tab (a new
+   *  tab has no click to go fullscreen with; F does it). Leaving fullscreen
+   *  comes back to the tab-filled show; Esc there closes the tab, or, when the
+   *  browser will not close it, leaves this tab in the editor. */
+  presentInThisTab(slideId: string) {
+    const i = this.store.doc.slides.findIndex((s) => s.id === slideId)
+    const run = (at: number) => this.present(false, false, at, (last, how) => {
+      if (how === 'fullscreen') { setTimeout(() => run(last), 0); return true }
+      window.close()
+      return false
+    })
+    run(Math.max(0, i))
+  }
+
+  present(fromStart = false, fullscreen = true, at?: number, onEnd?: (last: number, how?: 'fullscreen') => boolean) {
     if (this.presenting) return
     // They've started a slideshow — retire the first-run nudge for good.
     try { localStorage.setItem('tessera-slideshow-started', '1') } catch { /* storage off */ }
     this.canvas.commitTextEdit()
     this.presenting = true
-    startPresentation(this.store.doc, fromStart ? 0 : this.store.currentIndex, (last) => {
+    startPresentation(this.store.doc, at ?? (fromStart ? 0 : this.store.currentIndex), (last, how) => {
       this.presenting = false
+      if (onEnd?.(last, how)) return // the caller starts the show again
       this.store.goTo(last)
       this.canvas.render()
     }, {
       fullscreen,
+      // Edits made while the show runs (another tab of this deck, an agent)
+      // repaint the slides they change.
+      live: {
+        doc: () => this.store.doc,
+        on: (fn) => {
+          const offs = [this.store.on('doc', fn), this.store.on('slides', fn)]
+          return () => offs.forEach((off) => off())
+        },
+      },
       // A summary produced on stage is a result worth keeping: commit it so it
       // joins the undo history and rides the normal save/autosave paths.
       onPollSummary: (elId, summary) => {
-        const el = this.store.element(elId)
+        // any slide's poll: the show may be on a slide this tab's editor is not
+        const el = this.store.doc.slides.flatMap((s) => s.elements).find((e) => e.id === elId)
         if (!el || el.type !== 'poll') return
         this.store.commit(() => {
           el.summary = summary

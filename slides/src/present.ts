@@ -26,13 +26,19 @@ export interface PresentSession {
 export function startPresentation(
   doc: TesseraDoc,
   startIndex: number,
-  onExit: (lastIndex: number) => void,
+  /** `how` is 'fullscreen' when leaving fullscreen ended the show */
+  onExit: (lastIndex: number, how?: 'fullscreen') => void,
   opts: {
     fullscreen?: boolean
     /** Called when a poll is summarized on a slide. present.ts holds `doc` but
      *  not the store, so the editor supplies the commit — that keeps the summary
      *  in the undo history and on the normal save paths. */
     onPollSummary?: (elId: string, summary: string) => void
+    /** The document being edited while the show runs (this tab's editor, or
+     *  another tab of the deck through sync): `on` is called with a callback
+     *  for every change, and the show repaints the slides that changed in
+     *  place, adds, removes and reorders the rest, and stays on its slide. */
+    live?: { doc: () => TesseraDoc; on: (fn: () => void) => () => void }
   } = {},
 ): PresentSession {
   const overlay = document.createElement('div')
@@ -49,11 +55,15 @@ export function startPresentation(
   revealEl.appendChild(slidesEl)
   overlay.appendChild(revealEl)
 
-  doc.slides.forEach((slide) => {
-    const section = document.createElement('section')
+  /** (Re)build one slide's section from the model: a live edit refills the
+   *  same element so Reveal keeps its place. */
+  const fillSection = (section: HTMLElement, slide: Slide) => {
+    section.textContent = ''
+    section.dataset.slideId = slide.id
     // Morph slides swap instantly; the Flip animation supplies the motion.
     section.dataset.transition = slide.transition === 'morph' ? 'none' : slide.transition
     if (slide.stateOf || slide.hidden) section.dataset.tesseraState = '1' // dimmed in overview
+    else delete section.dataset.tesseraState
     const surface = renderSlide(slide, doc, { hidePlaceholders: true, liveMedia: true })
     // reveal slides start with only the default hover set visible
     if (slide.hover?.type === 'reveal') applyRevealSet(surface, slide.hover.default ?? null, slide.hover.default)
@@ -64,6 +74,10 @@ export function startPresentation(
       aside.textContent = slide.notes
       section.appendChild(aside)
     }
+  }
+  doc.slides.forEach((slide) => {
+    const section = document.createElement('section')
+    fillSection(section, slide)
     slidesEl.appendChild(section)
   })
 
@@ -109,10 +123,15 @@ export function startPresentation(
     return false
   }
   const visibleIndex = (i: number) => doc.slides.slice(0, i + 1).filter((s) => !s.stateOf && !s.hidden).length
-  const visibleTotal = doc.slides.filter((s) => !s.stateOf && !s.hidden).length
+  let visibleTotal = 0
   // real slide indices that appear in linear navigation (states are excluded) —
   // the presenter-view thumbnail rail and grid iterate this.
-  const railIndices = doc.slides.map((_, i) => i).filter(walked)
+  let railIndices: number[] = []
+  const recount = () => {
+    visibleTotal = doc.slides.filter((s) => !s.stateOf && !s.hidden).length
+    railIndices = doc.slides.map((_, i) => i).filter(walked)
+  }
+  recount()
   const goFirst = () => deck.slide(railIndices[0] ?? 0, 0)
   const goLast = () => deck.slide(railIndices[railIndices.length - 1] ?? 0, 0)
 
@@ -148,6 +167,14 @@ export function startPresentation(
   overlay.classList.toggle('reduce-motion', reduceMotion)
 
   let exited = false
+  const onPollSummary = opts.onPollSummary && ((elId: string, summary: string) => {
+    opts.onPollSummary!(elId, summary)
+    // the show already displays it: re-sign that slide so the live refresh
+    // does not remount the poll on screen
+    const live = opts.live?.doc()
+    const sl = live?.slides.find((x) => x.elements.some((e) => e.id === elId))
+    if (sl) sigs.set(sl.id, slideSig(sl))
+  })
   const deck = new Reveal(revealEl, {
     embedded: true,
     width: doc.size.width,
@@ -202,6 +229,9 @@ export function startPresentation(
   // true when we adopted a speaker window the EDITOR opened — we drive it but
   // must not close it on exit (it lives beyond this present session).
   let speakerAdopted = false
+  // set while the speaker window is open: rebuilds its rail and grid after a
+  // live edit added, removed or reordered slides
+  let rebuildSpeakerRail: (() => void) | null = null
   // Second-screen placement is set up in the EDITOR (properties panel) before
   // presenting — that's where the Window Management permission is granted via a
   // dedicated gesture, and the layout is cached in ../screens. Here we just read
@@ -413,6 +443,13 @@ export function startPresentation(
       if (show) updateSpeakerControls()
     }
     grid.addEventListener('click', (ev) => { if (ev.target === grid) toggleGrid(false) })
+    rebuildSpeakerRail = () => {
+      rail.textContent = ''
+      for (const idx of railIndices) rail.appendChild(thumb(idx, 150))
+      gridInner.textContent = ''
+      gridBuilt = false
+      if (!grid.hasAttribute('hidden')) toggleGrid(true)
+    }
 
     const doNav = (k: string) => {
       if (k === 'first') goFirst()
@@ -498,7 +535,7 @@ export function startPresentation(
   let wentFullscreen = false
   const onFsChange = () => {
     if (document.fullscreenElement === overlay) wentFullscreen = true
-    else if (wentFullscreen && !exited && !openingSpeaker) exit()
+    else if (wentFullscreen && !exited && !openingSpeaker) exit('fullscreen')
   }
   document.addEventListener('fullscreenchange', onFsChange)
   if (opts.fullscreen !== false) enterFullscreen()
@@ -507,9 +544,11 @@ export function startPresentation(
   // click's activation and the notes were never trapped in the fullscreen Space.
   if (speakerWindow()) openSpeaker()
 
-  const exit = () => {
+  const exit = (how?: 'fullscreen') => {
     if (exited) return
     exited = true
+    stopLive?.()
+    clearTimeout(liveTimer)
     // measurements are keyed by slide INDEX, so they'd be wrong for the next
     // show if the deck was edited in between — never carry them across
     symCache.clear()
@@ -551,7 +590,7 @@ export function startPresentation(
         setSpeakerWindow(null)
       }
     }
-    onExit(last)
+    onExit(last, how)
   }
 
   // ——— embeds: an arrow key steps a figure first, then moves the show ———
@@ -707,9 +746,12 @@ export function startPresentation(
   }, { passive: true })
 
   deck.on('slidechanged', ((event: any) => {
-    const from = event.previousSlide as HTMLElement | undefined
+    // a slide a live edit removed is no longer in the show: nothing to leave
+    const from = (event.previousSlide as HTMLElement | undefined)?.isConnected ? event.previousSlide as HTMLElement : undefined
     const to = event.currentSlide as HTMLElement
     if (!to) return
+    // a live edit moved the slide on screen to another index: nothing to play
+    if (from === to) { updateSpeaker(); return }
     const fromIdx = from ? [...slidesEl.children].indexOf(from) : -1
     const toIdx = [...slidesEl.children].indexOf(to)
     releaseEmbedFocus() // however we got here — a click, a swipe, the speaker view
@@ -746,7 +788,7 @@ export function startPresentation(
     if (from) disposeLiveCharts(doc.slides[fromIdx], from)
     mountLiveCharts(doc.slides[toIdx], to, morphing ? doc.slides[fromIdx] : undefined)
     if (from) disposeLivePolls(from)
-    mountLivePolls(doc, doc.slides[toIdx], to, opts.onPollSummary)
+    mountLivePolls(doc, doc.slides[toIdx], to, onPollSummary)
     slideEntered(to)
     if (from) pauseMediaIn(from)
     startMediaIn(to)
@@ -773,6 +815,96 @@ export function startPresentation(
     }
   })
 
+  // ——— live edits: the deck changes while it is being shown ———
+  // Another tab of this deck (Present ▾ → Present in a new tab) or an agent
+  // edits the document; each change repaints only what changed. A slide's
+  // signature leaves out its notes (they only reach the speaker view) and its
+  // comments (the review list), so typing a comment never reloads a figure.
+  const slideSig = (s: Slide) => JSON.stringify({ ...s, notes: undefined, comments: undefined })
+  const deckSig = (d: TesseraDoc) =>
+    JSON.stringify([d.title, d.meta, d.size, d.theme, d.present, d.poll, d.fonts, d.layouts])
+  const sigs = new Map<string, string>()
+  let shownDeckSig = deckSig(doc)
+  for (const sl of doc.slides) sigs.set(sl.id, slideSig(sl))
+  let liveTimer = 0
+  const refresh = () => {
+    if (exited || !opts.live) return
+    if (!deckReady) { liveTimer = window.setTimeout(refresh, 300); return }
+    doc = opts.live.doc()
+    const nextDeckSig = deckSig(doc)
+    const all = nextDeckSig !== shownDeckSig
+    shownDeckSig = nextDeckSig
+    const before = [...slidesEl.children] as HTMLElement[]
+    const cur = before[deck.getIndices().h]
+    const byId = new Map(before.map((sec) => [sec.dataset.slideId!, sec]))
+    let curChanged = false
+    const order: HTMLElement[] = doc.slides.map((sl) => {
+      const sig = slideSig(sl)
+      let sec = byId.get(sl.id)
+      byId.delete(sl.id)
+      if (sec && !all && sigs.get(sl.id) === sig) {
+        // notes alone: no repaint
+        const aside = sec.querySelector('aside.notes')
+        if ((aside?.textContent ?? '') !== (sl.notes ?? '')) {
+          if (sl.notes) {
+            const a = aside ?? sec.appendChild(Object.assign(document.createElement('aside'), { className: 'notes' }))
+            a.textContent = sl.notes
+          } else aside?.remove()
+        }
+        return sec
+      }
+      sigs.set(sl.id, sig)
+      if (sec) {
+        if (sec === cur) {
+          curChanged = true
+          postSlide(sec, false) // the old figures hear `on: false` before they go
+          pauseMediaIn(sec)
+          anim.killTweensOf(sec.querySelectorAll('.tessera-el'))
+          disposeLiveCharts(sl, sec)
+        }
+        disposeLivePolls(sec)
+      } else sec = document.createElement('section')
+      fillSection(sec, sl)
+      return sec
+    })
+    // slides that are gone
+    for (const [id, sec] of byId) {
+      sigs.delete(id)
+      disposeLivePolls(sec)
+      pauseMediaIn(sec)
+      sec.remove()
+    }
+    const moved = order.length !== before.length || order.some((sec, i) => before[i] !== sec)
+    if (moved) {
+      for (const sec of order) slidesEl.appendChild(sec) // appendChild moves: the order is the doc's
+      symCache.clear() // measurements are keyed by index
+      recount()
+      deck.sync()
+      // stay on the slide that was on screen; if it is gone, the nearest one
+      const at = cur && cur.isConnected ? order.indexOf(cur) : Math.min(deck.getIndices().h, order.length - 1)
+      deck.slide(Math.max(0, at), 0)
+      rebuildSpeakerRail?.()
+    }
+    if (curChanged && cur?.isConnected) {
+      const i = order.indexOf(cur)
+      const sl = doc.slides[i]
+      if (sl) {
+        wireHoverFocus(sl, cur)
+        mountLiveCharts(sl, cur)
+        mountLivePolls(doc, sl, cur, onPollSummary)
+        cacheSlideSymbols(doc, cur, i)
+        if (slideOn === cur) postSlide(cur, true)
+        startMediaIn(cur)
+      }
+    }
+    deck.layout()
+    updateSpeaker()
+  }
+  const stopLive = opts.live?.on(() => {
+    clearTimeout(liveTimer)
+    liveTimer = window.setTimeout(refresh, 250)
+  })
+
   deck.initialize().then(() => {
     deckReady = true
     if (startIndex > 0) deck.slide(startIndex, 0)
@@ -796,7 +928,7 @@ export function startPresentation(
       cacheSlideSymbols(doc, first, startIndex)
       mountLiveCharts(doc.slides[startIndex], first)
       // the opening slide never fires slidechanged, so it mounts here too
-      mountLivePolls(doc, doc.slides[startIndex], first, opts.onPollSummary)
+      mountLivePolls(doc, doc.slides[startIndex], first, onPollSummary)
       // ...and its figures are told the show is on their slide
       slideEntered(first)
       startMediaIn(first)

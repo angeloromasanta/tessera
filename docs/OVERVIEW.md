@@ -16,7 +16,7 @@ button (Saved / Saving… / Not saved to the file; a click or ⌘S saves) and it
 ▾ (Save a copy…, Version history…; Export a frozen copy…,
 `editor/export-frozen.ts`; Export answers (Excel) and Clear answers… for a
 deck with questions; Pause agent edits where an agent can connect), then
-**Present ▾** (Present in this tab, Open speaker view, and for a deck with
+**Present ▾** (Present in this tab, Present in a new tab, Open speaker view, and for a deck with
 questions the join code, `editor/joincode.ts`). A slide an agent changes gets a
 green ring on its thumbnail for 5 s after each edit (`tessera-agent-edited`
 from `agent-editor.ts`; request status and replies do not count).
@@ -32,9 +32,9 @@ Up on the field's first line and Down on its last move to the row above or
 below and open that slide (`moveRow`, `RowAsk.atEdge`, which measures wrapped
 lines on a hidden copy). A row shows its latest request; earlier ones fold
 behind "n earlier". Each request starts with a status dot (hollow waiting,
-pulsing blue working, green done) and its text turns green when done;
+pulsing blue working, green done);
 hovering the dot shows the agent's reply (`.ed-reply-pop`, one fixed box on
-the body so the scrolling list does not clip it). In the review list the
+the body so the scrolling list does not clip it). A done request shrinks to its green orb (`.ed-row-orbs`, `RowAsk.orb`): hovering it shows the request and the reply, a click pins the box with Edit and send again and Delete. In the review list the
 thumbnails carry no orbs; the narrow list and the grid, which have no fields,
 keep them (`requestOrbs`, `paintOrbs(…, withOrbs)`). The top bar says "{agent} is working on N requests"
 and the canvas chip "{agent} is updating this slide" while a request on the
@@ -603,3 +603,20 @@ check for a built shell.
   rise in, so it degrades gracefully between unrelated slides.
 
 Design sketches for features not built yet: `docs/design/`.
+
+**Present in a new tab, live edits in the show (2026-11-17).** Present ▾ →
+Present in a new tab opens the same file at `#present=<slide id>`
+(`Editor.presentInNewTab`, `main.ts`); that tab drops the hash, presents
+tab-filled from that slide (F for fullscreen; leaving fullscreen comes back to
+the tab-filled show; Esc closes the tab, or falls back to the editor when the
+browser will not close it). The first tab stays the editor; tab-to-tab sync
+carries every edit, and `startPresentation(…, { live })` repaints in place
+only the slides whose signature changed (the slide minus `notes` and
+`comments`; title, theme, size, fonts and layouts repaint all), adds, removes
+and reorders sections, `deck.sync()`s and stays on the slide on screen.
+Notes alone patch the aside and the speaker view. A poll summary the show
+writes re-signs its slide so the poll on screen is not remounted. Agent edits
+no longer wait for a show in their own tab (`agent-bridge.ts` `busy`); only
+`goTo` does. Tabs pair by `docId`, so a template instantiation (a new docId
+on every open) pairs only once saved.
+

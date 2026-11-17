@@ -1588,6 +1588,19 @@ body.ed-phone-on .ed-recover { display: none; }
 .ed-reply-pop-head { font-size: 11px; font-weight: 600; color: #6b7280; }
 .ed-reply-pop-head.done { color: #1a7f4b; }
 .ed-reply-pop-text { margin-top: 4px; }
+/* a finished request is only its orb: the box carries what was asked, and a
+   click pins it with Edit and Delete */
+.ed-row-orbs { display: flex; flex-wrap: wrap; gap: 0 2px; }
+.ed-row-orb { cursor: pointer; height: 15px; }
+.ed-row-orb::after { top: 3px; }
+.ed-reply-pop-ask { margin-top: 4px; color: #4b5563; padding-inline-start: 8px; border-inline-start: 2px solid #d5dae2; }
+.ed-reply-pop.pinned { pointer-events: auto; }
+.ed-reply-pop-actions { display: flex; gap: 6px; margin-top: 8px; }
+.ed-reply-pop-actions button {
+  border: 1px solid var(--line, #e3e6ec); background: #fff; border-radius: 5px; padding: 3px 9px;
+  font: inherit; font-size: 12px; color: #1f2430; cursor: pointer;
+}
+.ed-reply-pop-actions button:hover { background: #f3f5f8; }
 .ed-row-x { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; opacity: 0; }
 .ed-row-req:hover .ed-row-x, .ed-row-x:focus-visible { opacity: 1; }
 .ed-row-x:hover { color: var(--ink); }

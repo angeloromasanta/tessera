@@ -147,8 +147,14 @@ watchDevFigures(store, () => session.flush())
 watchIdentity(store, (other) => editor.showIdentityClash(other))
 
 // Opening a link ending in #present starts the show immediately (player mode).
+// #present=<slide id> is the tab "Present in a new tab" opens: the show fills
+// the tab from that slide and follows the edits made in the editor's tab.
 if (location.hash === '#present') {
   editor.present(true)
+} else if (location.hash.startsWith('#present=')) {
+  const slideId = decodeURIComponent(location.hash.slice('#present='.length))
+  history.replaceState(null, '', location.href.split('#')[0]) // a reload opens the editor
+  editor.presentInThisTab(slideId)
 }
 
 // Dismiss the boot splash (inline in index.html so it paints before this

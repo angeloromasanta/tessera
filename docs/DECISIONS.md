@@ -1281,3 +1281,24 @@ stored, so the answer format is unchanged; the card still reads `lost`,
 `working` and `finished` and takes each phone's latest, and a phone whose
 latest is not `finished` is just not counted. The privacy line stays in the
 footer.
+
+## 2026-11-17 — present in a new tab; finished requests are their orbs
+
+The maintainer could not edit while presenting: the show covers its tab and
+agent edits waited for it to end. Present ▾ gains **Present in a new tab**: a
+second tab of the same file presents, the first stays the editor, and the
+show repaints the slides an edit changes (tab-to-tab sync brings it the
+edits). Chosen over driving a popup window from the editor (the speaker-view
+way), which would need Reveal, styles, fonts and figures re-hosted in a
+blank window, and over reloading the show tab, which would restart figures
+and lose the slide. Since a show now follows edits, an agent's edits apply
+while a show runs in the same tab too; following the slide (`goTo`) still
+waits.
+
+Second request: once the agent finishes a request, its text should go and
+only the green orb remain, with the request and the reply inside it. A done
+request in the review list is now an orb (several sit in a row); hovering
+shows what was asked and the reply, a click pins the box with Edit and send
+again (the request comes back as a line, in edit) and Delete. Waiting,
+working and stopped requests keep their line.
+

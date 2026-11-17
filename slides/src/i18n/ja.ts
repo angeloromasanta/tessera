@@ -962,4 +962,8 @@ export const ja: Catalog = {
   "Back to the slide (Esc)": "スライドに戻る (Esc)",
   "Maximize the list to reorder slides in a grid": "リストを最大化してグリッドで並べ替え",
   "Click, Shift-click or Ctrl-click to pick slides, drag to move them · double-click opens one · Esc returns": "クリック、Shift+クリック、Ctrl+クリックで選択し、ドラッグで移動 · ダブルクリックで開く · Esc で戻る",
+  "Present in a new tab": "新しいタブでプレゼン",
+  "The slideshow in its own tab, so this one stays the editor: what you or the agent change here appears on the screen as you go. Drag the tab to the projector and press F there for fullscreen.": "スライドショーを別タブで開き、このタブはエディターのまま：ここでの自分やエージェントの変更がすぐ画面に反映されます。タブをプロジェクターにドラッグし、そこで F を押すと全画面になります。",
+  "Couldn’t open a new tab — allow pop-ups for this site.": "新しいタブを開けませんでした — このサイトのポップアップを許可してください。",
+  "Edit and send again": "編集して再送信",
 }

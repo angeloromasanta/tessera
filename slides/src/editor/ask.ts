@@ -316,18 +316,26 @@ function caretTop(ta: HTMLTextAreaElement, pos: number): number {
 }
 
 /** The agent's reply to a request, shown while its dot is hovered: one box
- *  for the page, fixed so the scrolling list does not clip it. */
+ *  for the page, fixed so the scrolling list does not clip it. A finished
+ *  request is only its green orb, so its box also carries the request's text
+ *  (`withText`); a click on the orb pins the box and adds its `actions`. */
 let replyPop: HTMLElement | null = null
-function showReply(dot: HTMLElement, c: Comment) {
+let pinnedOn: HTMLElement | null = null
+function showReply(dot: HTMLElement, c: Comment, opts: { withText?: boolean; actions?: HTMLElement } = {}) {
+  if (pinnedOn && pinnedOn !== dot && !opts.actions) return // a pinned box stays until dismissed
   const pop = replyPop ??= document.body.appendChild(div('ed-reply-pop'))
   const st = requestStatus(c)
   pop.textContent = ''
+  pop.classList.toggle('pinned', !!opts.actions)
+  pinnedOn = opts.actions ? dot : null
   pop.append(el('div', `ed-reply-pop-head ${st}`, `${statusWord(st)} · ${ago(c.at)}${st === 'open' && !listening ? ' · ' + t('no agent listening') : ''}`))
+  if (opts.withText) pop.append(el('div', 'ed-reply-pop-ask', c.text))
   for (const r of c.replies ?? []) {
     const p = div('ed-reply-pop-text')
     p.append(el('b', '', r.author), document.createTextNode(' ' + r.text))
     pop.appendChild(p)
   }
+  if (opts.actions) pop.appendChild(opts.actions)
   pop.hidden = false
   const r = dot.getBoundingClientRect()
   const w = pop.offsetWidth, h = pop.offsetHeight
@@ -336,12 +344,26 @@ function showReply(dot: HTMLElement, c: Comment) {
   pop.style.left = `${left}px`
   pop.style.top = `${Math.max(8, top)}px`
 }
-function hideReply() { if (replyPop) replyPop.hidden = true }
+/** Hide the box; a pinned one only when `force` (a click elsewhere, Escape, a repaint). */
+function hideReply(force = false) {
+  if (!replyPop || (pinnedOn && !force)) return
+  replyPop.hidden = true
+  replyPop.classList.remove('pinned')
+  pinnedOn = null
+}
+document.addEventListener('mousedown', (ev) => {
+  if (pinnedOn && !replyPop?.contains(ev.target as Node) && !pinnedOn.contains(ev.target as Node)) hideReply(true)
+}, true)
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && pinnedOn) { ev.stopPropagation(); hideReply(true) }
+}, true)
 
 /**
- * The comment side of one row of the review list: the latest request (its
- * text, and the agent's one-line reply under it in small type), the earlier
- * ones folded behind "n earlier", and a field that is always there. Status is
+ * The comment side of one row of the review list: each finished request
+ * shrinks to a green orb (hover it for the request and the agent's reply,
+ * click it to edit or delete), then the latest request still waiting or being
+ * worked on, earlier ones folded behind "n earlier", and a field that is
+ * always there. Status is
  * not written out: the thumbnail's orbs show it. `slideId` null = the whole deck (doc.requests). The editor keeps one
  * per slide across list rebuilds, so a half-typed comment survives a move.
  */
@@ -354,6 +376,8 @@ export class RowAsk {
   private sig = ''
   /** the request whose text is being edited, if any: the list holds still */
   private editing = ''
+  /** a finished request opened from its orb to be edited: shown as a line */
+  private reopened = ''
 
   constructor(private store: Store, readonly slideId: string | null, hooks: RowAskHooks) {
     // ed-agent-input: typing a comment must not hold up an agent's edits (agent-bridge busy())
@@ -410,14 +434,24 @@ export class RowAsk {
     const s = this.slide()
     const sel = this.selected()
     if (this.editing) { this.sig = ''; return } // repaint once the edit ends
-    const sig = JSON.stringify([reqs, this.open, sel, s?.elements.length === 0])
+    const sig = JSON.stringify([reqs, this.open, sel, s?.elements.length === 0, this.reopened])
     if (sig === this.sig) return
     this.sig = sig
-    hideReply() // its dot may be about to go
+    hideReply(true) // its dot may be about to go
     this.reqs.textContent = ''
-    const shown = this.open ? reqs : reqs.slice(-1)
-    if (reqs.length > 1) {
-      const more = el('button', 'ed-row-more', this.open ? t('Show only the latest') : t('{n} earlier', { n: reqs.length - 1 }))
+    // finished requests are only their orbs; the rest are lines
+    const isOrb = (c: Comment) => requestStatus(c) === 'done' && c.id !== this.reopened
+    const done = reqs.filter(isOrb)
+    const live = reqs.filter((c) => !isOrb(c))
+    if (done.length) {
+      const orbs = div('ed-row-orbs')
+      for (const c of done) orbs.appendChild(this.orb(c))
+      this.reqs.appendChild(orbs)
+    }
+    // the latest, and a finished one opened from its orb to be edited
+    const shown = this.open ? live : live.filter((c, i) => i === live.length - 1 || c.id === this.reopened)
+    if (live.length > 1) {
+      const more = el('button', 'ed-row-more', this.open ? t('Show only the latest') : t('{n} earlier', { n: live.length - 1 }))
       more.addEventListener('click', () => { this.open = !this.open; this.paint() })
       this.reqs.appendChild(more)
     }
@@ -435,6 +469,44 @@ export class RowAsk {
     this.grow()
   }
 
+  /** A finished request: a green orb. Hovering shows what was asked and the
+   *  agent's reply; a click pins that box with Edit and Delete. */
+  private orb(c: Comment): HTMLElement {
+    const orb = el('span', 'ed-row-dot ed-row-orb')
+    orb.dataset.s = 'done'
+    orb.tabIndex = 0
+    orb.setAttribute('role', 'button')
+    orb.setAttribute('aria-label', [statusWord('done'), c.text, ...(c.replies ?? []).map((r) => `${r.author}: ${r.text}`)].join(' · '))
+    const actions = () => {
+      const bar = div('ed-reply-pop-actions')
+      const edit = el('button', '', t('Edit and send again'))
+      edit.addEventListener('click', () => {
+        hideReply(true)
+        this.reopened = c.id
+        this.paint()
+        const text = [...this.reqs.querySelectorAll<HTMLElement>('.ed-row-text')].find((n) => n.dataset.id === c.id)
+        if (text) this.edit(c, text)
+      })
+      const del = el('button', '', t('Delete'))
+      del.addEventListener('click', () => { hideReply(true); removeRequest(this.store, this.slideId, c.id) })
+      bar.append(edit, del)
+      return bar
+    }
+    orb.addEventListener('mouseenter', () => showReply(orb, c, { withText: true }))
+    orb.addEventListener('focus', () => showReply(orb, c, { withText: true }))
+    orb.addEventListener('mouseleave', () => hideReply())
+    orb.addEventListener('blur', () => hideReply())
+    const pin = () => {
+      if (pinnedOn === orb) hideReply(true)
+      else showReply(orb, c, { withText: true, actions: actions() })
+    }
+    orb.addEventListener('click', pin)
+    orb.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); pin() }
+    })
+    return orb
+  }
+
   private line(c: Comment): HTMLElement {
     const st = requestStatus(c)
     const row = div(`ed-row-req ${st}`)
@@ -445,9 +517,10 @@ export class RowAsk {
     dot.setAttribute('aria-label', [statusWord(st), ...(c.replies ?? []).map((r) => `${r.author}: ${r.text}`)].join(' · '))
     dot.addEventListener('mouseenter', () => showReply(dot, c))
     dot.addEventListener('focus', () => showReply(dot, c))
-    dot.addEventListener('mouseleave', hideReply)
-    dot.addEventListener('blur', hideReply)
+    dot.addEventListener('mouseleave', () => hideReply())
+    dot.addEventListener('blur', () => hideReply())
     const text = el('div', 'ed-row-text', c.text)
+    text.dataset.id = c.id
     text.title = st === 'working' ? t('Click to edit: the agent working on it gets the new text')
       : st === 'open' ? t('Click to edit') : t('Click to edit and send again')
     text.addEventListener('click', () => this.edit(c, text))
@@ -473,6 +546,7 @@ export class RowAsk {
       if (done) return
       done = true
       this.editing = ''
+      this.reopened = ''
       const v = ta.value.trim()
       if (save && v && v !== c.text) editRequest(this.store, this.slideId, c.id, v)
       this.sig = ''
