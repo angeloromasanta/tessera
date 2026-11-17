@@ -1263,3 +1263,21 @@ green when done, and hovering the dot shows the reply. The orbs leave the
 thumbnails in the review list ("the green indicator is better there than
 inside the thumbnail"); the narrow list and the grid keep them, having no
 comments to put a dot on.
+
+## 2026-11-17 — lab phone: two buttons; the screen counts only Finished
+
+A lecturer, after running labs from the student side: the phone was too
+wordy. Now (1) two buttons, **I need help** and **Finished**, in place of
+Lost / Working on it / Finished; (2) the AI helper is hidden until I need help
+is pressed, and the button pressed decides what shows under it (the helper,
+or Share what you did; the helper's thread is kept while hidden); (3)
+Finished shows only "Share what you did" with Camera and Upload, no
+explanatory lines, and once a picture is chosen those two give way to the
+picture, the description and Send; (4) the card shows one count, the phones
+that say Finished, with no bar or other states; (5) no "three next steps" on
+Finished (the phone no longer calls `/api/help` mode `next`; the service
+keeps it). Compatibility: I need help stores `st: "lost"`, the value Lost
+stored, so the answer format is unchanged; the card still reads `lost`,
+`working` and `finished` and takes each phone's latest, and a phone whose
+latest is not `finished` is just not counted. The privacy line stays in the
+footer.

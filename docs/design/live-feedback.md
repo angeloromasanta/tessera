@@ -150,7 +150,7 @@ Q&A goes to students as a recap.
 |---|---|
 | phones that follow the on-screen slide | the audience page + `/api/session` (`FORK.md` §1) |
 | anonymous answers in a bucket, read with the lecturer key | the poll service, `server/poll-app/` |
-| a room-state bar (Lost / Working / Finished) | the lab slides in `engage` — the closest model for the UI |
+| a room count (the phones that say Finished; I need help opens the helper) | the lab slides in `engage` — the closest model for the UI |
 | grouping free-text answers | the frozen-hive clustering (`_cluster.js`) |
 | insert and edit slides in the open deck | `slide.py … live`, `agent_live.py` |
 | proposals and replies on the presenter's phone | the `chat-with-agent-box` pattern |

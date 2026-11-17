@@ -15,8 +15,8 @@
 
     left    one light card: the instruction (`do`), 1 to 3 prompt boxes (`types`, side by
             side; [..] in a prompt is a placeholder), and a closing line (`tip`)
-    right   a countdown, and under it the room: Lost / Working on it / Finished, the latest
-            check-in of every phone, read from the activity's bucket every 4 s
+    right   a countdown, and under it the room: how many phones say Finished (each phone's
+            latest check-in), read from the activity's bucket every 4 s
 
     outputs the card's "View outputs" button (bottom right, with a count) opens a wall over the
             card: the screenshots the phones shared, one tile each; a click on a tile shows it
@@ -30,7 +30,9 @@
   The room. window.TESSERA_EMBED.poll.previous is the nearest poll at or before this slide;
   it is read only when its question starts with "Lab check-in" (the lab's own activity).
   Each answer's text is JSON {v:1, pid, st}, st = lost | working | finished; the latest
-  answer per pid counts. answers[] needs the lecturer key (x-tessera-lecturer); without it
+  answer per pid counts, and only "finished" is shown. The phone sends "lost" (I need help) or
+  "finished"; "working" comes only from the older three-button phone and is still read, so a
+  phone whose latest answer is not "finished" is simply not counted. answers[] needs the lecturer key (x-tessera-lecturer); without it
   the panel says so instead of drawing zeros. A failed request keeps the last numbers,
   dimmed. Opened with no TESSERA_EMBED (the poster, the editor canvas, shoot.py), or with no
   lab check-in poll before it, the panel shows a sample, tagged "sample", and the wall a few
@@ -71,7 +73,7 @@
     --tint:#F1F5F5; --blue-tint:#E2F0F1;
     --coral:#D2553A; --coral-text:#A83A20;
     /* the room */
-    --lost:#D63A3F; --working:#E8A33D; --finished:#2E9E6A;
+    --finished:#2E9E6A;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;overflow:hidden}
@@ -140,18 +142,14 @@
   #roomnote{letter-spacing:0;text-transform:none;font-size:15px;font-weight:700;color:var(--ink)}
   #roomnote.tag{font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);
                 border:1px solid var(--line);border-radius:5px;padding:0 6px}
-  #roombar{display:flex;height:20px;margin-top:8px;border-radius:10px;overflow:hidden;background:var(--rule)}
-  #roombar i{display:block;height:100%;width:0;transition:width .7s cubic-bezier(.3,.7,.2,1)}
-  #roombar i+i{box-shadow:inset 2px 0 0 #fff}
-  #roombar .lost{background:var(--lost)} #roombar .working{background:var(--working)} #roombar .finished{background:var(--finished)}
-  #legend{display:grid;grid-template-columns:auto auto auto;justify-content:space-between;margin-top:6px}
-  .lg b{display:block;font-size:30px;font-weight:800;line-height:1.08;font-variant-numeric:tabular-nums}
-  .lg span{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;color:var(--muted)}
-  .lg span::before{content:"";width:11px;height:11px;border-radius:3px;background:currentColor}
-  .lg.lost span::before{background:var(--lost)} .lg.working span::before{background:var(--working)}
-  .lg.finished span::before{background:var(--finished)}
-  .lg.finished{text-align:right} .lg.finished span{justify-content:flex-end}
-  .lg.working{text-align:center} .lg.working span{justify-content:center}
+  /* the room: one count, the phones that say Finished */
+  #done{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:8px}
+  #nfinished{font-size:46px;font-weight:800;line-height:1;letter-spacing:-1px;color:var(--finished);
+             font-variant-numeric:tabular-nums;display:inline-block}
+  #nfinished.bump{animation:bump .7s cubic-bezier(.3,.7,.2,1)}
+  @keyframes bump{0%{transform:scale(1)}30%{transform:scale(1.25)}100%{transform:scale(1)}}
+  #done span{display:flex;align-items:center;gap:8px;font-size:21px;font-weight:700;color:var(--ink)}
+  #done span::before{content:"";width:13px;height:13px;border-radius:50%;background:var(--finished)}
   #roomdata{transition:opacity .4s ease}
   #room.stale #roomdata,#room.stale #roomnote{opacity:.4}
   #roomnote{transition:opacity .4s ease}
@@ -205,7 +203,7 @@
   .nav svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
   #shotprev{left:18px} #shotnext{right:18px}
   [hidden]{display:none !important}
-  @media (prefers-reduced-motion:reduce){#roombar i{transition:none}body.over #dial{animation:none}
+  @media (prefers-reduced-motion:reduce){#nfinished.bump{animation:none}body.over #dial{animation:none}
     #nout.news{animation:none} .tile,#shotimg{transition-duration:.15s}}
 </style>
 </head>
@@ -218,7 +216,7 @@
       <div id="wallhead"><span id="walltitle" data-edit="outputs.head">Outputs</span><b id="wallnum" data-no-edit>0</b>
         <button id="wallclose" tabindex="-1"><span data-edit="outputs.close">Close</span></button></div>
       <div id="tiles"></div>
-      <div id="wallempty" hidden><span data-edit="outputs.empty">Nothing shared yet. On the phone: Finished, then Share your result.</span></div>
+      <div id="wallempty" hidden><span data-edit="outputs.empty">Nothing shared yet. On the phone: Finished, then Share what you did.</span></div>
       <div id="shot">
         <div id="shothead"><span id="shotname" data-no-edit></span><span id="shotcap" data-no-edit></span><span id="shotnum" data-no-edit></span>
           <button id="shothide" tabindex="-1"><span data-edit="outputs.hide">Hide</span></button>
@@ -247,15 +245,10 @@
     <div id="room" data-figcheck="ignore">
       <div id="roomhead"><span data-edit="room.head">The room</span><span id="roomnote" data-no-edit></span></div>
       <div id="roomdata">
-        <div id="roombar"><i class="lost"></i><i class="working"></i><i class="finished"></i></div>
-        <div id="legend">
-          <div class="lg lost"><b id="nlost" data-no-edit>0</b><span data-edit="room.lost">Lost</span></div>
-          <div class="lg working"><b id="nworking" data-no-edit>0</b><span data-edit="room.working">Working on it</span></div>
-          <div class="lg finished"><b id="nfinished" data-no-edit>0</b><span data-edit="room.finished">Finished</span></div>
-        </div>
+        <div id="done"><b id="nfinished" data-no-edit>0</b><span data-edit="room.finished">Finished</span></div>
       </div>
       <div id="withheld" data-edit="room.withheld" hidden>Enter the lecturer key in the deck to see the room</div>
-      <div id="help"><span data-edit="room.help">Stuck? Ask the AI helper on your phone</span><span id="join" data-no-edit hidden></span></div>
+      <div id="help"><span data-edit="room.help">Stuck? Tap “I need help” on your phone</span><span id="join" data-no-edit hidden></span></div>
     </div>
   </div>
 </div>
@@ -282,10 +275,10 @@ const CONFIG = /*CONFIG*/{
    by double-click on the edit canvas) win, and reach the phone page too (same
    keys in lab-phone.html). KEY is the CONFIG field: do, tip, types.N.0 (a prompt
    box's label), types.N.1 (the prompt itself). The fixed words around the timer
-   and the room are data-edit in the markup: hint, room.head, room.lost,
-   room.working, room.finished (the phone's three buttons read the same three),
-   room.withheld, room.help. The clock, the controls, the counts and the
-   address are live values (data-no-edit). A prompt's span holds the raw
+   and the room are data-edit in the markup: hint, room.head, room.finished (the
+   phone's Finished button reads it too), room.withheld, room.help. room.lost and
+   room.working, reworded on an older card, are no longer shown. The clock, the
+   controls, the count and the address are live values (data-no-edit). A prompt's span holds the raw
    string; its [..] placeholders are <b> inside it, so its textContent is still
    the field. After an edit the bridge calls TESSERA_REFIT, which redraws the card
    from TX (and so brings the placeholder highlights back). */
@@ -402,8 +395,8 @@ const CODE = (PREV && /^Lab check-in/.test(PREV.question || '') && PREV.code) ||
 const SERVICE = String((EMB && EMB.service) || '').replace(/\/+$/, '');
 const KEY = (EMB && EMB.lecturer) || '';
 const LIVE = !!(EMB && SERVICE && CODE);
-const STATES = ['lost', 'working', 'finished'];
-const SAMPLE = { lost: 3, working: 18, finished: 7 };
+const STATES = ['lost', 'working', 'finished'];   // all still read: an older phone sends working
+const SAMPLE = { lost: 0, working: 0, finished: 7 };
 
 // the address a phone that lost the page types: <host>/<session>
 (function join() {
@@ -436,13 +429,11 @@ function countRoom(answers) {
   last.forEach(st => { n[st]++; });
   return n;
 }
+// only Finished is shown; the other states are counted (they take a phone out of Finished) and not drawn
 function drawRoom(n, note, tag) {
-  const all = n.lost + n.working + n.finished;
-  const bar = $('roombar').children;
-  STATES.forEach((st, k) => {
-    $('n' + st).textContent = n[st];
-    bar[k].style.width = all ? (100 * n[st] / all) + '%' : '0';
-  });
+  const el0 = $('nfinished'), was = el0.textContent, now = String(n.finished);
+  el0.textContent = now;
+  if (was !== now && +now > +was) { el0.classList.remove('bump'); void el0.offsetWidth; el0.classList.add('bump'); }
   const el = $('roomnote');
   el.textContent = note;
   el.className = tag ? 'tag' : '';
@@ -468,9 +459,7 @@ async function pull() {
     $('room').classList.remove('stale');
     if (d.answersWithheld) { setMode(true); return; }
     setMode(false);
-    const n = countRoom(d.answers);
-    const all = n.lost + n.working + n.finished;
-    drawRoom(n, all === 1 ? '1 phone' : `${all} phones`, false);
+    drawRoom(countRoom(d.answers), '', false);
     takeShots(d.answers);                      // the same reply: the outputs never read on their own
   } catch (e) {
     $('room').classList.add('stale');          // keep the last numbers, dimmed; say nothing
@@ -731,7 +720,7 @@ addEventListener('keydown', e => {
 // for checks only
 window.LABCARD = {
   state: () => ({ running, left: Math.ceil(left), minutes, live: LIVE, code: CODE,
-                  room: { lost: +$('nlost').textContent, working: +$('nworking').textContent, finished: +$('nfinished').textContent },
+                  room: { finished: +$('nfinished').textContent },
                   withheld: !$('withheld').hidden, stale: $('room').classList.contains('stale'),
                   scale: fitW ? Math.min(fitW / 1280, fitH / 500) : 0,
                   outputs: OUT.hidden ? null : shots.length, wall: wallOn, shown: cur }),

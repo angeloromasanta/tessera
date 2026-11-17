@@ -64,8 +64,9 @@ room panel is hidden (`<html data-offline>`); rebuild an older card with `make_l
 
 - **Screen** (`$KIT/engage/lab.html`): the instruction, 1 to 3 prompts to type
   (`[..]` placeholders in red), a tip, the countdown (Space starts it, −/+ set
-  minutes) and, under it, the live bar of the room: Lost, Working on it,
-  Finished (each phone's latest status). Without the lecturer key it says so.
+  minutes) and, under it, the room: how many phones say **Finished** (each
+  phone's latest status; no other state is shown). Without the lecturer key it
+  says so.
 - **Outputs**: **View outputs (N)**, bottom right of the card, opens a wall of
   the screenshots the room shared over the card (the countdown keeps running
   beside it): click a tile to show it large, ← / → move on (past the ends:
@@ -75,15 +76,20 @@ room panel is hidden (`<html data-offline>`); rebuild an older card with `make_l
   only once the wall opens. No key, no button (as the room). Offline (the
   poster, the editor without a service) it shows six sample screenshots, so it
   can be rehearsed.
-- **Phone** (`$KIT/engage/lab-phone.html`): the three status buttons; an ask box
-  that takes text and/or a photo of the laptop screen (**Camera** opens the
-  phone's camera, **Upload** the gallery; shrunk on the phone, never stored) answered by `POST /api/help` (Haiku 5.5); Lost jumps to that
-  box; Finished asks the helper for three next steps, each with a prompt.
-  **Share your result** appears from Working on (Finished scrolls to it): a
-  screenshot, shrunk under 600 kB, goes to `POST /api/upload` (a public link,
-  kept until the bucket is cleared; the phone says the class will see it), then
-  a check-in that carries it, `{v:1, pid, st, u, c?, n?}`. It carries the
-  current status, so the room still counts each phone's latest answer.
+- **Phone** (`$KIT/engage/lab-phone.html`): two buttons, **I need help** and
+  **Finished**; the one pressed decides what shows under them. I need help
+  opens the ask box (hidden until then): text and/or a photo of the laptop
+  screen (**Camera** opens the phone's camera, **Upload** the gallery; shrunk
+  on the phone, never stored), answered by `POST /api/help` (Haiku 5.5).
+  Finished opens **Share what you did**: just Camera and Upload; once a
+  picture is chosen they give way to the picture, a one-line description and
+  Send. The screenshot, shrunk under 600 kB, goes to `POST /api/upload` (a
+  public link, kept until the bucket is cleared; the footer says the class
+  will see it), then a check-in that carries it, `{v:1, pid, st, u, c?, n?}`.
+  It carries the current status, so the room still counts each phone's latest
+  answer. The status is `st: "lost"` for I need help (the value the older
+  Lost button stored) and `"finished"`; answers from the older three-button
+  page (`"working"`) are still read, and only `"finished"` is counted.
   It carries `<meta name="tessera-activity" content="full">`, so the join page
   gives it the whole screen (no card, no question header).
   Any activity page can opt in the same way.

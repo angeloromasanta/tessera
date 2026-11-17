@@ -8,11 +8,16 @@
      phone as the `activity` of the hidden poll under the lab.html embed.
      make_lab.py rewrites the CONFIG block below and the lab-context tag;
      the server reads the helper's context from that tag, never from the phone.
+     Two buttons. "I need help" opens the AI helper (hidden until then) and stores st "lost";
+     "Finished" opens Share what you did and stores st "finished". The screen counts only
+     "finished"; "lost" is the value the older three-button page stored for Lost, so old and
+     new answers read the same ("working" is no longer sent, and is still read).
      Status: POST /api/answer {code, text: {"v":1,"pid","st"}, question:"Lab check-in"},
      only when the status changes; pid is made once per page load.
-     Helper: POST /api/help {code, mode:"ask"|"next", question?, image?, history?}.
+     Helper: POST /api/help {code, mode:"ask", question?, image?, history?}.
      Photos (camera or gallery) are shrunk on the phone (1280 px long side, JPEG ~0.75), never stored.
-     Share your result (shown from Working on, opened on Finished): a screenshot is shrunk
+     Share what you did (shown on Finished: Camera / Upload; once a picture is chosen those
+     two give way to the picture, a one-line description and Send): a screenshot is shrunk
      under the upload ceiling (TESSERA_ACTIVITY.limits.upload, 600 kB), uploaded with
      POST /api/upload {code, dataUrl} (a public URL, kept until the bucket is cleared), then
      sent as a check-in that also carries it: {"v":1,"pid","st","u":url,"c":caption?,"n":name?}.
@@ -23,11 +28,11 @@
      Test from disk: open with ?fake (or without TESSERA_ACTIVITY): canned answers.
      Its strings are the screen's: the deck publishes this page with the screen
      embed's reworded labels in front (TESSERA_EMBED.texts, same keys as lab.html:
-     do, tip, types.N.0, types.N.1), and TX() lets them win over CONFIG. The
+     do, tip, types.N.0, types.N.1, room.finished), and TX() lets them win over CONFIG. The
      lab-context tag (the helper's brief) keeps the CONFIG wording. -->
 <script type="application/json" id="lab-context">{"id":"skill","heading":"Lab 1","title":"Make a skill","minutes":20,"do":"Make the skill you just named.","types":[["1 · Tell it the steps","Write me a skill called [name].\nSteps:\n1 [...]\n2 [...]\n3 [...]"],["2 · Do the task once, then","Save what we just did as a skill called [name]."],["3 · Adapt an existing one","Check this skill in [website]. Adapt it."]],"tip":"Then test it: run your skill on a new input.","context":"Goal: every student creates one skill in their AI tool for a task they repeat, then runs it once on a new input. Success: the skill shows up in the tool's skill list and produces a useful result on the new input. Students may use any AI chat tool; if one has no skills feature, a saved project or custom instruction is an acceptable fallback. Common problems: the tool writes a document instead of saving a skill (ask it to save it as a skill), the skill is too vague (add concrete steps and an example), and free-tier limits (wait a minute or switch tool)."}</script>
 <style>
-:root{--ink:#1A2326;--blue:#0F6B73;--muted:#5A6467;--panel:#F1F5F5;--line:#D7DEDF;--lost:#D63A3F;--work:#E8A33D;--done:#2E9E6A;--soft:#E2F0F1}
+:root{--ink:#1A2326;--blue:#0F6B73;--muted:#5A6467;--panel:#F1F5F5;--line:#D7DEDF;--err:#D63A3F;--help:#0F6B73;--done:#2E9E6A;--soft:#E2F0F1}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{background:#fff;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 body{padding:14px 14px 28px;max-width:560px;margin:0 auto;font-size:17px;line-height:1.45}
@@ -57,38 +62,25 @@ mark{background:#FFE9B8;color:var(--ink);padding:0 2px;font-weight:700}
 .tip{margin-top:14px;font-size:16px;color:var(--muted)}
 .tip b{color:var(--ink)}
 /* status */
-.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .seg button{min-height:72px;border:2px solid var(--line);background:#fff;font-size:16px;font-weight:700;line-height:1.2;padding:8px 6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;transition:background .15s,border-color .15s,transform .1s}
 .seg button:active{transform:scale(.97)}
 .seg .dot{width:12px;height:12px;border-radius:50%;background:var(--c)}
 .seg button.on{background:var(--c);border-color:var(--c);color:#fff}
 .seg button.on .dot{background:#fff}
-.seg button[data-st=working].on{color:var(--ink)}
-.seg button[data-st=working].on .dot{background:var(--ink)}
 #stmsg{font-size:13px;color:var(--muted);margin-top:8px;min-height:20px;display:flex;align-items:center;gap:8px}
-#stmsg.err{color:var(--lost);font-weight:700}
-#stmsg button{border:1.5px solid var(--lost);background:#fff;color:var(--lost);font-size:13px;font-weight:700;padding:4px 10px}
-/* next ideas */
-#ideas{display:none}
-.idea{border:1.5px solid var(--line);border-top:4px solid var(--done);padding:13px 13px 12px;margin-bottom:10px}
-.idea .t{font-weight:800;font-size:17px;line-height:1.25}
-.idea .w{font-size:15px;color:var(--muted);margin:4px 0 10px}
-.more{width:100%;min-height:48px;border:1.5px solid var(--blue);background:#fff;color:var(--blue);font-weight:700;font-size:15px;margin-top:2px}
-.more:disabled{opacity:.4}
-.think{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:15px;padding:14px;background:var(--panel)}
-/* share your result */
+#stmsg.err{color:var(--err);font-weight:700}
+#stmsg button{border:1.5px solid var(--err);background:#fff;color:var(--err);font-size:13px;font-weight:700;padding:4px 10px}
+/* share what you did */
 .scard{border:1.5px solid var(--line);border-top:4px solid var(--done);padding:12px 12px 13px}
-.slead{font-size:16px;margin-bottom:6px}
-.swarn{font-size:14px;color:var(--muted);margin-bottom:10px}
-.swarn b{color:var(--ink)}
 #share .bar{margin-top:0}
-#share .pick{flex:1}
-#sprev{display:none;margin-top:10px}
+#share .pick{flex:1;min-height:56px}
+#sbar[hidden]{display:none}
+#sprev{display:none}
 #sprev img{display:block;width:100%;max-height:42vh;object-fit:contain;background:var(--panel);border:1.5px solid var(--line)}
 #sprev .row{display:flex;justify-content:flex-end;margin-top:6px}
 #srm{border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:700;padding:8px 12px;min-height:40px;color:var(--muted)}
-#scaplbl{display:block;font-size:14px;font-weight:700;margin:10px 0 4px}
-#scap{width:100%;font:inherit;font-size:17px;padding:11px 12px;border:1.5px solid #C7CFD1;border-radius:0;background:#fff;color:var(--ink)}
+#scap{width:100%;margin-top:10px;font:inherit;font-size:17px;padding:11px 12px;border:1.5px solid #C7CFD1;border-radius:0;background:#fff;color:var(--ink)}
 #scap:focus{outline:none;border-color:var(--blue)}
 #ssend{width:100%;min-height:52px;margin-top:10px;border:0;background:var(--done);color:#fff;font-weight:800;font-size:16px}
 #ssend:disabled{opacity:.35}
@@ -96,7 +88,7 @@ mark{background:#FFE9B8;color:var(--ink);padding:0 2px;font-weight:700}
 #sform{display:none}
 #smsg{font-size:14px;color:var(--muted);margin-top:8px;min-height:0}
 #smsg.ok{color:#1F7A52;font-weight:700}
-#smsg.err{color:var(--lost);font-weight:700}
+#smsg.err{color:var(--err);font-weight:700}
 #sdone{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 #sdone:empty{display:none}
 #sdone img{width:56px;height:56px;object-fit:cover;border:1.5px solid var(--line);background:var(--panel)}
@@ -115,10 +107,9 @@ mark{background:#FFE9B8;color:var(--ink);padding:0 2px;font-weight:700}
 .code .ptext{padding:9px 10px;font-size:14px}
 .code+.copied{margin:-4px 0 8px}
 .typing{display:inline-flex;gap:5px;padding:14px 14px}
-.typing i,.think i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:b 1.1s infinite ease-in-out}
-.think span{display:inline-flex;gap:5px}
-.typing i:nth-child(2),.think i:nth-child(2){animation-delay:.15s}
-.typing i:nth-child(3),.think i:nth-child(3){animation-delay:.3s}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:b 1.1s infinite ease-in-out}
+.typing i:nth-child(2){animation-delay:.15s}
+.typing i:nth-child(3){animation-delay:.3s}
 @keyframes b{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
 .compose{padding:10px}
 textarea{width:100%;min-height:84px;max-height:220px;resize:none;font:inherit;font-size:17px;line-height:1.4;padding:11px 12px;border:1.5px solid #C7CFD1;border-radius:0;background:#fff;color:var(--ink);display:block}
@@ -137,7 +128,7 @@ textarea:focus{outline:none;border-color:var(--blue)}
 #send:disabled{opacity:.35}
 #send:not(:disabled):active{transform:scale(.98)}
 #imgmsg{font-size:13px;color:var(--muted);margin-top:6px;min-height:0}
-#imgmsg.err{color:var(--lost);font-weight:700}
+#imgmsg.err{color:var(--err);font-weight:700}
 footer{margin-top:22px;font-size:12px;line-height:1.45;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
 </style></head>
 <body>
@@ -147,21 +138,18 @@ footer{margin-top:22px;font-size:12px;line-height:1.45;color:var(--muted);border
 <details id="taskbox" open><summary>The task<span class="chev"></span></summary><div class="task" id="task"></div></details>
 
 <section id="where">
-  <h2>Where are you?</h2>
   <div class="seg" id="seg">
-    <button data-st="lost" style="--c:var(--lost)"><span class="dot"></span>Lost</button>
-    <button data-st="working" style="--c:var(--work)"><span class="dot"></span>Working on it</button>
+    <!-- "lost" is the value the older page stored for Lost: old and new answers read alike -->
+    <button data-st="lost" style="--c:var(--help)"><span class="dot"></span>I need help</button>
     <button data-st="finished" style="--c:var(--done)"><span class="dot"></span>Finished</button>
   </div>
   <div id="stmsg"></div>
 </section>
 
 <section id="share" hidden>
-  <h2>Share your result</h2>
+  <h2>Share what you did</h2>
   <div class="scard">
-    <div class="slead">Send a screenshot of what you made. The lecturer can show it to the class.</div>
-    <div class="swarn"><b>Everyone in the room may see it:</b> leave out names, emails, passwords and anything private.</div>
-    <div class="bar">
+    <div class="bar" id="sbar">
       <input type="file" id="scam" accept="image/*" capture="environment">
       <input type="file" id="sfile" accept="image/*">
       <label for="scam" id="ssnap" class="pick"><span aria-hidden="true">📷</span>Camera</label>
@@ -169,21 +157,15 @@ footer{margin-top:22px;font-size:12px;line-height:1.45;color:var(--muted);border
     </div>
     <div id="sprev"><img alt="Your screenshot"><div class="row"><button id="srm" type="button">Remove</button></div></div>
     <div id="sform">
-      <label for="scap" id="scaplbl">One line about it (optional)</label>
-      <input type="text" id="scap" maxlength="70" autocomplete="off" placeholder="What does it show?">
-      <button id="ssend" type="button" disabled>Share with the class</button>
+      <input type="text" id="scap" maxlength="70" autocomplete="off" placeholder="Description (optional)" aria-label="Description (optional)">
+      <button id="ssend" type="button" disabled>Send</button>
     </div>
     <div id="smsg"></div>
     <div id="sdone"></div>
   </div>
 </section>
 
-<section id="ideas">
-  <h2>Three next steps</h2>
-  <div id="ideabox"></div>
-</section>
-
-<section id="ask">
+<section id="ask" hidden>
   <h2>Ask the lab helper</h2>
   <div class="card">
     <div id="thread"></div>
@@ -215,10 +197,10 @@ const HOST = window.TESSERA_ACTIVITY || null;
 const FAKE = !HOST || new URLSearchParams(location.search).has('fake');
 const CODE = (HOST && HOST.code) || '';
 const PID = Array.from({ length: 8 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.random() * 36 | 0]).join('');
-// the status names: the slide's wording when it was reworded there (room.lost, room.working, room.finished)
-const LABEL = { lost: TX('room.lost', 'Lost'), working: TX('room.working', 'Working on it'), finished: TX('room.finished', 'Finished') };
+// the two buttons; Finished takes the slide's wording when it was reworded there (room.finished)
+const LABEL = { lost: TX('phone.help', 'I need help'), finished: TX('room.finished', 'Finished') };
 document.querySelectorAll('.seg button[data-st]').forEach(b => { b.lastChild.textContent = LABEL[b.dataset.st]; });
-const LOST_HINT = "What's going wrong? Type it, or take a photo of your screen.";
+const HELP_HINT = "What's going wrong? Type it, or take a photo of your screen.";
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function el(tag, cls, parent, text) {
@@ -280,14 +262,6 @@ async function fakeApi(path, body) {
   if (path === '/api/answer') { await wait(300); return { ok: true }; }
   // the picture stays on the phone: its own data URL stands in for the link
   if (path === '/api/upload') { await wait(700); return { url: body.dataUrl, id: 'fake', bytes: Math.floor(body.dataUrl.length * 0.75), mime: 'image/jpeg' }; }
-  if (body.mode === 'next') {
-    await wait(800);
-    return { ideas: [
-      { title: 'Give your skill a second input', why: 'A skill that works twice is a skill you will reuse.', prompt: 'Run the [name] skill on this new input: [paste it here].' },
-      { title: 'Add an example of a great result', why: 'One worked example sharpens every future answer.', prompt: 'Add this to the [name] skill as an example of a perfect output: [paste it].' },
-      { title: 'Make it ask before it starts', why: 'Two questions up front stop it guessing what you meant.', prompt: 'Change the [name] skill so it first asks me two questions about the input.' }
-    ] };
-  }
   await wait(1200);
   return { answer: 'It looks like the tool wrote a **document**, not a skill. Ask it to save it properly:\n\n```\nSave this as a skill called [name], so I can run it again later.\n```\n\nThen check it shows up in your skills list. If you are on a free plan, type `/skills` to see which ones it can use.' };
 }
@@ -307,6 +281,8 @@ async function api(path, body) {
 let sentSt = null, wantSt = null, posting = false;
 const segBtns = [...document.querySelectorAll('#seg button')];
 function paintSeg() { for (const b of segBtns) { b.classList.toggle('on', b.dataset.st === wantSt); b.setAttribute('aria-pressed', b.dataset.st === wantSt); } }
+// only Finished is counted on the screen; I need help says nothing once it is through
+const doneSay = st => st === 'finished' ? '✓ Sent. The screen counts you as finished.' : '';
 function stSay(msg, err) {
   const m = $('stmsg'); m.className = err ? 'err' : ''; m.textContent = msg;
   if (err) { const b = el('button', '', m, 'Retry'); b.type = 'button'; b.onclick = postStatus; }
@@ -317,65 +293,29 @@ async function postStatus() {
   try {
     await api('/api/answer', { code: CODE, text: JSON.stringify({ v: 1, pid: PID, st }), question: 'Lab check-in' });
     sentSt = st;
-    stSay(wantSt === st ? '✓ Sent. The screen counts you as “' + LABEL[st] + '”.' : 'Sending…');
+    stSay(wantSt === st ? doneSay(st) : 'Sending…');
   } catch (e) { stSay('Not sent: ' + e.message, true); }
   posting = false;
   if (sentSt === st && wantSt !== sentSt) postStatus();   // tapped again while sending
 }
+// the button pressed decides what shows under it: the helper, or Share what you did
+// (the helper's conversation is kept while it is out of sight)
 for (const b of segBtns) b.onclick = () => {
-  const st = b.dataset.st;
+  const st = b.dataset.st, help = st === 'lost';
   wantSt = st; paintSeg(); postStatus();
-  if (st !== 'lost') $('share').hidden = false;   // from Working on, and it stays
-  if (st === 'lost') {
-    const m = $('msg'); m.placeholder = LOST_HINT;
-    $('ask').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('ask').hidden = !help;
+  $('share').hidden = help;
+  const sec = help ? $('ask') : $('share');
+  setTimeout(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  if (help) {
+    const m = $('msg'); m.placeholder = HELP_HINT;
     try { m.focus({ preventScroll: true }); } catch (e) { m.focus(); }
-  } else if (st === 'finished') {
-    showIdeas(false);
   }
 };
 
-/* ---------- three next steps ---------- */
-let ideasAsked = false, ideasBusy = false, shownTitles = [];
-function textTurns() { return turns.slice(-6).map(t => ({ role: t.role, text: String(t.text).slice(0, 1500) })); }
-async function showIdeas(more) {
-  const sec = $('ideas'), box = $('ideabox');
-  sec.style.display = 'block';
-  // Finished: the share box first (it sits just above the ideas)
-  if (!more) setTimeout(() => ($('share').hidden ? sec : $('share')).scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-  if ((ideasAsked && !more) || ideasBusy) return;
-  ideasAsked = true; ideasBusy = true;
-  box.textContent = '';
-  const th = el('div', 'think', box); th.innerHTML = '<span><i></i><i></i><i></i></span>Thinking of three next steps…';
-  let history = textTurns();
-  const req = { code: CODE, mode: 'next', history };
-  if (more && shownTitles.length) req.question = ('I already have these ideas, give me three different ones: ' + shownTitles.join('; ')).slice(0, 790);
-  try {
-    const d = await api('/api/help', req);
-    const ideas = Array.isArray(d.ideas) ? d.ideas.slice(0, 3) : [];
-    if (!ideas.length) throw new Error('No ideas came back. Try again.');
-    box.textContent = '';
-    for (const it of ideas) {
-      const c = el('div', 'idea', box);
-      el('div', 't', c, it.title || '');
-      if (it.why) el('div', 'w', c, it.why);
-      if (it.prompt) c.appendChild(copyBox(it.prompt, 'pbox', true));
-      if (it.title) shownTitles.push(it.title);
-    }
-    shownTitles = shownTitles.slice(-9);
-    const b = el('button', 'more', box, 'Give me 3 more'); b.type = 'button';
-    b.onclick = () => showIdeas(true);
-  } catch (e) {
-    box.textContent = '';
-    el('div', 'e', box, e.message).style.maxWidth = '100%';
-    const b = el('button', 'more', box, 'Try again'); b.type = 'button';
-    b.onclick = () => { ideasAsked = false; showIdeas(true); };
-  }
-  ideasBusy = false;
-}
-
 /* ---------- the helper ---------- */
 const turns = [];          // text-only history: {role, text}
+function textTurns() { return turns.slice(-6).map(t => ({ role: t.role, text: String(t.text).slice(0, 1500) })); }
 let photo = '', asking = false;
 const msg = $('msg'), send = $('send'), thread = $('thread');
 function canSend() { send.disabled = asking || (!msg.value.trim() && !photo); }
@@ -480,7 +420,7 @@ send.onclick = async () => {
 };
 canSend();
 
-/* ---------- share your result ---------- */
+/* ---------- share what you did ---------- */
 // under the service's upload ceiling, with room to spare (it counts decoded bytes)
 const UPLOAD_MAX = Math.min(600 * 1024, +(HOST && HOST.limits && HOST.limits.upload) || 600 * 1024) - 40 * 1024;
 const SHOT_TRIES = [[1600, .82], [1400, .76], [1200, .7], [1000, .64], [800, .58], [640, .5]];
@@ -490,6 +430,7 @@ function shareSay(msg, cls) { const m = $('smsg'); m.className = cls || ''; m.te
 function setShot(url) {
   shot = url || ''; shotUrl = '';                       // a new picture is uploaded anew
   $('sprev').style.display = $('sform').style.display = shot ? 'block' : 'none';
+  $('sbar').hidden = !!shot;                            // the picture takes the place of Camera / Upload
   if (shot) $('sprev').querySelector('img').src = shot;
   $('ssend').disabled = sharing || !shot;
 }
@@ -524,13 +465,12 @@ $('ssend').onclick = async () => {
     if (nm) o.n = nm;
     try { await api('/api/answer', { code: CODE, text: JSON.stringify(o), question: 'Lab check-in' }); }
     finally { posting = false; }
-    if (sentSt !== st) { sentSt = st; if (wantSt === st) stSay('✓ Sent. The screen counts you as “' + LABEL[st] + '”.'); }
+    if (sentSt !== st) { sentSt = st; if (wantSt === st) stSay(doneSay(st)); }
     sharedN++;
     const t = el('img', '', $('sdone')); t.src = pic; t.alt = 'Shared';
     $('scap').value = '';
     setShot('');
-    shareSay(sharedN === 1 ? '✓ Shared with the class. Choose another picture to share one more.'
-                           : '✓ ' + sharedN + ' pictures shared with the class.', 'ok');
+    shareSay(sharedN === 1 ? '✓ Shared with the class.' : '✓ ' + sharedN + ' pictures shared with the class.', 'ok');
   } catch (e) {
     shareSay('Not shared: ' + e.message, 'err');
   }
