@@ -52,6 +52,13 @@
   plates and the card cover those rectangles; the checker ignores text under them.
   The title and the name are editable in place (keys lock.title, lock.subtitle; see TX).
 
+  The base may take settings (colours, speed, shapes...): its page says which in
+  <meta name="tessera-background" content="...">, make_remix.py copies that into
+  CONFIG.background, and every batch sends it to the server, so the model can change the
+  background too. It writes the settings into the slide as <!--background {...}-->;
+  paintBackground() posts them to the base ({tesseraBackground: {...}}) whenever a version
+  is drawn. A base without the meta gets nothing and the model is told nothing.
+
   Without TESSERA_EMBED (the poster, the editor canvas, shoot.py) it shows the seed slide
   with a sample check-in count and sample version bars, tagged "sample". Without the key it says so.
   Sandbox rules: one file, no CDN, no storage.
@@ -177,6 +184,7 @@
 const CONFIG = /*CONFIG*/{
   "seed": "<!doctype html><html><head><style>body{margin:0;width:1280px;height:720px;font-family:Manrope,sans-serif;color:#0D2A2F}h1{position:absolute;left:64px;top:180px;margin:0;font-weight:400;font-size:58px;line-height:1.12}</style></head><body><h1>Improve this slide</h1></body></html>",
   "base": "",
+  "background": "",
   "lock": {"title": "Welcome", "subtitle": "{{date}}"},
   "logos": {},
   "sample": {"in": 47, "ideas": 23, "versions": 7}
@@ -297,7 +305,26 @@ async function draw(html, check) {
   if (my !== drawSeq) return Object.assign({ stale: true }, res);
   swap(); drawnHtml = html;
   $('lock').classList.toggle('bare', String(html).trim() === SEED.trim());
+  paintBackground(html);
   return res;
+}
+/* The background's settings: one comment in the slide, <!--background {...}-->, which the
+   model writes when the base page describes settings (CONFIG.background). They go to the base
+   page as data ({tesseraBackground: {...}}; {} = its defaults), whatever version is drawn,
+   so undo and the version bars bring the background back too. The base page validates them. */
+function bgSettings(html) {
+  const m = String(html || '').match(/<!--\s*background\s*(\{[\s\S]*?\})\s*-->/i);
+  if (!m) return {};
+  try { const o = JSON.parse(m[1]); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; }
+}
+let bgSent = '';
+function paintBackground(html) {
+  const w = CONFIG.base && $('base').contentWindow;
+  if (!w) return;
+  const s = bgSettings(html), k = JSON.stringify(s);
+  if (k === bgSent) return;
+  bgSent = k;
+  w.postMessage({ tesseraBackground: s }, '*');
 }
 /* The live version changed. While an old version is on screen it is only checked and kept.
    A show overtaken by a later one (the first, network-free draw of the original) changes nothing. */
@@ -461,7 +488,8 @@ async function applyNext() {
     ? `${who(batch[0])}${esc(batch[0].idea)} <em>· Haiku is editing…</em>`
     : `Haiku is applying <b>${batch.length} ideas</b>… <em>${esc(batch.map(i => i.name.split(' ')[0]).filter(Boolean).join(', '))}</em>`);
   try {
-    const r = await remix({ op: 'apply', ideas: batch.map(({ iid, name, idea }) => ({ iid, name, idea })) });
+    const r = await remix(Object.assign({ op: 'apply', ideas: batch.map(({ iid, name, idea }) => ({ iid, name, idea })) },
+      CONFIG.background ? { background: CONFIG.background } : {}));
     let skipped = r.skipped || [];
     let applied = r.applied || [];
     if (r.ver !== shownVer) {
@@ -612,7 +640,10 @@ function frame() { fit(); requestAnimationFrame(frame); }
   };
   paintLock(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitle);
   window.TESSERA_REFIT = paintLock;    // the title or the name reworded on the edit canvas
-  if (CONFIG.base) $('base').srcdoc = CONFIG.base;      // the deck's own cover page: its script runs, sandboxed
+  if (CONFIG.base) {                                    // the deck's own cover page: its script runs, sandboxed
+    $('base').addEventListener('load', () => { bgSent = ''; paintBackground(drawnHtml || SEED); });
+    $('base').srcdoc = CONFIG.base;
+  }
 })();
 
 /* ═══════════════════════════ GO ════════════════════════════════ */

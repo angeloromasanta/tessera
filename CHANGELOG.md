@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The interactive title can change its background too.** A base page that
+  describes settings in `<meta name="tessera-background">` (colours, shapes,
+  speed...) lets the model change it: the settings ride in the slide as
+  `<!--background {...}-->`, so every version, undo and the version bars
+  carry them, and the screen posts them to the base page. Needs the worker
+  deployed with this release (`/api/remix` takes `background`).
+
 - **Present in a new tab, and the show follows edits.** Present ▾ → Present
   in a new tab presents the deck in a second tab while the first stays the
   editor; every edit (yours or an agent's) repaints the changed slides in the

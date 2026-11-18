@@ -9,7 +9,10 @@ title, rule, name, and the QR card right under them), on white plates above the 
 the model edits, so no idea can remove or restyle them. Right of x 330 is the room's.
 Under the slide runs a base page (`base`: a deck's own cover figure, e.g. the swarm), and
 the seed slide is transparent with one invitation line, so the first version looks like
-the deck's title slide.
+the deck's title slide. A base page that takes settings says so in
+<meta name="tessera-background" content="what the keys are and do">: the model may then
+change the background too (it writes <!--background {...}--> into the slide, and the
+screen posts the settings to the base page as {tesseraBackground: {...}}).
 
 One slide: a hidden `activity` poll (question "Interactive title ...") under a full-bleed
 1280x720 embed. The screen (template remix.html) shows the slide itself, drawn from HTML
@@ -199,15 +202,19 @@ def main():
     # the title and the name are locked: the screen draws them over the slide, the model never sees them
     lock = {"title": safe_title(cfg.get("title", a.course or "Welcome")),
             "subtitle": safe_title(cfg.get("subtitle", a.lecturer or "{{date}}"))}
-    base, still = "", ""
+    base, still, background = "", "", ""
     if cfg.get("base"):
         get = deck_assets(cfile.parent / cfg["base"]["deck"])
         base = get(cfg["base"]["asset"])
         if cfg["base"].get("poster"):
             still = small_jpeg(get(cfg["base"]["poster"]))
+        m = re.search(r'<meta\s+name="tessera-background"\s+content="([^"]*)"', base or "")
+        background = html.unescape(m.group(1)).strip() if m else ""
+        print(f"base: {'takes settings' if background else 'no settings'} ({len(background)} chars of description)")
     fig = build / "figures" / f"remix-{rid}.html"
     phone = build / "engage" / f"remix-{rid}-phone.html"
-    fig.write_text(deckio.recolor(fill("remix.html", {"seed": seed, "base": base, "lock": lock, "logos": logos,
+    fig.write_text(deckio.recolor(fill("remix.html", {"seed": seed, "base": base, "background": background,
+                                       "lock": lock, "logos": logos,
                                        "sample": {"in": 47, "ideas": 23, "versions": 7}},
                         fonts_css(font), font[0] if font else None), a.deck),
                    encoding="utf-8", newline="\n")

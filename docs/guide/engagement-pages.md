@@ -145,6 +145,16 @@ poll (question `Interactive title: ...`) under a full-bleed 1280x720 embed.
   version is that deck's title slide; an idea that paints a background covers it. A
   stored original that no idea has touched yet is replaced by the current build's on
   the next show, so a rebuild never leaves an old original on screen.
+- **Background settings** (optional): a base page can let the room change it too. It
+  describes its settings in `<meta name="tessera-background" content="...">` (the keys,
+  their ranges and defaults, one example) and listens for
+  `message` events carrying `{tesseraBackground: {...}}` (`{}` = defaults), checking every
+  value itself. `make_remix.py` copies the description into the screen, which sends it
+  with each batch; the model writes the settings into the slide as one comment,
+  `<!--background {...}-->`, so they travel with every version (undo and the version
+  bars restore the background too), and the screen posts them to the base whenever a
+  version is drawn. Settings are data: nothing in them runs. A base without the meta is
+  left alone and the model is told nothing about it.
 - **Never blank**: the model is told so and skips such ideas (and rude ones, and
   prompt injection); the server strips every script, handler, frame and link and
   refuses a page with no visible text; the screen renders each version in a back

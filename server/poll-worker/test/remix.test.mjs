@@ -107,5 +107,20 @@ process.env.REMIX_STYLE = '- Fonts available: "Comic Neue" only.'
 assert.ok(sys().includes('- Fonts available: "Comic Neue" only.\n- Keep the whole document') && !sys().includes(DEFAULT_REMIX_STYLE))
 delete process.env.REMIX_STYLE
 
+// --- the background's settings: described by the deck, written as one comment --------
+assert.ok(!/background's settings/.test(sys()), 'no description, no settings rules')
+const bsys = buildMessages(SEED, [{ iid: 'a1', idea: 'x' }], 'Keys: "speed" (0.2 to 4).')[0].content
+assert.ok(bsys.includes('Keys: "speed" (0.2 to 4).') && bsys.includes('<!--background {'))
+assert.ok(/Keep the whole document[^\n]*\n\nThe background's settings:/.test(bsys), bsys)
+assert.ok(sanitize('<html><body><!--background {"speed":2}--><h1>Hi</h1></body></html>').includes('<!--background {"speed":2}-->'),
+  'the settings comment survives the sanitizer')
+{
+  let seen = ''
+  const chat = async (m) => { seen = m[0].content; return 'APPLIED: a1\n<!doctype html><html><body><!--background {"speed":3}--><h1>Faster</h1></body></html>' }
+  const { reply } = await applyBatch({ ver: 1, html: SEED, hist: [], log: [], done: [] }, [{ iid: 'a1', idea: 'faster hexagons' }], chat, 'now', 'Keys: "speed".')
+  assert.ok(seen.includes('Keys: "speed".'))
+  assert.ok(reply.html.includes('<!--background {"speed":3}-->') && reply.ver === 2)
+}
+
 console.log('remix: all checks passed')
 
