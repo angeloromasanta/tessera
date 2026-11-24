@@ -167,7 +167,7 @@ set one; a hand-written `curl` is fine, a bare `urllib.request` is not.
 | route | caller | body / query | returns |
 |---|---|---|---|
 | `POST /api/answer` | phone | `{code, text, question?, name?}` | `{ok, count}` |
-| `POST /api/upload` | phone | `{code, dataUrl}` (an image) | `{url, id, bytes, mime}` |
+| `POST /api/upload` | phone | `{code, dataUrl}` (an image, or a PDF / HTML / markdown / text document) | `{url, id, bytes, mime}` |
 | `GET /api/poll?c=CODE` | anyone | — | `{code, question, count, answers[], answersWithheld?, summary, summaryAt, html}`; **`answers[]` is 🔒** |
 | `GET /api/session?s=S` | phones | — | `{session, active, at}` |
 | `GET /api/qr?c=CODE` | slide | `&fg=RRGGBB` | SVG |
@@ -188,7 +188,8 @@ set one; a hand-written `curl` is fine, a bare `urllib.request` is not.
 An answer is `{id, text, at, name?}`; `text` is always ONE string (a choice
 sends the option text, a rating digits, a quiz its picks as JSON, an activity
 whatever it posts). Limits (`_lib.js`): 2000 chars per answer, 500 per
-bucket, 60 000 chars per activity page, **600 kB** per uploaded image.
+bucket, 60 000 chars per activity page, **600 kB** per uploaded image, **1.8 MB**
+per uploaded document.
 
 ## Every read counts
 
@@ -323,6 +324,14 @@ The lab slide has this built in (*Share what you did* on the phone, after Finish
 outputs* on the card: [engagement-pages.md](engagement-pages.md#lab-slides-timer-room-check-ai-helper)).
 A display that shows the pictures reads them from the poll it already reads,
 and loads them only when they are shown.
+
+**Documents** go the same way: `application/pdf`, `text/html`, `text/markdown`
+or `text/plain` (set the type from the file extension when the browser gives
+none), up to **1.8 MB**, no downscaling. `/api/blob` serves HTML, markdown and
+text in a CSP sandbox (scripts run, but in an opaque origin) and markdown as
+plain text; a page that shows markdown nicely fetches the text and renders it
+itself. Open a document in a new tab from a phone (the phone frame lets popups
+escape the sandbox). Only the Workers service takes documents.
 
 ## Activity pages and games
 

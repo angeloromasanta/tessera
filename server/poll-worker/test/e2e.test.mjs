@@ -89,6 +89,29 @@ try {
   assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png')
   assert.deepEqual(Buffer.from(await r.arrayBuffer()), Buffer.from(png.split(',')[1], 'base64'))
 
+  // --- documents (a peer-review hand-in): PDF as is, HTML sandboxed, markdown as text ---
+  const b64 = (s) => Buffer.from(s).toString('base64')
+  const docs = [
+    ['application/pdf', '%PDF-1.4\n%%EOF\n', 'application/pdf', false],
+    ['text/html', '<h1>mine</h1><script>1</script>', 'text/html; charset=utf-8', true],
+    ['text/markdown', '# Title\n\nbody', 'text/plain; charset=utf-8', true],
+  ]
+  for (const [mime, text, served, sandboxed] of docs) {
+    r = await post(`/api/upload?c=${C}`, { code: C, dataUrl: `data:${mime};base64,${b64(text)}` })
+    assert.equal(r.status, 200, mime)
+    const u = await r.json()
+    assert.equal(u.mime, mime)
+    r = await fetch(u.url)
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), served)
+    assert.equal(/sandbox/.test(r.headers.get('content-security-policy') || ''), sandboxed, mime)
+    assert.equal(await r.text(), text)
+  }
+  assert.equal((await post(`/api/upload?c=${C}`, { code: C, dataUrl: `data:application/zip;base64,${b64('PK')}` })).status, 415)
+  const big = 'data:application/pdf;base64,' + Buffer.alloc(1800 * 1024 + 10).toString('base64')
+  assert.equal((await post(`/api/upload?c=${C}`, { code: C, dataUrl: big })).status, 413)
+  const bigImg = 'data:image/png;base64,' + Buffer.alloc(600 * 1024 + 10).toString('base64')
+  assert.equal((await post(`/api/upload?c=${C}`, { code: C, dataUrl: bigImg })).status, 413)   // images keep 600 kB
+
   // --- an activity page: published by the deck, read by the join page ---
   assert.equal((await post('/api/poll', { code: C, html: '<p>game</p>' })).status, 401)
   assert.equal((await post('/api/poll', { code: C, html: '<p>game</p>' }, true)).status, 200)
@@ -144,7 +167,7 @@ try {
   // --- clear: answers and images go, the question stays ---
   assert.equal((await post(`/api/poll?c=${C}`, undefined, false, 'DELETE')).status, 401)
   d = await (await post(`/api/poll?c=${C}`, undefined, true, 'DELETE')).json()
-  assert.deepEqual(d, { cleared: 41, images: 1 })
+  assert.deepEqual(d, { cleared: 41, images: 4 })   // the picture and three documents
   d = await (await get(`/api/poll?c=${C}`, true)).json()
   assert.equal(d.count, 0); assert.equal(d.question, 'What?')
   assert.equal((await fetch(up1.url)).status, 404)

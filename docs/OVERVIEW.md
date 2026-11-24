@@ -221,8 +221,12 @@ or times; an open question keeps only its `summary`.
 **Images from the room.** An answer is one string, so a picture cannot ride
 inside it: `POST /api/upload` takes the bytes and the answer carries the URL.
 Caps live in `api/_lib.js` (the same in both services) — `MAX_UPLOAD_BYTES`
-600 KB decoded (the legacy service's 1 MB document cap, base64 costs a third), images
-only.
+600 KB decoded (the legacy service's 1 MB document cap, base64 costs a third) for
+images; on the Worker also documents (`DOC_TYPES`: PDF, HTML, markdown, text,
+`MAX_DOC_BYTES` 1.8 MB, under the 2 MB SQLite row), for peer-review hand-ins.
+`/api/blob` serves HTML, markdown and text under a CSP `sandbox` (an opaque
+origin, so a student's page never runs as the service), markdown and text as
+`text/plain`; a PDF as is, since a sandbox blocks the browser's viewer.
 
 **`MAX_ANSWER_CHARS` is 2000**, not the original 600. `GET /api/poll` returns
 every answer in the bucket, so the ceiling bounds the worst case per poll tick

@@ -72,6 +72,8 @@ PID_RE = re.compile(r"^[a-z2-7]{12}$")
 MAX_ANSWER_CHARS, MAX_NAME_CHARS, MAX_ANSWERS = 2000, 60, 500
 MAX_ACTIVITY_HTML_CHARS = 60_000
 MAX_UPLOAD_BYTES = 600 * 1024                 # decoded bytes per picture (api/_lib.js)
+MAX_DOC_BYTES = 1800 * 1024                   # decoded bytes per document (api/_lib.js)
+DOC_TYPES = ("application/pdf", "text/html", "text/markdown", "text/plain")
 MAX_PLAYERS, MAX_MOVES, MAX_MOVE_CHARS = 500, 10_000, 4_000
 MAX_STATE_CHARS, MAX_PRIVATE_CHARS, MAX_MOVES_PER_READ = 100_000, 4_000, 2_000
 MAX_AI_INPUT, MAX_AI_SYSTEM, MAX_AI_TOKENS = 4_000, 8_000, 1_500
@@ -340,15 +342,16 @@ class MockService:
         code = self.code_of(q, b)
         m = re.fullmatch(r"data:([a-z0-9.+-]+/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)", str(b.get("dataUrl") or "").strip(), re.I)
         if not m:
-            fail(400, "expected a base64 image data URL")
+            fail(400, "expected a base64 data URL")
         mime = m.group(1).lower()
-        if not mime.startswith("image/"):
+        doc = mime in DOC_TYPES
+        if not doc and not mime.startswith("image/"):
             fail(415, f"unsupported type {mime}")
         data = base64.b64decode(re.sub(r"\s+", "", m.group(2)))
-        if len(data) > MAX_UPLOAD_BYTES:
-            fail(413, "image too large")
+        if len(data) > (MAX_DOC_BYTES if doc else MAX_UPLOAD_BYTES):
+            fail(413, "file too large" if doc else "image too large")
         if not data:
-            fail(400, "empty image")
+            fail(400, "empty file" if doc else "empty image")
         self.n += 1
         bid = f"b{self.n}"
         self.blobs.setdefault(code, {})[bid] = (mime, data)

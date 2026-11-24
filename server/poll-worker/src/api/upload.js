@@ -1,6 +1,7 @@
 // POST /api/upload  { code, dataUrl }  → { url, id, bytes, mime }
 //
-// The route that lets a picture come back from a phone. An answer is one
+// The route that lets a picture (or a document: PDF, HTML, markdown, text,
+// for a peer review) come back from a phone. An answer is one
 // string, so an image can never travel inside one however high the character
 // ceiling goes: the phone posts the bytes here, gets a URL, and puts THAT in
 // its answer. A display slide later reads the answers and renders the URLs.
@@ -8,14 +9,15 @@
 // Open to the audience, exactly like /api/answer — the join code is the
 // capability, and a room that can answer can obviously also submit the drawing
 // it was asked for. The ceilings below are what stands in for authentication:
-// a real image type, 600 kB, and the same 500-per-bucket cap answers have.
+// a real image type and 600 kB (a listed document type and 1.8 MB), and the
+// same 500-per-bucket cap answers have.
 //
 // The returned URL is public and unguessable, and dies with the bucket:
 // DELETE /api/poll?c=CODE clears images along with answers.
 
 import {
   preflight, json, body, badCode,
-  MAX_UPLOAD_BYTES, UPLOAD_TYPES, MAX_ANSWERS,
+  MAX_UPLOAD_BYTES, UPLOAD_TYPES, MAX_DOC_BYTES, DOC_TYPES, MAX_ANSWERS,
   putBlob, listBlobIds, getPoll,
 } from './_lib.js'
 
@@ -32,20 +34,25 @@ export default async function handler(req, res) {
   if (badCode(code)) return json(res, 400, { error: 'bad code' })
 
   const m = DATA_URL.exec(String(b.dataUrl ?? '').trim())
-  if (!m) return json(res, 400, { error: 'expected a base64 image data URL' })
+  if (!m) return json(res, 400, { error: 'expected a base64 data URL' })
 
   const mime = m[1].toLowerCase()
-  if (!UPLOAD_TYPES.includes(mime)) {
-    return json(res, 415, { error: `unsupported type ${mime} (allowed: ${UPLOAD_TYPES.join(', ')})` })
+  const isDoc = DOC_TYPES.includes(mime)
+  if (!isDoc && !UPLOAD_TYPES.includes(mime)) {
+    return json(res, 415, { error: `unsupported type ${mime} (allowed: ${[...UPLOAD_TYPES, ...DOC_TYPES].join(', ')})` })
   }
+  const max = isDoc ? MAX_DOC_BYTES : MAX_UPLOAD_BYTES
+  const what = isDoc ? 'file' : 'image'
 
   // Check the DECODED length before allocating: base64 is 4 characters per 3
   // bytes, so this rejects an oversized payload without materialising it.
   const b64 = m[2].replace(/\s+/g, '')
   const approx = Math.floor((b64.length * 3) / 4)
-  if (approx > MAX_UPLOAD_BYTES) {
+  if (approx > max) {
     return json(res, 413, {
-      error: `image too large (${Math.round(approx / 1024)} kB, max ${Math.round(MAX_UPLOAD_BYTES / 1024)} kB) — downscale it on the phone first`,
+      error: isDoc
+        ? `file too large (${Math.round(approx / 1024)} kB, max ${Math.round(max / 1024)} kB)`
+        : `image too large (${Math.round(approx / 1024)} kB, max ${Math.round(max / 1024)} kB) — downscale it on the phone first`,
     })
   }
 
@@ -53,11 +60,11 @@ export default async function handler(req, res) {
   try {
     bytes = Buffer.from(b64, 'base64')
   } catch {
-    return json(res, 400, { error: 'could not decode the image' })
+    return json(res, 400, { error: `could not decode the ${what}` })
   }
-  if (!bytes.length) return json(res, 400, { error: 'empty image' })
-  if (bytes.length > MAX_UPLOAD_BYTES) {
-    return json(res, 413, { error: 'image too large' })
+  if (!bytes.length) return json(res, 400, { error: `empty ${what}` })
+  if (bytes.length > max) {
+    return json(res, 413, { error: `${what} too large` })
   }
 
   try {

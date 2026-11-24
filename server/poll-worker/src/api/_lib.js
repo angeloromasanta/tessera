@@ -109,6 +109,12 @@ export const MAX_ACTIVITY_HTML_CHARS = 60_000
  *  downscale anyway. See putBlob for what moving to Cloud Storage would take. */
 export const MAX_UPLOAD_BYTES = 600 * 1024
 export const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+/** Documents a phone may hand in (a peer-review submission): a report, a page,
+ *  notes. Same row as an image, so the ceiling is the row's 2 MB less headroom.
+ *  /api/blob serves HTML in a CSP sandbox and markdown as plain text, so a
+ *  student's page never runs with this service's origin. */
+export const MAX_DOC_BYTES = 1800 * 1024
+export const DOC_TYPES = ['application/pdf', 'text/html', 'text/markdown', 'text/plain']
 /** Minimum gap between summarize calls for one poll. Each call spends real
  *  money at the model provider; a double-click must not spend it twice. */
 export const SUMMARIZE_COOLDOWN_MS = 10_000

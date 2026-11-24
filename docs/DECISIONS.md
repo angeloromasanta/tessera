@@ -1302,3 +1302,16 @@ shows what was asked and the reply, a click pins the box with Edit and send
 again (the request comes back as a line, in edit) and Delete. Waiting,
 working and stopped requests keep their line.
 
+
+## 2026-11-24 — documents through /api/upload, served sandboxed
+
+A peer-review activity has phones hand in a file (PDF, HTML, markdown) that
+other phones then open. `/api/upload` takes those four types beside images, up
+to 1.8 MB (the blob is one SQLite row in the poll's Durable Object, capped at
+2 MB), so nothing needs R2, which bills. Chosen over text in moves (4 000
+chars) and over converting on the phone (a PDF reader is far past the 60 000
+character page limit). Because the bytes come back from the service's own
+origin, `/api/blob` serves HTML, markdown and text under a CSP `sandbox`
+(scripts run in an opaque origin, never as the join page) and markdown as
+plain text; a PDF is served as is, because a sandbox blocks the browser's PDF
+viewer. Images keep their 600 kB cap.
