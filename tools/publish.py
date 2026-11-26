@@ -3,7 +3,7 @@
 
     publish.py students DECK.html   a frozen player copy for students, on Cloudflare
     publish.py teach    DECK.html   the full deck (editor, live polls) to present from, on Cloudflare
-    publish.py live     DECK.html   a mirror that follows every edit (tools/live/serve.py)
+    publish.py live     DECK.html   the deck on a link: follows every edit, saves edits made there (tools/live/serve.py)
     publish.py status   DECK.html   what is published for this deck, and where
 
 students  Player-only (readonly), its own docId, no collab / agentNotes / poll
@@ -527,7 +527,7 @@ def main() -> None:
                    help="skip the clean-up of assets nothing in the deck uses (done by default)")
     p.add_argument("--dry-run", action="store_true", help="run the checks; clean, upload and save nothing")
     p.set_defaults(func=cmd_teach)
-    p = sub.add_parser("live", help="mirror that follows every edit")
+    p = sub.add_parser("live", help="the deck on a link: follows every edit and saves the edits made there")
     p.add_argument("deck")
     p.add_argument("--slug")
     p.add_argument("--stop", action="store_true")

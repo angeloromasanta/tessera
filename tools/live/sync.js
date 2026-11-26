@@ -11,10 +11,16 @@
 // are patched and a small notice offers the reload, since only the join code
 // on the poll slides is stale.
 //
-// The one thing that flows back: a change request typed in the ask box (the
-// editor fires `tessera-request`) is POSTed to /request, which records it through
-// slide.py. Until the server confirms it, syncing waits, so a sync from disk
-// cannot remove a request that has not reached the file yet.
+// Two things flow back, so this page edits the deck and is not a copy of it:
+//   - a change request typed in the ask box (the editor fires
+//     `tessera-request`) is POSTed to /request, which records it through
+//     slide.py;
+//   - anything else changed here (a slide deleted, added, moved, a text
+//     retyped) is POSTed to /edit as the difference between what the page and
+//     the deck last agreed on (`base`) and what the page shows now.
+// Until the server has taken both, syncing from disk waits, so it cannot undo
+// what has not reached the file yet. Where the deck changed first, the deck
+// wins: the server refuses that slide and the page shows the deck's again.
 (function () {
   var BASE = __BASE__, seen = __VERSION__, rest = __REST__, poll = __POLL__;
   // the editor's names; an older shell's come from tools/legacy.json (put here by serve.py)
@@ -28,6 +34,26 @@
   var fetched = new Map();  // hash -> string: assets already downloaded
   var outbox = new Map();   // request id -> {slideId, request, tries}: not yet recorded
   var failed = 0;           // until when to show "could not be sent"
+  var base = null;          // {title, slides}: what this page and the deck last agreed on (no comments)
+  var baseAssets = null;    // the asset keys the deck holds
+  var touched = 0;          // when something was last done in this page: it may have edited the deck
+  var editWait = 0, editFails = 0;
+  var lost = 0;             // until when to show "a change was not kept"
+
+  function strip(doc) {
+    return {
+      title: doc.title,
+      slides: (doc.slides || []).map(function (sl) {
+        var c = {};
+        Object.keys(sl).forEach(function (k) { if (k !== 'comments') c[k] = sl[k]; });
+        return c;
+      }),
+    };
+  }
+  function snapshot(doc) {
+    base = strip(doc);
+    baseAssets = new Set(Object.keys(doc.assets || {}));
+  }
 
   function isIds(v) {
     return Array.isArray(v) && v.every(function (x) {
@@ -142,6 +168,7 @@
     if (next.poll !== poll) notice();
     fetched.clear();
     seen = next.version;
+    snapshot((await app().agent.read()).doc);
     return 'ok';
   }
 
@@ -206,8 +233,12 @@
       item.tries++;
       item.next = Date.now() + Math.min(30000, 2000 * item.tries);
     }
+    pill();
+  }
+  function pill() {
     var b = document.getElementById('deck-preview-outbox');
-    var show = outbox.size || Date.now() < failed;
+    var unsaved = editFails >= 2;
+    var show = outbox.size || unsaved || Date.now() < failed || Date.now() < lost;
     if (show && !b) {
       b = document.createElement('div');
       b.id = 'deck-preview-outbox';
@@ -218,9 +249,57 @@
     }
     if (b) {
       if (!show) b.remove();
-      else b.textContent = outbox.size ? 'Request not sent yet — retrying' : 'A request could not be sent — type it again';
+      else b.textContent = outbox.size ? 'Request not sent yet — retrying'
+        : unsaved ? 'Not saved yet — retrying'
+        : Date.now() < lost ? 'A change was not kept: the deck changed first'
+        : 'A request could not be sent — type it again';
     }
   }
+
+  // What was done here since `base`, written into the deck. Throws to be tried again.
+  async function pushEdits() {
+    var stamp = touched;
+    var cur = (await app().agent.read()).doc;
+    var now = strip(cur), patches = [];
+    diff(base.slides, now.slides, ['slides'], patches);
+    if (typeof now.title === 'string' && now.title !== base.title) {
+      var t = { path: ['title'], value: now.title };
+      if (base.title !== undefined) t.before = base.title;
+      patches.push(t);
+    }
+    if (!patches.length) { if (touched === stamp) touched = 0; return; }
+    // a picture pasted here: the deck does not hold it yet
+    var assets = {}, named = JSON.stringify(patches), held = cur.assets || {};
+    Object.keys(held).forEach(function (k) {
+      if (!baseAssets.has(k) && typeof held[k] === 'string' && named.indexOf(k) >= 0) assets[k] = held[k];
+    });
+    var r = await fetch(BASE + '/edit', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Key': 'deck-request' },
+      body: JSON.stringify({ patches: patches, assets: assets }),
+    });
+    if (r.status === 409 || r.status >= 500) throw new Error('edit ' + r.status);   // busy or restarting
+    var refused = true;
+    if (r.ok) {
+      refused = ((await r.json()).refused || []).length > 0;
+      Object.keys(assets).forEach(function (k) { baseAssets.add(k); });
+    } else {
+      console.warn('[deck-preview] edit not saved', r.status, await r.text());
+    }
+    base = now;
+    if (touched === stamp) touched = 0;
+    if (refused) {
+      // not taken (someone changed that slide first, or it cannot be saved):
+      // show the deck's version again
+      lost = Date.now() + 8000;
+      seen = '';
+      pending = null;
+    }
+  }
+  function touch() { touched = Date.now(); }
+  ['pointerup', 'keyup', 'input', 'change', 'paste', 'cut', 'drop'].forEach(function (name) {
+    window.addEventListener(name, touch, true);
+  });
   function onRequest(e) {
     var d = e.detail || {};
     // slideId '' = a request about the whole deck (doc.requests)
@@ -236,11 +315,30 @@
     if (working) return;
     working = true;
     try {
+      var ready = app() && app().agent && typeof app().agent.read === 'function';
+      if (base === null && ready) snapshot((await app().agent.read()).doc);
       if (outbox.size || failed) {
         await deliver();
         if (outbox.size) return;   // a sync now would drop the unsent request
         if (Date.now() >= failed) failed = 0;
       }
+      if (touched && base !== null) {
+        // wait for the hand to lift, then write what changed; meanwhile a
+        // sync from disk would undo it
+        if (Date.now() - touched < 700 || Date.now() < editWait) return;
+        try {
+          await pushEdits();
+          editFails = 0;
+        } catch (err) {
+          editFails++;
+          editWait = Date.now() + Math.min(15000, 1500 * editFails);
+          pill();
+          return;
+        }
+        pill();
+        if (touched) return;
+      }
+      if (lost && Date.now() >= lost) { lost = 0; pill(); }
       if (Date.now() < wait) return;
       var v = await get(BASE + '/version', 'text');
       // A build writes the file several times (compile, notes, guess slide):

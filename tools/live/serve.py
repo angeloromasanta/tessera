@@ -1,7 +1,7 @@
-"""Live previews of decks: one function, serve(), plus a small server to run it.
+"""Live decks: one function, serve(), plus a small server to run it.
 
-For watching a deck from another computer (or a phone) while it is being
-edited here. Two ways to run it:
+For watching and editing a deck from another computer (or a phone) while it
+is being edited here. Two ways to run it:
 
     python tools/live/serve.py [--port 8000] [--decks tools/live/decks.json]
         serves http://127.0.0.1:<port>/deck/<slug> (TESSERA_LIVE_LOCAL sets the
@@ -29,12 +29,19 @@ redrawn in place.
 
     POST /<slug>/request   {"slideId", "request"}: a change request typed in the
                            ask box, recorded through `slide.py ask`
+    POST /<slug>/edit      {"patches", "assets"}: what was changed in the page
+                           (a slide deleted, added, moved, retyped), written
+                           into the deck as slide.py would
 
-Read-only but for that one route: a change request is written through
-`slide.py ask`, so it lands in the open editor here when there is one (waking
-an agent's listener) and in the file otherwise, under slide.py's lock. Only
-the files named in `decks.json` are ever opened. Anything else changed in the
-hosted copy stays in that browser and is overwritten by the next sync. Stdlib only.
+Two ways, so the served page is an editor of the deck, not a copy of it: the
+page follows the file, and what is done in the page is written to the file.
+Both write routes go through slide.py, so a change lands in the open editor
+here when there is one (waking an agent's listener) and in the file otherwise,
+under slide.py's lock and with its backup. An edit is compare-and-set per
+slide: where the deck changed first, the deck wins and the page shows it.
+Only the files named in `decks.json` are ever opened. The page can change a
+deck's slides and title, add the assets its new elements name, and nothing
+else. Put a login in front of it. Stdlib only.
 """
 
 import hashlib
@@ -258,15 +265,146 @@ def request(slug: str, body: bytes) -> tuple:
     return _text(200, json.dumps({"recorded": rid}), "application/json")
 
 
+# ───────────────────────────────────────────────────────── edits made in the page
+
+EDIT_ROOTS = ("slides", "title")
+ASSET_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,160}$")
+MAX_EDIT = 48 * 1024 * 1024
+_TOOL: dict = {}
+
+
+def _tool():
+    """slide.py as a module, loaded again when the file changes (an app that
+    mounts this server keeps running across updates of the tools)."""
+    import importlib.util
+    stamp = SLIDE_PY.stat().st_mtime_ns
+    if _TOOL.get("stamp") != stamp:
+        spec = importlib.util.spec_from_file_location("tessera_slide_tool", SLIDE_PY)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TOOL.update(stamp=stamp, mod=mod)
+    return _TOOL["mod"]
+
+
+def _valid_patch(p) -> bool:
+    if not isinstance(p, dict) or not isinstance(p.get("path"), list) or not p["path"]:
+        return False
+    path = p["path"]
+    if path[0] not in EDIT_ROOTS or path[-1] == "id" or "comments" in path:
+        return False
+    for seg in path:
+        if isinstance(seg, dict):
+            if set(seg) != {"id"} or not isinstance(seg["id"], str) or not ID_RE.match(seg["id"]):
+                return False
+        elif not isinstance(seg, str) or len(seg) > 80:
+            return False
+    if p.get("order"):
+        return path == ["slides"] and all(isinstance(v, list) and all(isinstance(i, str) for i in v)
+                                          for v in (p.get("before"), p.get("value")))
+    if path[0] == "slides":   # a slide, or something on one slide: never the whole list
+        return len(path) >= 2 and isinstance(path[1], dict)
+    return path == ["title"] and isinstance(p.get("value"), str)
+
+
+def _reorder(slides: list, want: list) -> list:
+    """The page's order, for the slides both sides have; a slide the page has
+    not seen yet stays right after the slide it follows now."""
+    have = {s["id"]: s for s in slides}
+    out = [i for i in dict.fromkeys(want) if i in have]
+    for n, s in enumerate(slides):
+        if s["id"] in out:
+            continue
+        before = slides[n - 1]["id"] if n else None
+        out.insert(out.index(before) + 1 if before in out else 0, s["id"])
+    return [have[i] for i in out]
+
+
+def edit(slug: str, body: bytes) -> tuple:
+    """Changes made in the served page, written into the deck: the page sends
+    the difference between what it showed and what it shows now, as the same
+    compare-and-set patches slide.py uses. Each slide is taken or refused as a
+    whole (someone changed the same thing first: the page then shows the
+    deck's version again). Requests and comments do not travel here."""
+    path = _path(slug)
+    if len(body) > MAX_EDIT:
+        raise Refused(413, "too large")
+    try:
+        data = json.loads(body.decode("utf-8"))
+        patches, assets = data["patches"], data.get("assets") or {}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise Refused(400, "expected {patches, assets}")
+    if (not isinstance(patches, list) or not 0 < len(patches) <= 5000 or not all(_valid_patch(p) for p in patches)
+            or not isinstance(assets, dict)
+            or not all(isinstance(k, str) and ASSET_RE.match(k) and isinstance(v, str) for k, v in assets.items())):
+        raise Refused(400, "bad edit")
+    tool = _tool()
+    try:
+        deck = tool.open_target(str(path))
+    except SystemExit as e:
+        raise Refused(409, str(e)[-300:])
+    new = json.loads(json.dumps(deck.doc))
+    claims = tool._claims(deck)
+    groups: dict = {}
+    for p in patches:
+        key = "order" if p.get("order") else "title" if p["path"][0] == "title" else p["path"][1]["id"]
+        groups.setdefault(key, []).append(p)
+    order = groups.pop("order", None)
+    done, refused = [], []
+    for key, group in groups.items():
+        owner = claims.get(key)
+        if owner and owner != "Phone":
+            refused.append({"slide": key, "why": f"{owner} is working on it"})
+            continue
+        try:
+            strict = []
+            for p in group:
+                whole = p["path"][0] == "slides" and len(p["path"]) == 2
+                at = next((i for i, x in enumerate(new["slides"]) if x["id"] == key), -1) if whole else -1
+                if whole and "value" in p and "before" not in p:      # a slide added in the page
+                    if at < 0:
+                        value = p["value"]
+                        if not isinstance(value, dict) or value.get("id") != key or not isinstance(value.get("elements"), list):
+                            raise tool.Conflict("not a slide")
+                        new["slides"].append({k: v for k, v in value.items() if k != "comments"})
+                elif whole and "value" not in p:                       # a slide deleted in the page
+                    if at >= 0:
+                        del new["slides"][at]
+                else:
+                    strict.append(p)
+            if strict:
+                new = tool.apply_patches(new, strict)
+            done.append(key)
+        except tool.Conflict as e:
+            refused.append({"slide": key, "why": str(e)[:200]})
+    if order:
+        new["slides"] = _reorder(new["slides"], order[-1]["value"])
+        done.append("order")
+    used = json.dumps([new["slides"], new.get("title")])
+    for k, v in assets.items():   # only what a changed slide names and the deck lacks
+        if k not in (new.get("assets") or {}) and k in used:
+            new.setdefault("assets", {})[k] = v
+    if new != deck.doc:
+        class Args:
+            agent, dry_run = "Phone", False
+        import contextlib
+        import io
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                tool.commit(deck, new, Args, structure=True)
+        except SystemExit as e:   # the deck moved on while this was being prepared: the page sends it again
+            raise Refused(409, str(e)[-300:])
+    return _text(200, json.dumps({"applied": done, "refused": refused, "version": _version(path)}), "application/json")
+
+
 def serve(method, path, key="", body=b"", prefix="", query="") -> tuple:
     parts = [p for p in path.split("/") if p]
-    if method == "POST" and len(parts) == 2 and parts[1] == "request":
+    if method == "POST" and len(parts) == 2 and parts[1] in ("request", "edit"):
         # sync.js sends this header; a form on another site cannot (it would
         # need a CORS preflight), so the Access cookie alone writes nothing.
         if key != "deck-request":
             return _text(403, "missing X-Key")
         try:
-            return request(parts[0], body)
+            return request(parts[0], body) if parts[1] == "request" else edit(parts[0], body)
         except Refused as e:
             return _text(e.status, e.message)
     if method not in ("GET", "HEAD"):

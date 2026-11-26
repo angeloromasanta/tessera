@@ -79,8 +79,8 @@ you, and creates the file at the checkout root if none exists.
 | `TESSERA_LECTURER_KEY` | the poll service's lecturer key (also read from `LECTURER_KEY`) | none |
 | `OPENROUTER_API_KEY` | picture generation ([pictures.md](pictures.md)) | none |
 | `TESSERA_CF_SUBDOMAIN` | the `<subdomain>` of `<subdomain>.workers.dev`, for published links | none |
-| `TESSERA_LIVE_URL` | the public address of the live mirror ([publishing.md](publishing.md)), optional | none |
-| `TESSERA_LIVE_LOCAL` | where the mirror server listens | `http://127.0.0.1:8000` |
+| `TESSERA_LIVE_URL` | the public address of the live link ([publishing.md](publishing.md)), optional | none |
+| `TESSERA_LIVE_LOCAL` | where the live server listens | `http://127.0.0.1:8000` |
 | `TESSERA_AUTHOR` | the name a request or `slide.py ask` is signed with | none |
 | `TESSERA_SECTION_TAGLINE` | the tagline `md_to_deck.py` puts on a section slide whose spec gives none | none |
 | `PEXELS_API_KEY` | adds Pexels to the photo search ([pictures.md](pictures.md)), optional | none |

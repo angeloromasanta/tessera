@@ -2,11 +2,14 @@
 
 ## Unreleased
 
-- **Ask for a new slide from the live mirror.** Add a slide in the mirror
-  (a phone, another computer) and type what it should be: the server adds the
-  same empty slide to the deck at the same place and records the request on
-  it, so the page keeps the slide and shows the agent's reply without a
-  reload. Before, the request was refused and dropped after a few retries.
+- **The live link edits the deck.** `publish.py live` used to serve a mirror:
+  whatever was changed in it (a slide deleted, a text retyped) came back at
+  the next sync, and a request typed on a slide added there was dropped. Now
+  the page writes what is done in it into the deck (`POST /<slug>/edit`, the
+  same compare-and-set patches `slide.py` uses, per slide; the deck wins a
+  conflict and the page says so), follows the file as before, and never
+  reloads for either. A slide added with "What should this slide be?" is
+  saved where it was added, with its request on it.
   `slide.py new --empty [--after ID | --first]` makes such a slide by hand
   (`tools/live/serve.py`, `sync.js`; `scripts/test-live-request.py`).
 

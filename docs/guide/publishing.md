@@ -6,7 +6,7 @@ Everything goes through `$T/publish.py`. Pick the target from what was asked:
 |---|---|---|
 | slides **for students**, a copy to share | `publish.py students DECK.html` | a Cloudflare Worker, `https://<name>.<subdomain>.workers.dev` |
 | a link **to present from** (editor, live polls) | `publish.py teach DECK.html` | the same, full deck |
-| **watch edits** from a phone or another computer | `publish.py live DECK.html` | the live mirror, `$TESSERA_LIVE_URL/deck/<slug>` |
+| **watch and edit** from a phone or another computer | `publish.py live DECK.html` | the live link, `$TESSERA_LIVE_URL/deck/<slug>` |
 | a frozen **file** to hand over (no upload) | `publish.py students DECK.html --no-upload` | `$DECK_DIR/build/publish/<deck>-students.html` |
 | what is already out | `publish.py status DECK.html` | |
 
@@ -108,7 +108,7 @@ unreconciled live edits (not yet in its spec) is refused: reconcile first.
 Redeploy after each edit the presenter should see in the link (the same
 command, no `--name`).
 
-## live: the mirror that follows edits
+## live: the deck on a link, edited from anywhere
 
 A small server on your machine, `$T/live/serve.py` (stdlib only), serves each
 deck named in `$T/live/decks.json` (gitignored; `decks.example.json` shows the
@@ -121,32 +121,47 @@ shape) with `$T/live/sync.js` appended, and reads that file on every request.
 - **Make it reachable** from a phone with any tunnel or reverse proxy in front
   of that address (a Cloudflare Tunnel, a VPN, your LAN), and set
   `TESSERA_LIVE_URL` to the public base, so the command prints the right link.
-  Put a login in front of it: the mirror shows the whole deck and accepts
-  change requests.
+  **Put a login in front of it**: whoever opens the link sees the whole deck
+  and can change it.
 
-Then edit with `slide.py` or recompile as usual: the page waits until the file
-stops changing, patches changed slides in place and on a phone (or with
-`?follow`) moves to the slide just edited. A recompile's new join code cannot
-be patched, so the page shows "The join code changed — tap to reload" instead
-of reloading. It is a mirror: edits made in it are overwritten. In
-presentation mode patches wait. `--stop` when the deck is presented.
+The link is the deck, in both directions, and the page never reloads for it:
+
+- **The page follows the file.** Edit with `slide.py` or recompile as usual:
+  the page waits until the file stops changing, patches the changed slides in
+  place and on a phone (or with `?follow`) moves to the slide just edited. A
+  recompile's new join code cannot be patched, so the page shows "The join
+  code changed — tap to reload". In presentation mode patches wait.
+- **What is done in the page is written to the file.** Delete a slide, add
+  one, move one, retype a text, move an element, paste a picture: a moment
+  after the hand lifts, the page POSTs the difference to `/<slug>/edit` and
+  the server applies it as `slide.py` would (the open editor on the machine
+  when there is one, else the file, under the same lock, with the same
+  backup in `build/backups/`). It can change the deck's slides and title and
+  add the assets its new elements name; nothing else (theme, layouts, the
+  poll session) travels.
+- **Where both sides changed the same thing, the deck wins.** Edits are
+  compare-and-set per slide: a slide an agent changed first, or has claimed,
+  is refused, the page shows the deck's version again and says "A change was
+  not kept". The other slides of the same edit are saved.
+- **Unsaved work is never synced over.** While a request or an edit has not
+  reached the server the page holds its sync; a red pill says "Not saved yet —
+  retrying" when the server cannot be reached.
 
 **On a phone it is the way to steer the deck.** A deck on the current shell
 opens there as a vertical scroll of slides with the ask box docked below,
-bound to the slide in view (no text editing). A request sent there is POSTed
-to `/<slug>/request` (header `X-Key: deck-request`, so no cross-site form can
-write) and recorded with `slide.py ask TARGET SLIDE "text"`: into the open
-editor when there is one (an agent's `requests --wait` wakes as usual), else
-into the file. Until the server confirms it the page holds its sync, so the
-request is not overwritten; a red pill says when one is still unsent. 
+bound to the slide in view (no text editing, no slide list: deleting or
+adding a slide needs the desktop layout, or a typed request). A request is
+POSTed to `/<slug>/request` and recorded with `slide.py ask TARGET SLIDE
+"text"`, which wakes an agent's `requests --wait`. Both write routes need the
+header `X-Key: deck-request`, so no form on another site can write.
 
-**A new slide can be asked for there.** Add a slide in the mirror and type
-what it should be ("What should this slide be?"): the server adds the same
-empty slide to the deck, at the same place and with the same id
-(`slide.py new --empty`), and records the request on it, so the page keeps the
-slide, the agent builds on it and its reply shows there, with no reload. Only
-a slide that carries a request is saved; any other edit made in the mirror is
-overwritten. `python scripts/test-live-request.py` checks the route.
+**A new slide can be asked for.** Add a slide and type what it should be
+("What should this slide be?"): the empty slide is saved at the same place
+with the same id (`slide.py new --empty`) and the request is recorded on it,
+so the agent builds on it and its reply shows there.
+
+`python scripts/test-live-request.py` checks both write routes on a copy of
+the template.
 
 **Have an agent answer while you type.** With the deck open in an editor on
 the machine, `slide.py requests live --wait` blocks until a request arrives.
