@@ -230,12 +230,29 @@ def request(slug: str, body: bytes) -> tuple:
             raise Refused(504, "the editor did not take the request in time")
     r = ask(sid, text)
     if r.returncode and sid != "-" and f"no slide '{sid}'" in (r.stderr or r.stdout):
-        # typed on a slide that exists only in the mirror (added there, never
-        # saved): keep the request, on the whole deck, saying where it came
-        # from. `after` is the slide before it in the mirror, as the page saw it.
+        # typed on a slide added in the mirror ("What should this slide be?"),
+        # which the deck does not have yet: add the same empty slide where the
+        # page has it (`after` = the slide before it there, `first` = it leads
+        # the deck; neither, or a slide that is gone = at the end), then record
+        # the request on it. The page then matches the deck and keeps the slide.
         after = data.get("after")
-        where = f" after {after}" if isinstance(after, str) and ID_RE.match(after) else ""
-        r = ask("-", f"[typed on a slide added in the mirror{where}, not in the deck: {sid}] {text}"[:4000])
+        new = [sys.executable, str(SLIDE_PY), "new", "--empty", "--id", sid, "--agent", "Phone"]
+        tries = [["--first"]] if data.get("first") is True else []
+        if isinstance(after, str) and ID_RE.match(after):
+            tries.append(["--after", after])
+        made = None
+        for place in tries + [[]]:
+            try:
+                made = subprocess.run(new + place + ["--", str(path)], capture_output=True, text=True,
+                                      encoding="utf-8", timeout=120)
+            except subprocess.TimeoutExpired:
+                raise Refused(504, "the editor did not take the slide in time")
+            if not made.returncode or "exists already" in (made.stderr or made.stdout):
+                break
+        r = ask(sid, text)
+        if r.returncode:   # the slide could not be added: keep the request anyway, on the whole deck
+            where = f" after {after}" if isinstance(after, str) and ID_RE.match(after) else ""
+            r = ask("-", f"[typed on a slide added in the mirror{where}, not in the deck: {sid}] {text}"[:4000])
     if r.returncode:
         raise Refused(409, (r.stderr or r.stdout).strip()[-300:] or "not recorded")
     return _text(200, json.dumps({"recorded": rid}), "application/json")

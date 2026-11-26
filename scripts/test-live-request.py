@@ -54,22 +54,33 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.post("", "req-b", "one more example"), 200)
         self.assertIn("whole deck  req-b  open", self.open_requests())
 
-    def test_on_a_slide_that_exists_only_in_the_mirror(self):
+    def test_a_slide_added_in_the_mirror_is_added_to_the_deck(self):
+        before = self.ids()
         self.assertEqual(self.post("slide-only-here", "req-c", "copy slide 2", after=self.second), 200)
+        after = self.ids()
+        self.assertEqual(after, before[:2] + ["slide-only-here"] + before[2:])   # same place as in the mirror
         out = self.open_requests()
-        self.assertIn("whole deck  req-c  open", out)
-        self.assertIn(f"[typed on a slide added in the mirror after {self.second}, "
-                      "not in the deck: slide-only-here] copy slide 2", out)
-        self.assertEqual(self.ids().count("slide-only-here"), 0)   # the deck's slides are untouched
+        self.assertIn("slide-only-here  req-c  open", out)
+        self.assertNotIn("added in the mirror", out)
+        # an empty slide, as the editor's own "add slide" makes it
+        slide = json.loads(self.slide_py("get", str(self.deck), "slide-only-here"))
+        self.assertEqual(slide["elements"], [])
+        # a second request on it, or the same one sent again, adds nothing
+        self.assertEqual(self.post("slide-only-here", "req-c2", "and a chart", after=self.second), 200)
+        self.assertEqual(self.ids(), after)
 
-    def test_mirror_only_slide_without_or_with_a_bad_position(self):
-        self.assertEqual(self.post("slide-only-here", "req-d", "hello"), 200)
-        self.assertEqual(self.post("slide-only-here", "req-e", "hello", after="not an id!"), 200)
-        out = self.open_requests()
-        self.assertEqual(out.count("[typed on a slide added in the mirror, not in the deck: slide-only-here] hello"), 2)
+    def test_where_the_added_slide_goes(self):
+        n = len(self.ids())
+        self.assertEqual(self.post("slide-lead", "req-d", "an opener", first=True), 200)
+        self.assertEqual(self.ids()[0], "slide-lead")
+        self.assertEqual(self.post("slide-tail", "req-e", "a closer"), 200)                       # an older page: no position
+        self.assertEqual(self.post("slide-lost", "req-f", "x", after="gone-slide"), 200)          # its neighbour is gone
+        self.assertEqual(self.post("slide-odd", "req-g", "x", after="not an id!"), 200)
+        self.assertEqual(self.ids()[-3:], ["slide-tail", "slide-lost", "slide-odd"])
+        self.assertEqual(len(self.ids()), n + 4)
 
     def test_a_bad_request_is_still_refused(self):
-        for slide, rid, text in (("bad id!", "req-f", "x"), (self.first, "bad id!", "x"), (self.first, "req-g", " ")):
+        for slide, rid, text in (("bad id!", "req-f", "x"), (self.first, "bad id!", "x"), (self.first, "req-h", " ")):
             with self.assertRaises(serve.Refused) as ctx:
                 self.post(slide, rid, text)
             self.assertEqual(ctx.exception.status, 400)

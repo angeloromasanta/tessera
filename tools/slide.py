@@ -30,7 +30,7 @@ Change requests (typed in the editor's slide list: beside a slide, or "Whole dec
                                             ID "-" = about the whole deck
 
 Structure (coordinator only when agents run in parallel):
-    slide.py new TARGET --layout points [--id ID] [--after ID]   (a layout id, or its role)
+    slide.py new TARGET --layout points [--id ID] [--after ID | --first]   (a layout id, or its role; --empty = nothing on it)
     slide.py copy TARGET SRC_ID [--from TEMPLATE.html] [--id ID] [--after ID]   (default: $TESSERA_TEMPLATE)
     slide.py dup TARGET ID [--id NEW] | move TARGET ID --after ID|--first | rm TARGET ID
     slide.py asset TARGET KEY FILE               add or replace one asset
@@ -868,6 +868,20 @@ def _insert(slides, slide, after, first=False):
 def cmd_new(args):
     deck = open_target(args.target)
     new = copy.deepcopy(deck.doc)
+    if args.empty or not args.layout:
+        if not args.empty:
+            raise SystemExit("new: give --layout LAYOUT, or --empty for a slide with nothing on it")
+        # the editor's own "add slide": nothing on it, the deck's background
+        slide = {"id": args.id or fresh_id(new, "slide"), "background": (new.get("theme") or {}).get("background") or "#FFFFFF",
+                 "transition": "morph", "elements": [], "notes": ""}
+        if args.name:
+            slide["name"] = args.name
+        if any(s["id"] == slide["id"] for s in new["slides"]):
+            raise SystemExit(f"slide '{slide['id']}' exists already")
+        _insert(new["slides"], slide, args.after, args.first)
+        commit(deck, new, args, structure=True)
+        print(f"new slide {slide['id']}")
+        return
     lay = next((l for l in new.get("layouts", []) if l["id"] == args.layout), None)         or deckio.layout_for(new, args.layout)
     if not lay:
         raise SystemExit(f"no layout '{args.layout}' — have: " + ", ".join(l["id"] for l in new.get("layouts", [])))
@@ -878,7 +892,7 @@ def cmd_new(args):
     slide = {"id": args.id or fresh_id(new, "s-" + _role_name(lay["id"])),
              "name": args.name or lay.get("name", args.layout), "background": lay.get("background", "#FFFFFF"),
              "transition": lay.get("transition", "morph"), "notes": "", "elements": els}
-    _insert(new["slides"], slide, args.after)
+    _insert(new["slides"], slide, args.after, args.first)
     commit(deck, new, args, structure=True)
     print(f"new slide {slide['id']}")
 
@@ -1753,10 +1767,12 @@ def main():
     q = p("set", cmd_set, "id", "elem", write=True, help="set fields: ELEM or - for the slide")
     q.add_argument("pairs", nargs="+", help="key=value (JSON-parsed if valid); key= deletes")
     q = p("new", cmd_new, write=True, help="new slide from a layout")
-    q.add_argument("--layout", required=True, help="a layout id, or its role (points, title, ...)")
+    q.add_argument("--layout", help="a layout id, or its role (points, title, ...)")
+    q.add_argument("--empty", action="store_true", help="a slide with nothing on it, instead of --layout")
     q.add_argument("--id")
     q.add_argument("--name")
     q.add_argument("--after")
+    q.add_argument("--first", action="store_true")
     q = p("copy", cmd_copy, "src_id", write=True, help="copy a slide (+ its assets) from another deck")
     q.add_argument("--from", dest="src_deck", default=None,
                    help="the deck to copy from (default: $TESSERA_TEMPLATE)")

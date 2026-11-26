@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-- **The live mirror keeps a request typed on a slide you added there.** A
-  slide added in the mirror is not in the deck file, so its request used to be
-  refused and dropped after a few retries. It is now recorded as a whole-deck
-  request that names the new slide and the slide it was added after
+- **Ask for a new slide from the live mirror.** Add a slide in the mirror
+  (a phone, another computer) and type what it should be: the server adds the
+  same empty slide to the deck at the same place and records the request on
+  it, so the page keeps the slide and shows the agent's reply without a
+  reload. Before, the request was refused and dropped after a few retries.
+  `slide.py new --empty [--after ID | --first]` makes such a slide by hand
   (`tools/live/serve.py`, `sync.js`; `scripts/test-live-request.py`).
 
 - **The interactive title can change its background too.** A base page that

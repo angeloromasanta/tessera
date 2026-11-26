@@ -138,11 +138,15 @@ to `/<slug>/request` (header `X-Key: deck-request`, so no cross-site form can
 write) and recorded with `slide.py ask TARGET SLIDE "text"`: into the open
 editor when there is one (an agent's `requests --wait` wakes as usual), else
 into the file. Until the server confirms it the page holds its sync, so the
-request is not overwritten; a red pill says when one is still unsent. A
-request typed on a slide that exists only in the mirror (added there, so not
-in the file) is kept as a whole-deck request that names that slide id and the
-slide it was added after; the added slide itself is not saved, so the agent
-creates it. `python scripts/test-live-request.py` checks the route.
+request is not overwritten; a red pill says when one is still unsent. 
+
+**A new slide can be asked for there.** Add a slide in the mirror and type
+what it should be ("What should this slide be?"): the server adds the same
+empty slide to the deck, at the same place and with the same id
+(`slide.py new --empty`), and records the request on it, so the page keeps the
+slide, the agent builds on it and its reply shows there, with no reload. Only
+a slide that carries a request is saved; any other edit made in the mirror is
+overwritten. `python scripts/test-live-request.py` checks the route.
 
 **Have an agent answer while you type.** With the deck open in an editor on
 the machine, `slide.py requests live --wait` blocks until a request arrives.
