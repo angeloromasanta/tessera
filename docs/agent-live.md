@@ -280,6 +280,7 @@ From `tessera/`:
 ```powershell
 node scripts/test-agent.mjs
 python scripts/test-agent-bridge.py
+python scripts/test-live-request.py
 python scripts/test-agent-browser.py
 node --experimental-strip-types scripts/test-sync.ts
 ```

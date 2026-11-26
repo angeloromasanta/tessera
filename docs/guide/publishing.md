@@ -140,7 +140,15 @@ editor when there is one (an agent's `requests --wait` wakes as usual), else
 into the file. Until the server confirms it the page holds its sync, so the
 request is not overwritten; a red pill says when one is still unsent. A
 request typed on a slide that exists only in the mirror (added there, so not
-in the file) is kept as a whole-deck request that names that slide id.
+in the file) is kept as a whole-deck request that names that slide id and the
+slide it was added after; the added slide itself is not saved, so the agent
+creates it. `python scripts/test-live-request.py` checks the route.
+
+**Have an agent answer while you type.** With the deck open in an editor on
+the machine, `slide.py requests live --wait` blocks until a request arrives.
+With no editor open, requests go into the file: the agent reads
+`slide.py requests DECK.html` on a loop, answers with `slide.py reply`, and
+the answer shows under the request on the phone at the next sync.
 
 **A deck the editor refuses patches for reloads on every edit.** The usual
 cause is two elements with one id on a slide (the editor checks the whole deck

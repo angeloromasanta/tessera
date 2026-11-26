@@ -229,10 +229,13 @@ def request(slug: str, body: bytes) -> tuple:
         except subprocess.TimeoutExpired:
             raise Refused(504, "the editor did not take the request in time")
     r = ask(sid, text)
-    if r.returncode and sid != "-" and "no slide" in (r.stderr or r.stdout):
+    if r.returncode and sid != "-" and f"no slide '{sid}'" in (r.stderr or r.stdout):
         # typed on a slide that exists only in the mirror (added there, never
-        # saved): keep the request, on the whole deck, saying where it came from
-        r = ask("-", f"[typed on a slide added in the mirror, not in the deck: {sid}] {text}"[:4000])
+        # saved): keep the request, on the whole deck, saying where it came
+        # from. `after` is the slide before it in the mirror, as the page saw it.
+        after = data.get("after")
+        where = f" after {after}" if isinstance(after, str) and ID_RE.match(after) else ""
+        r = ask("-", f"[typed on a slide added in the mirror{where}, not in the deck: {sid}] {text}"[:4000])
     if r.returncode:
         raise Refused(409, (r.stderr or r.stdout).strip()[-300:] or "not recorded")
     return _text(200, json.dumps({"recorded": rid}), "application/json")

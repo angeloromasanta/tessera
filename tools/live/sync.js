@@ -177,10 +177,20 @@
     for (var item of Array.from(outbox.values())) {
       if (Date.now() < item.next) continue;
       try {
+        if (item.slideId && item.after === undefined) {
+          // the slide before it here: tells the server where a slide that
+          // exists only in this mirror was added (its request is kept anyway)
+          item.after = '';
+          try {
+            var sl = (await app().agent.read()).doc.slides || [];
+            var at = sl.findIndex(function (s) { return s.id === item.slideId; });
+            if (at > 0) item.after = sl[at - 1].id;
+          } catch (err) { /* an older shell: the request goes without it */ }
+        }
         var r = await fetch(BASE + '/request', {
           method: 'POST', cache: 'no-store',
           headers: { 'Content-Type': 'application/json', 'X-Key': 'deck-request' },
-          body: JSON.stringify({ slideId: item.slideId, request: item.request }),
+          body: JSON.stringify({ slideId: item.slideId, request: item.request, after: item.after || '' }),
         });
         if (r.ok) { outbox.delete(item.request.id); continue; }
         var why = await r.text();

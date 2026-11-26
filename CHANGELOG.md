@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The live mirror keeps a request typed on a slide you added there.** A
+  slide added in the mirror is not in the deck file, so its request used to be
+  refused and dropped after a few retries. It is now recorded as a whole-deck
+  request that names the new slide and the slide it was added after
+  (`tools/live/serve.py`, `sync.js`; `scripts/test-live-request.py`).
+
 - **The interactive title can change its background too.** A base page that
   describes settings in `<meta name="tessera-background">` (colours, shapes,
   speed...) lets the model change it: the settings ride in the slide as
