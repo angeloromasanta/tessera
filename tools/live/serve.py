@@ -221,12 +221,18 @@ def request(slug: str, body: bytes) -> tuple:
         cmd += ["--rev", str(req["rev"])]
     if req.get("status") == "stopped":
         cmd += ["--state", "stopped"]
-    cmd += ["--", str(path), sid, text]   # a text that starts with "-" is not an option
     # slide.py retries for about 90 s while the editor here is busy (someone typing)
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=120)
-    except subprocess.TimeoutExpired:
-        raise Refused(504, "the editor did not take the request in time")
+    def ask(target, words):
+        try:   # a text that starts with "-" is not an option
+            return subprocess.run(cmd + ["--", str(path), target, words], capture_output=True, text=True,
+                                  encoding="utf-8", timeout=120)
+        except subprocess.TimeoutExpired:
+            raise Refused(504, "the editor did not take the request in time")
+    r = ask(sid, text)
+    if r.returncode and sid != "-" and "no slide" in (r.stderr or r.stdout):
+        # typed on a slide that exists only in the mirror (added there, never
+        # saved): keep the request, on the whole deck, saying where it came from
+        r = ask("-", f"[typed on a slide added in the mirror, not in the deck: {sid}] {text}"[:4000])
     if r.returncode:
         raise Refused(409, (r.stderr or r.stdout).strip()[-300:] or "not recorded")
     return _text(200, json.dumps({"recorded": rid}), "application/json")

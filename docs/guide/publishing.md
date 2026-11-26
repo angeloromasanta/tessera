@@ -138,7 +138,9 @@ to `/<slug>/request` (header `X-Key: deck-request`, so no cross-site form can
 write) and recorded with `slide.py ask TARGET SLIDE "text"`: into the open
 editor when there is one (an agent's `requests --wait` wakes as usual), else
 into the file. Until the server confirms it the page holds its sync, so the
-request is not overwritten; a red pill says when one is still unsent.
+request is not overwritten; a red pill says when one is still unsent. A
+request typed on a slide that exists only in the mirror (added there, so not
+in the file) is kept as a whole-deck request that names that slide id.
 
 **A deck the editor refuses patches for reloads on every edit.** The usual
 cause is two elements with one id on a slide (the editor checks the whole deck
