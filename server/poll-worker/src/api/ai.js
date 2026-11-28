@@ -87,6 +87,35 @@ export async function openRouterChat({ model, messages, max }) {
   return text
 }
 
+export const DEFAULT_IMAGE_MODEL = 'google/gemini-3.1-flash-lite-image'
+const imageModel = () => (MODEL_RE.test(String(process.env.IMAGE_MODEL ?? '')) ? process.env.IMAGE_MODEL : DEFAULT_IMAGE_MODEL)
+
+/** A picture as a data: URL: an https URL from the provider is fetched here, so
+ *  the phone can draw it on a canvas (and shrink it) without a CORS taint. */
+async function asDataUrl(url) {
+  if (/^data:image\//.test(url)) return url
+  const r = await fetch(url)
+  if (!r.ok) throw new Error(`the image could not be fetched (HTTP ${r.status})`)
+  const type = (r.headers.get('content-type') || 'image/png').split(';')[0]
+  return `data:${type};base64,${Buffer.from(await r.arrayBuffer()).toString('base64')}`
+}
+
+/** The image provider call. `{model, prompt}` in, the picture as a data: URL out. */
+export async function openRouterImage({ model, prompt }) {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set')
+  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', ...appHeaders('game') },
+    body: JSON.stringify({ model, modalities: ['image', 'text'], messages: [{ role: 'user', content: prompt }] }),
+  })
+  const payload = await r.json().catch(() => null)
+  if (!r.ok) throw new Error(`the image call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
+  const url = payload?.choices?.[0]?.message?.images?.[0]?.image_url?.url
+  if (!url) throw new Error('the model returned no image')
+  return await asDataUrl(url)
+}
+
 const fail = (status, error, extra) => ({ status, body: { error, ...extra } })
 const posInt = (v) => (Number.isFinite(Number(v)) && Number(v) >= 1 ? Math.trunc(Number(v)) : undefined)
 
@@ -96,7 +125,7 @@ const posInt = (v) => (Number.isFinite(Number(v)) && Number(v) >= 1 ? Math.trunc
  * counter, `chat({model, messages, max})` resolves to the reply's text.
  * Returns {status, body}.
  */
-export async function serve(b, { poll, lecturer = false, now = Date.now(), chat = openRouterChat, save = async () => {} } = {}) {
+export async function serve(b, { poll, lecturer = false, now = Date.now(), chat = openRouterChat, draw = openRouterImage, save = async () => {} } = {}) {
   // --- what the model is told -------------------------------------------------
   let def = null
   const task = b?.task === undefined || b?.task === null || b?.task === '' ? '' : String(b.task)
@@ -151,8 +180,23 @@ export async function serve(b, { poll, lecturer = false, now = Date.now(), chat 
   if (used >= MAX_PER_DAY()) return fail(429, 'The AI has answered enough for today.')
   await save({ aiDay: day, aiCount: used + 1 })
 
+  // --- a picture: a task declared with "image": true ----------------------------------
+  // The task's `system` is the brief and the phone's input is appended to it;
+  // the reply is {image: data URL}, which the page shrinks and stores (/api/upload).
+  if (def?.image) {
+    if (!input.trim()) return fail(400, 'input is empty')
+    const prompt = [system.trim(), input.trim()].filter(Boolean).join('\n\n')
+    const m = typeof def.model === 'string' && MODEL_RE.test(def.model) ? def.model : imageModel()
+    try {
+      return { status: 200, body: { image: await draw({ model: m, prompt }) } }
+    } catch (e) {
+      console.error('ai image:', e)
+      return fail(502, 'The AI could not draw this just now. Try again in a moment.')
+    }
+  }
+
   // --- the call ---------------------------------------------------------------------
-  const sys = [system.trim(), wantJson ? JSON_RULE : ''].filter(Boolean).join('\n\n')
+  const sys =[system.trim(), wantJson ? JSON_RULE : ''].filter(Boolean).join('\n\n')
   const content = [{ type: 'text', text: input || '(see the image)' }]
   if (image) content.push({ type: 'image_url', image_url: { url: image } })
   const messages = [...(sys ? [{ role: 'system', content: sys }] : []), { role: 'user', content }]

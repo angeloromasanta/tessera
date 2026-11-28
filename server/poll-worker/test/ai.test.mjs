@@ -106,3 +106,22 @@ r = await serve({ task: 'judge', input: 'x' }, opts(published(10), { chat: async
 assert.equal(r.status, 502); assert.ok(!r.body.error.includes('boom'))
 
 console.log('ai: ok')
+
+// --- an image task: {image: true} draws, the brief comes first, the reply is {image} ----
+{
+  const IMG_TASKS = { illustrate: { system: 'Draw this future:', image: true } }
+  const ipage = `<html><body>${tag({ tasks: IMG_TASKS })}</body></html>`
+  const ipoll = { html: ipage, htmlAt: new Date(NOW - 60_000).toISOString() }
+  let drew
+  const draw = async (c) => { drew = c; return PNG }
+  let ir = await serve({ task: 'illustrate', input: 'Robots win the Nobel' }, opts(ipoll, { draw }))
+  assert.equal(ir.status, 200)
+  assert.deepEqual(ir.body, { image: PNG })
+  assert.equal(drew.prompt, 'Draw this future:\n\nRobots win the Nobel')
+  assert.match(drew.model, /image/)
+  ir = await serve({ task: 'illustrate', input: '  ' }, opts(ipoll, { draw }))
+  assert.equal(ir.status, 400)
+  ir = await serve({ task: 'illustrate', input: 'x' }, opts(ipoll, { draw: async () => { throw new Error('401') } }))
+  assert.equal(ir.status, 502)
+}
+console.log('ai image task ok')
