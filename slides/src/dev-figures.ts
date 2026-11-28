@@ -12,6 +12,13 @@
 // A slide written before `devSrc` existed has only a loopback `src`. It is
 // adopted the first time its server answers: the page moves into an asset and
 // the address becomes `devSrc`.
+//
+// The poster follows too. A live frame cannot be rasterized, so thumbnails,
+// print and the still slide show `poster`; the live server shoots the page's
+// last state after each save settles (live.py v3), and this module makes that
+// shot the poster, under the figure's own key (`img-NAME-poster`), so the
+// thumbnail shows the figure as it is now and never a template's or an
+// earlier version's picture.
 
 import type { TesseraDoc, EmbedElement } from './model'
 import { isLoopbackUrl } from './model'
@@ -39,6 +46,12 @@ function devEmbeds(doc: TesseraDoc): EmbedElement[] {
   return out
 }
 
+/** A figure's own poster key: never a template's or another slide's picture. */
+function posterKey(url: URL): string {
+  const name = (url.pathname.split('/').pop() ?? 'figure').replace(/\.html?$/i, '').replace(/[^\w-]+/g, '-') || 'figure'
+  return `img-${name}-poster`
+}
+
 function freshKey(doc: TesseraDoc, url: URL): string {
   const name = (url.pathname.split('/').pop() ?? 'figure').replace(/\.html?$/i, '').replace(/[^\w-]+/g, '-') || 'figure'
   let key = `page-${name}`
@@ -46,10 +59,38 @@ function freshKey(doc: TesseraDoc, url: URL): string {
   return key
 }
 
+function blobToDataUrl(b: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(b)
+  })
+}
+
+/** The figure's freshest poster from the live server, or null if none is new. */
+async function fetchPoster(at: string, path: string, seen: Map<string, string>, href: string): Promise<string | null> {
+  try {
+    const head = await fetch(`${at}ps=${path}`, { cache: 'no-store', signal: AbortSignal.timeout(1500) })
+    if (!head.ok) return null // a server from before posters
+    const sig = await head.text()
+    if (!sig || seen.get(href) === sig) return null
+    const body = await fetch(`${at}poster=${path}`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+    if (!body.ok) return null
+    const uri = await blobToDataUrl(await body.blob())
+    seen.set(href, sig)
+    return uri.startsWith('data:image/') ? uri : null
+  } catch {
+    return null
+  }
+}
+
 export function watchDevFigures(store: Store, flush: () => void): void {
   if (store.doc.readonly || location.protocol !== 'file:') return
   /** source URL → the signature its asset was last written from */
   const seen = new Map<string, string>()
+  /** source URL → the signature of the poster last written from it */
+  const seenPoster = new Map<string, string>()
   let running = false
 
   const pass = async () => {
@@ -62,24 +103,40 @@ export function watchDevFigures(store: Store, flush: () => void): void {
         const url = new URL(href)
         const at = `${url.origin}/__live?`
         const path = encodeURIComponent(url.pathname)
-        let sig: string, page: string
+        let sig: string, page: string | null = null
         try {
-          const head = await fetch(`${at}p=${path}`, { cache: 'no-store', signal: AbortSignal.timeout(1500) })
+          // `ed=1`: the editor is watching this page, so the server keeps its poster current
+          const head = await fetch(`${at}p=${path}&ed=1`, { cache: 'no-store', signal: AbortSignal.timeout(1500) })
           if (!head.ok) continue
           sig = await head.text()
-          if (seen.get(href) === sig) continue
-          const body = await fetch(`${at}src=${path}`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
-          if (!body.ok) continue // a server from before `src=` — restart it
-          page = await body.text()
+          if (seen.get(href) !== sig) {
+            const body = await fetch(`${at}src=${path}`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+            if (!body.ok) continue // a server from before `src=` — restart it
+            page = await body.text()
+          }
         } catch {
           continue // no server: the bundled page is what the file has
         }
+        const poster = await fetchPoster(at, path, seenPoster, href)
+        if (page === null && poster === null) continue
         const doc = store.doc
-        page = inlineFont(page, doc)
+        if (page !== null) page = inlineFont(page, doc)
         let changed = false
         for (const el of devEmbeds(doc)) {
           if ((el.devSrc || el.src) !== href) continue
           doc.assets = doc.assets ?? {}
+          if (poster !== null) {
+            const key = posterKey(url)
+            if (doc.assets[key] !== poster) {
+              doc.assets[key] = poster
+              changed = true
+            }
+            if (el.poster !== `asset:${key}`) {
+              el.poster = `asset:${key}`
+              changed = true
+            }
+          }
+          if (page === null) continue
           if (!el.asset) {
             el.asset = freshKey(doc, url)
             changed = true
@@ -94,7 +151,7 @@ export function watchDevFigures(store: Store, flush: () => void): void {
             changed = true
           }
         }
-        seen.set(href, sig)
+        if (page !== null) seen.set(href, sig)
         if (changed) {
           // not a gesture of the author's: keep it out of undo
           store.sealHistory()

@@ -39,7 +39,7 @@ Where the files go (what the tools actually do):
 | figure source (edit this) | `$DECK_DIR/build/figures/NAME.html` | `blockout.py` (the first draft), then you / the agent; `live_figures.py open` makes a placeholder |
 | bundled page (font inlined) | `$DECK_DIR/build/fig-NAME.html` | `embed_font.py build/figures/NAME.html --deck DECK.html`; `live_figures.py close` |
 | checks | `$DECK_DIR/build/check/NAME/` | `shoot.py --clicks all` |
-| poster, live/agent route | `$DECK_DIR/build/posters/NAME.png` | the agent (final `step-NN.png`), `live_figures.py` |
+| poster, live/agent route | `$DECK_DIR/build/posters/NAME.png` | `live.py`, after every save of a figure the editor watches (also the agent, `live_figures.py`) |
 | poster, `deck_build.py` route | `$DECK_DIR/build/media/<page-stem>-poster.jpg` | `deck_build.py add-slide` auto-shot |
 
 ## Choose the form
@@ -339,19 +339,26 @@ $PY $T/slide.py set live NAME em-frame devSrc=http://127.0.0.1:5173/build/figure
 #    editor copies every save of the page into it (font inlined), so the slide
 #    is always in the file, and a copy, the show or a published deck never
 #    depends on this machine. Never `asset=` and never a loopback `src=`.
-# 2. when accepted: drop the live address and set the poster
+#    The poster follows by itself: `live.py` shoots the page's last state ~1 s
+#    after each save settles (build/posters/NAME.png) and the editor makes it
+#    the slide's poster (`img-NAME-poster`), so the thumbnail shows the
+#    figure as it is now, ~10 s after a save.
+# 2. when accepted: drop the live address (the poster is already the last shot)
 $PY $T/slide.py bake live --final          # page into the file one last time, devSrc removed
-$PY $T/slide.py asset live img-NAME-poster $DECK_DIR/build/posters/NAME.png
-$PY $T/slide.py set live NAME em-frame poster=asset:img-NAME-poster
 $PY $T/slide.py notes live NAME "…one line per state…"
+#    no editor open (a file, not live): set the poster yourself
+$PY $T/slide.py asset DECK.html img-NAME-poster $DECK_DIR/build/posters/NAME.png
+$PY $T/slide.py set DECK.html NAME em-frame poster=asset:img-NAME-poster
 ```
 
 The embed element is `em-frame` with fields `asset` (page key), `src`,
 `poster` (`asset:KEY`), `liveInEditor`, `zoom`, `sandbox`, and `texts` (the
 label edits people made; keep it whenever you replace or re-point the page)
 (`slide.py get $TESSERA/template.html sl-embed`). Set `liveInEditor: true`
-on every figure embed: without it the editor shows the poster image, not the page. The copied slide still
-carries the template's adoption-curve poster until step 2 replaces it. For a
+on every figure embed: without it the editor shows the poster image, not the page. The copied slide
+carries the template's adoption-curve poster until the first shot replaces it
+(a server from before posters, below v3 in `live.py status`, never does;
+`live.py start` replaces it). For a
 full-bleed figure: `set … em-frame x=0 y=0 w=1280 h=720`, and drop
 `co-title` via `slide.py pull`, delete its line, `push`.
 After the session, reconcile into the spec ([editing.md](editing.md)).
