@@ -30,7 +30,8 @@
 // The photo is passed to the model and dropped: it is never stored. The route
 // keeps no memory; the phone sends the last few turns back as `history`.
 
-import { preflight, json, body, badCode, getPoll, setPoll, appHeaders } from './_lib.js'
+import { preflight, json, body, badCode, getPoll, setPoll } from './_lib.js'
+import { chatText } from './_model.js'
 
 const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5'
 const OPEN_HOURS = () => Number(process.env.HELP_OPEN_HOURS) || 3
@@ -201,29 +202,8 @@ export function buildMessages({ mode, question, image, history }, lab) {
 
 /** The real provider call: messages in, the reply's text out. */
 export async function openRouter(messages) {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set')
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      ...appHeaders('lab helper'),
-    },
-    body: JSON.stringify({
-      model: process.env.HELP_MODEL || DEFAULT_MODEL,
-      // A student is waiting on a phone: short thinking, short reply.
-      reasoning: { effort: 'low' },
-      max_tokens: 900,
-      messages,
-    }),
-  })
-  const payload = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(`the model call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
-  const content = payload?.choices?.[0]?.message?.content
-  const text = Array.isArray(content) ? content.map((p) => p?.text ?? '').join('') : String(content ?? '')
-  if (!text.trim()) throw new Error('the model returned nothing')
-  return text
+  // A student is waiting on a phone: short thinking, short reply.
+  return chatText({ model: process.env.HELP_MODEL || DEFAULT_MODEL, messages, max: 900, feature: 'lab helper' })
 }
 
 /**

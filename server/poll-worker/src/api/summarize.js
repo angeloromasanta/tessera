@@ -6,8 +6,9 @@
 
 import {
   preflight, json, body, badCode, denyLecturer, SUMMARIZE_COOLDOWN_MS,
-  getPoll, setPoll, listAnswers, appHeaders,
+  getPoll, setPoll, listAnswers,
 } from './_lib.js'
+import { chatText } from './_model.js'
 
 /** Default summarizer. Overridable per request (the slide's panel exposes it)
  *  and per deployment (SUMMARY_MODEL), so switching models never means
@@ -46,36 +47,16 @@ export async function summarize({ question, answers, extra, model }) {
     extra ? `\nAdditional instruction from the speaker: ${extra}` : '',
   ].join('\n')
 
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      // OpenRouter attributes traffic by these; harmless but good manners.
-      ...appHeaders('audience polls'),
-    },
-    body: JSON.stringify({
-      model: model || process.env.SUMMARY_MODEL || DEFAULT_MODEL,
-      // The speaker is standing in front of a room waiting for this, so cap
-      // reasoning depth: theme extraction from short texts does not need deep
-      // deliberation, and every extra second is dead air on stage.
-      reasoning: { effort: 'low' },
-      max_tokens: 1200,
-      messages: [
-        { role: 'system', content: SYSTEM },
-        { role: 'user', content: user },
-      ],
-    }),
+  // The speaker is standing in front of a room waiting for this: short thinking.
+  const text = await chatText({
+    model: model || process.env.SUMMARY_MODEL || DEFAULT_MODEL,
+    max: 1200, feature: 'audience polls', label: 'summarizer',
+    messages: [
+      { role: 'system', content: SYSTEM },
+      { role: 'user', content: user },
+    ],
   })
-
-  const payload = await r.json().catch(() => null)
-  if (!r.ok) {
-    const detail = payload?.error?.message ?? `HTTP ${r.status}`
-    throw new Error(`summarizer failed: ${detail}`)
-  }
-  const text = payload?.choices?.[0]?.message?.content
-  if (!text || !String(text).trim()) throw new Error('summarizer returned nothing')
-  return String(text).trim()
+  return text.trim()
 }
 
 export default async function handler(req, res) {

@@ -9,7 +9,7 @@
     "sync": "node scripts/sync.mjs",
     "dev": "node scripts/sync.mjs && wrangler dev",
     "deploy": "node scripts/sync.mjs && node test/e2e.test.mjs && node test/game.e2e.test.mjs && wrangler deploy",
-    "test": "node scripts/sync.mjs && node test/draw.test.mjs && node test/help.test.mjs && node test/ai.test.mjs && node test/remix.test.mjs && node test/legacy.test.mjs && node test/e2e.test.mjs && node test/game.e2e.test.mjs && python test/live_browser.py"
+    "test": "node scripts/sync.mjs && node test/draw.test.mjs && node test/help.test.mjs && node test/ai.test.mjs && node test/model.test.mjs && node test/remix.test.mjs && node test/legacy.test.mjs && node test/e2e.test.mjs && node test/game.e2e.test.mjs && python test/live_browser.py"
   },
   "dependencies": {
     "qrcode": "1.5.4"

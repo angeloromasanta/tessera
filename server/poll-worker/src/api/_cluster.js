@@ -10,6 +10,8 @@
 // Units of the map: one hex-cell radius. Axial cell (q, r) sits at
 // x = √3·(q + r/2), y = 1.5·r — the slide multiplies by its own cell size.
 
+import { chatText } from './_model.js'
+
 const SQ3 = Math.sqrt(3)
 
 export function rng(seed) {
@@ -299,12 +301,8 @@ export async function llmLabels(question, groups) {
     'Rules: at most 4 words, sentence case (only the first word capitalised), plain and specific, in the respondents\' own terms; ' +
     'no generic words like "Various", "Miscellaneous" or "General"; every label clearly different from the others.\n' +
     'Reply with ONLY a JSON object mapping theme number to label, e.g. {"0": "Build AI agents"}.\n\n' + body
-  const r = await fetch(`${OR}/chat/completions`, { method: 'POST', headers: headers(),
-    body: JSON.stringify({ model: LABEL_MODEL(), reasoning: { effort: 'low' }, max_tokens: 400, temperature: .2,
-      messages: [{ role: 'user', content: prompt }] }) })
-  const j = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(`labels failed: ${j?.error?.message ?? r.status}`)
-  const txt = String(j?.choices?.[0]?.message?.content ?? '')
+  const txt = await chatText({ model: LABEL_MODEL(), max: 400, temperature: .2, feature: 'audience polls', label: 'labels',
+    messages: [{ role: 'user', content: prompt }] })
   const out = JSON.parse(txt.match(/\{[\s\S]*\}/)?.[0] ?? '{}')
   for (const id of Object.keys(groups)) if (!out[id]) throw new Error(`no label for theme ${id}`)
   return Object.fromEntries(Object.keys(groups).map((id) => [id, String(out[id]).slice(0, 60)]))
@@ -341,13 +339,10 @@ export async function llmScores(question, axes, answers) {
     'null only when it gives no hint at all, such as a bare tool name.\n\n' + rubric +
     `\n\nReply with ONLY a compact JSON object mapping answer number to ${shape}, each an integer -3..3 or null, e.g. {"1":${axes.length === 1 ? '[-2]' : '[-2,null]'}}.\n\nANSWERS\n` +
     answers.map((a, i) => `${i + 1}: ${a.text.replace(/\s+/g, ' ').slice(0, 240)}`).join('\n')
-  const r = await fetch(`${OR}/chat/completions`, { method: 'POST', headers: headers(),
-    // `reasoning` stays: without it the model spends the whole budget thinking and no score comes back
-    body: JSON.stringify({ model: SCORE_MODEL(), reasoning: { effort: 'low' }, max_tokens: 60 + answers.length * 24, temperature: 0,
-      messages: [{ role: 'user', content: prompt }] }) })
-  const j = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(`scores failed: ${j?.error?.message ?? r.status}`)
-  const out = JSON.parse(String(j?.choices?.[0]?.message?.content ?? '').match(/\{[\s\S]*\}/)?.[0] ?? '{}')
+  // thinking gets its own headroom over this budget (_model.js)
+  const txt = await chatText({ model: SCORE_MODEL(), max: 60 + answers.length * 24, temperature: 0, feature: 'audience polls', label: 'scores',
+    messages: [{ role: 'user', content: prompt }] })
+  const out = JSON.parse(txt.match(/\{[\s\S]*\}/)?.[0] ?? '{}')
   const ok = (v) => (Number.isFinite(+v) && v !== null && v !== '' ? Math.max(-3, Math.min(3, Math.round(+v))) : null)
   return Object.fromEntries(answers.map((a, i) => {
     const got = out[i + 1]

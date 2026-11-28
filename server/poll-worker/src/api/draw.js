@@ -43,7 +43,8 @@
 // The route keeps no memory. What it needs between turns travels in `state`,
 // an opaque string the phone hands back unchanged.
 
-import { preflight, json, body, badCode, getPoll, setPoll, appHeaders } from './_lib.js'
+import { preflight, json, body, badCode, getPoll, setPoll } from './_lib.js'
+import { chatText } from './_model.js'
 
 const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5'
 const OPEN_HOURS = () => Number(process.env.DRAW_OPEN_HOURS) || 3
@@ -197,34 +198,21 @@ function userMessage({ prompt, prev, shown, repair }, retry) {
 }
 
 async function callOnce(input, retry) {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw Object.assign(new Error('OPENROUTER_API_KEY is not set'), { final: true })
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      ...appHeaders('prompt game'),
-    },
-    body: JSON.stringify({
-      model: process.env.DRAW_MODEL || DEFAULT_MODEL,
-      // A room is waiting on a phone: short thinking. The cap leaves room for
-      // the thinking AND the function (thinking could eat a 1,400 cap whole).
-      reasoning: { effort: 'low' },
-      max_tokens: 4000,
+  // A room is waiting on a phone: short thinking (it gets its own headroom, _model.js).
+  let text
+  try {
+    text = await chatText({
+      model: process.env.DRAW_MODEL || DEFAULT_MODEL, max: 2400, feature: 'prompt game',
       messages: [
         { role: 'system', content: SYSTEM },
         { role: 'user', content: userMessage(input, retry) },
       ],
-    }),
-  })
-  const payload = await r.json().catch(() => null)
-  if (!r.ok) {
-    const e = new Error(`the model call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
-    if (r.status === 401 || r.status === 402 || r.status === 403) e.final = true
+    })
+  } catch (e) {
+    if ([0, 401, 402, 403].includes(e.status)) e.final = true
     throw e
   }
-  return parse(payload?.choices?.[0]?.message?.content)
+  return parse(text)
 }
 
 /** One drawing from the model, asked again until it is a function that compiles. */

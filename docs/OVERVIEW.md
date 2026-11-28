@@ -535,11 +535,14 @@ is the authoritative format guide).
     edits on a 14 MB deck: 2.0 s of main thread and 10 figure reloads before,
     1.1 s and 0 after (what remains is that tab's autosave serializing the file).
 13. **Thinking tokens eat `max_tokens`.** Even at effort "low" a model can
-    think past a 1,200-token budget on a long brief and return no text
-    (finish `length`, 47 answers to cluster). `/api/ai` adds
-    `REASONING_HEADROOM` on top of the caller's `max` and asks once more with
-    reasoning off when the reply is still empty (`src/api/ai.js`). The other
-    model routes (`help`, `summarize`, `_cluster`) still use a bare budget.
+    think past the whole budget and return no text (finish `length`): labels
+    and scores in Oct 2026, a 47-answer clustering at max 1200 in Nov 2026,
+    each live in class. Every model call goes through
+    `server/poll-worker/src/api/_model.js` (`chatText`): `max` is the reply's
+    budget, thinking gets `REASONING_HEADROOM` on top, and an empty or cut-off
+    reply is asked once more with reasoning off. Never call OpenRouter's chat
+    endpoint directly from a route, and never set `reasoning`/`max_tokens` by
+    hand (`test/model.test.mjs`).
 
 ---
 

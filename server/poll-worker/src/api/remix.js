@@ -37,7 +37,8 @@
 // and which the screen hands to the background page. Settings are data the
 // background page validates; nothing in them runs.
 
-import { preflight, json, body, badCode, getPoll, setPoll, denyLecturer, appHeaders } from './_lib.js'
+import { preflight, json, body, badCode, getPoll, setPoll, denyLecturer } from './_lib.js'
+import { chatText } from './_model.js'
 
 const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5'
 const MAX_PER_DAY = () => Number(process.env.REMIX_MAX_PER_DAY) || 600
@@ -173,29 +174,8 @@ export function buildMessages(html, ideas, background = '') {
 }
 
 export async function openRouter(messages) {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set')
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      ...appHeaders('interactive title'),
-    },
-    body: JSON.stringify({
-      model: process.env.REMIX_MODEL || DEFAULT_MODEL,
-      // The room is watching the screen: short thinking, the whole page back.
-      reasoning: { effort: 'low' },
-      max_tokens: 9000,
-      messages,
-    }),
-  })
-  const payload = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(`the model call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
-  const content = payload?.choices?.[0]?.message?.content
-  const text = Array.isArray(content) ? content.map((p) => p?.text ?? '').join('') : String(content ?? '')
-  if (!text.trim()) throw new Error('the model returned nothing')
-  return text
+  // The room is watching the screen: short thinking, the whole page back.
+  return chatText({ model: process.env.REMIX_MODEL || DEFAULT_MODEL, messages, max: 9000, feature: 'interactive title' })
 }
 
 // --- state ----------------------------------------------------------------------------
