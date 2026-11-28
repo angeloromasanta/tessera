@@ -66,23 +66,37 @@ export function parseJson(text) {
   return undefined
 }
 
+// Thinking tokens count against max_tokens, and even at effort "low" a model can
+// think for 1,200+ tokens on a long brief (47 answers to cluster with max 1200:
+// every call came back empty). So the thinking gets its own headroom
+// on top of the reply's `max`, and a reply still empty is asked again without it.
+const REASONING_HEADROOM = 2000
+
 /** The real provider call. `{model, messages, max}` in, the reply's text out. */
 export async function openRouterChat({ model, messages, max }) {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set')
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-      ...appHeaders('game'),
-    },
-    body: JSON.stringify({ model, reasoning: { effort: 'low' }, max_tokens: max, messages }),
-  })
-  const payload = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(`the model call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
-  const content = payload?.choices?.[0]?.message?.content
-  const text = Array.isArray(content) ? content.map((p) => p?.text ?? '').join('') : String(content ?? '')
+  const call = async (think) => {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        ...appHeaders('game'),
+      },
+      body: JSON.stringify({
+        model, messages,
+        reasoning: think ? { effort: 'low' } : { enabled: false },
+        max_tokens: think ? max + REASONING_HEADROOM : max,
+      }),
+    })
+    const payload = await r.json().catch(() => null)
+    if (!r.ok) throw new Error(`the model call failed: ${payload?.error?.message ?? `HTTP ${r.status}`}`)
+    const content = payload?.choices?.[0]?.message?.content
+    return Array.isArray(content) ? content.map((p) => p?.text ?? '').join('') : String(content ?? '')
+  }
+  let text = await call(true)
+  if (!text.trim()) text = await call(false)
   if (!text.trim()) throw new Error('the model returned nothing')
   return text
 }

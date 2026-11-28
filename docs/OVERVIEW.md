@@ -534,6 +534,12 @@ is the authoritative format guide).
     added or removed no longer emits `slides`/`current`. 10 received figure-text
     edits on a 14 MB deck: 2.0 s of main thread and 10 figure reloads before,
     1.1 s and 0 after (what remains is that tab's autosave serializing the file).
+13. **Thinking tokens eat `max_tokens`.** Even at effort "low" a model can
+    think past a 1,200-token budget on a long brief and return no text
+    (finish `length`, 47 answers to cluster). `/api/ai` adds
+    `REASONING_HEADROOM` on top of the caller's `max` and asks once more with
+    reasoning off when the reply is still empty (`src/api/ai.js`). The other
+    model routes (`help`, `summarize`, `_cluster`) still use a bare budget.
 
 ---
 
