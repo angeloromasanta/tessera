@@ -716,6 +716,12 @@ def main() -> int:
         for i, e in enumerate(dict.fromkeys(cdp.errors)):
             found[f"js{i}"] = {"sev": "E", "kind": "script", "key": f"js{i}",
                                "msg": e, "states": [0]}
+        # a blockout (blockout.py) still carries its marker and state strip:
+        # a draft to refine, never a figure to hand back
+        if cdp.eval("!!document.querySelector('meta[name=figure-draft]')"):
+            found["draft"] = {"sev": "E", "kind": "draft", "key": "draft", "states": [0],
+                              "msg": "still a blockout: refine it region by region, then "
+                                     "`blockout.py --strip FILE`"}
         allow = (cdp.eval("(document.querySelector('meta[name=figcheck-allow]')"
                           "||{}).content||''") or "").split()
         cdp.eval(STYLE_JS)

@@ -26,14 +26,26 @@ The deck is open in the editor, and your slide's canvas is an iframe on
 `http://127.0.0.1:5173/build/figures/{NAME}.html`. The live server reloads it
 every time you save, and the editor copies each save into the deck file. So
 you **draft first** (this section is all of the rule you need):
-1. Your file currently holds a placeholder. Within your first ~2 minutes,
-   replace it: copy the starter `{KIT}/figures/figure.html` over your file
-   and save a valid page showing the main regions / first state.
-   Do not spend a long silent think computing coordinates first.
-2. Then improve by small incremental edits (patch the content table, a
-   constant, one group of marks). Save after every visible improvement.
+1. **Blockout first, within ~2 minutes.** If your file is not already a
+   blockout (it holds a placeholder: your brief says), write the figure's
+   regions and states as a ~15-line spec and run
+   `python {T}/blockout.py SPEC -o {DECK_DIR}/build/figures/{NAME}.html`
+   (`--example` prints one to copy; `--help` the grammar). It saves a valid
+   page of dashed boxes, circles and arrows with one-word labels, every
+   state, plus a strip saying what each state shows. Never save the bare
+   starter or a finished figure as the first draft. Do not spend a long
+   silent think computing coordinates first: rough positions, even spacing.
+2. **Refine that file, region by region.** Layout first (edit the spec,
+   re-run blockout.py: it overwrites only a blockout). Then replace ONE
+   `<!-- region: ID -->` group per Edit with its real marks, keeping the
+   ids and `data-edit` keys, and save; then the next region. Then steps and
+   motion, then polish. Never replace the file with one Write of the
+   finished figure: the person must see the boxes turn into the figure.
+   Last: `python {T}/blockout.py --strip {DECK_DIR}/build/figures/{NAME}.html`
+   (figcheck reports `draft` until then).
    The same applies to every FEEDBACK ROUND: when feedback changes the layout,
-   save a rough version of the new layout within ~2 minutes, then refine it.
+   show the new layout rough within ~2 minutes (move the existing marks or
+   boxes), then refine it region by region.
    Nobody sees anything while you plan, and a silent 9-minute think looks
    like a stall.
 3. The file must be a valid, rendering page after EVERY save. Never delete it,
@@ -107,7 +119,7 @@ the slide is blank when the slideshow starts on it. Run
 `python {T}/fitguard.py {DECK_DIR}/build/figures/{NAME}.html`
 (exit 0; `--fix` adds the guard).
 
-figcheck must exit 0 and show no `no-edit` / `edit-leaf` warning (no
+figcheck must exit 0 (no `draft`: you ran `--strip`) and show no `no-edit` / `edit-leaf` warning (no
 overlaps, no lines through labels, no fade-only, no page script errors: it
 reports uncaught exceptions itself, so don't hand-roll a `node -e`/vm syntax
 check). A warning your figure accepts ON PURPOSE (e.g. a timeline already

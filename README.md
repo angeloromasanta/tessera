@@ -77,7 +77,7 @@ from the current folder, so a workspace that nests this repo can keep its own
 slides/              the app (TypeScript, Vite) → one-file shell
 kernel/              shared machinery: save/splice, autosave, i18n, anim, charts
 server/poll-worker/  the poll, game and AI service (Cloudflare Workers Free)
-tools/               authoring tools: slide.py, shoot.py, figcheck.py, md_to_deck.py, publish.py …
+tools/               authoring tools: slide.py, shoot.py, blockout.py, figcheck.py, md_to_deck.py, publish.py …
 kit/                 ready-made pages: engagement (kit/engage), figures and their knowledge base (kit/figures)
 template.html        the default template — the SOURCE, not a build artifact
 template/            figure sources spliced into template.html, and its builder

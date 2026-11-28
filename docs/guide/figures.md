@@ -24,7 +24,7 @@ $KIT/figures/examples/            finished figures by genre
 $KIT/figures/knowledge/, $T/kb.py what earlier figures taught (recipes, rules, corrections, pitfalls)
 reference/AGENT_BRIEF.md          shared brief for every figure agent (any harness)
 reference/FIGURE_BRIEF.md         template for the per-figure brief
-$T/figcheck.py  shoot.py  embed_font.py  live.py  live_figures.py  slide.py  deck_build.py  fitguard.py
+$T/blockout.py  figcheck.py  shoot.py  embed_font.py  live.py  live_figures.py  slide.py  deck_build.py  fitguard.py
 ```
 
 Rings, self-drawing curves, bands, flows, glyph streams, boxes that grow,
@@ -36,7 +36,7 @@ Where the files go (what the tools actually do):
 
 | file | path | written by |
 |---|---|---|
-| figure source (edit this) | `$DECK_DIR/build/figures/NAME.html` | you / the agent; `live_figures.py open` makes a placeholder |
+| figure source (edit this) | `$DECK_DIR/build/figures/NAME.html` | `blockout.py` (the first draft), then you / the agent; `live_figures.py open` makes a placeholder |
 | bundled page (font inlined) | `$DECK_DIR/build/fig-NAME.html` | `embed_font.py build/figures/NAME.html --deck DECK.html`; `live_figures.py close` |
 | checks | `$DECK_DIR/build/check/NAME/` | `shoot.py --clicks all` |
 | poster, live/agent route | `$DECK_DIR/build/posters/NAME.png` | the agent (final `step-NN.png`), `live_figures.py` |
@@ -71,15 +71,26 @@ When in doubt: animated → `embed`; static → `diagram`. Spec blocks:
    the last leaves the slide. `notes:` has one line per state, the first
    spoken on load. Every arrow is `from-id → to-id: meaning`. **No captions in
    the figure** — the presenter narrates.
-3. **Draft on the canvas within ~2 minutes** ([authoring.md](authoring.md),
-   "Draft first"): the regions as plain boxes with one-word labels (each with
-   its `data-edit` key from the first draft) at real positions in the real
-   frame, no motion or styling. `cp $KIT/figures/figure.html
-   $DECK_DIR/build/figures/NAME.html`, start `live.py`, put it on its slide
-   (below), say which slide in one line, keep going.
-4. **Iterate in passes**: layout → real marks and text → steps and motion →
-   polish. Save a valid page after each visible change; patch the content
-   table or one constant, never rewrite the file.
+3. **Block it out within ~2 minutes: every state, as boxes.** Write the
+   regions and states as a ~15-line layout spec and let
+   `$T/blockout.py` draw it (below, "Blockout"): dashed boxes, circles,
+   chips and arrows with one-word labels, at their real positions in the real
+   frame, each entering on the click it will enter on, and a strip under the
+   figure saying what each state will show. Put it on its slide, say which
+   slide in one line. The person clicks through the **whole build** as
+   wireframes before anything is styled. Never land the bare starter (its
+   example baseline reads as "a line") or a placeholder as the draft.
+4. **Refine that file in passes, region by region**: layout (move the boxes:
+   edit the spec and re-run `blockout.py`, which overwrites only a blockout) →
+   **real marks, one region per Edit** (replace one `<!-- region: ID -->`
+   group with its real marks, same ids and `data-edit` keys, save; the next
+   region; the person watches boxes turn into the figure) → steps and motion
+   (pose, cam, motion classes, the loop and outro) → polish →
+   `blockout.py --strip FILE` (removes the state strip; figcheck reports
+   `draft` until then). Never replace the blockout with one Write of the
+   finished figure: that is the jump from a sketch to the end product the
+   person was not shown. A generator script (`make_NAME.py`) is fine, but its
+   first run reproduces the blockout and each later run adds one region.
 5. **Check** (below) until figcheck exits 0, then read the final state once
    at full size.
 6. **Finish**: bundle the page and poster into the deck, notes one line per
@@ -89,6 +100,41 @@ Checking the real theme: when the brief doesn't give it,
 `slide.py info DECK --section theme` (small). Not `deck_build.py info`
 (80–100 KB). A deck whose theme differs from the starter's gets its `:root`
 block edited once.
+
+## Blockout
+
+```
+$PY $T/blockout.py --example                       # a spec to copy
+$PY $T/blockout.py SPEC -o $DECK_DIR/build/figures/NAME.html     [--root-from $DECK_DIR/build/figures/OTHER.html] [--notes $DECK_DIR/build/notes/NAME.txt]
+$PY $T/blockout.py --strip $DECK_DIR/build/figures/NAME.html   # last pass
+```
+
+One item per line, coordinates in viewBox units (x y = top-left):
+
+```
+frame titled                                  # or full (1280x720)
+note 1 The person types a request.            # one per state: the strip, and --notes
+box    you    60 150 220 180  You       @1    # region, enters on click 1
+box    app    470 110 340 260 "The app" @2
+row    ctx    500 260 280 80  Files|Mail|Web  @2+   # evenly spread; @2+ = one per click
+circle model  1080 240 90     Model     @3
+arrow  a1     you app         request   @2    # edge to edge, draws itself
+curve  hype   80,400 300,90 520,330 1200,200  @1
+axis   base   60,440 1220,440 Time            # always on
+```
+
+`col` and `grid ID x y w h COLS A|B|…` lay boxes out evenly too; `chip`,
+`text`, `line`; `@2-4` (states 2 to 4), `@1,3`. `--help` has the grammar.
+The page is the starter (engine verbatim, palette, type roles), so the
+refine passes keep everything the starter gives; `--root-from` copies a
+deck's figure palette (`:root`) from one of its figures. Each region is one
+`<!-- region: ID -->` group in `#shapes`; arrows and lines are in `#links`,
+their labels in `#labels`. The keys are the ids (`ID-1`, `ID-2` for a
+two-line label; an arrow's label is the mark `ID-l`, keyed `ID`), so a refine that keeps
+the ids keeps every edit made on the draft. figcheck on a blockout reports
+only `draft` and real layout problems: fix those in the spec while it is
+cheap. Several figures in one request: block **all** of them out and land
+them before refining any, so the person sees every slide's layout first.
 
 ## Motion rules
 
@@ -144,6 +190,7 @@ its origin), `march` (endless dashes), `breathe` (endless pulse).
 | `off-camera` | `cam: () => camFit([ids of the beat])` |
 | `coverage` | drawing doesn't fill the frame: rescale from the constants |
 | `state0` | state 0 should be empty or frame-only unless `notes:` narrates it |
+| `draft` | still a blockout: refine it, then `blockout.py --strip FILE` |
 | `no-edit` | `data-edit="KEY"` on the label's own node (JS: `txt()` / `T()`); a live value gets `data-no-edit` ("Editable labels") |
 | `edit-leaf` | move the key down to each `<tspan>` / child that holds words |
 

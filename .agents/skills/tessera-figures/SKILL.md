@@ -29,9 +29,12 @@ marks and steps into the working figure page.
 
 ## While you build
 
-- **Draft on the slide within a couple of minutes** (plain boxes, one-word
-  labels with their `data-edit` keys, real positions), say which slide it is
-  on, then refine in passes. The person watching should stay in edit mode.
+- **Block it out on the slide within a couple of minutes**: a ~15-line spec
+  to `$T/blockout.py` draws every state as dashed boxes, circles and arrows
+  with one-word labels at real positions (`$GUIDE/figures.md`, "Blockout").
+  Say which slide it is on, then refine that file region by region (one
+  Edit per region, saving each), never in one rewrite; `--strip` last.
+  The person watching should stay in edit mode.
 - **The look comes from the deck**: copy the starter's `:root` tokens, then
   replace them with the deck's figure family when the template defines one
   (its agent notes, "FIGURE STYLE", or a brand skill). Never a typed hex.
@@ -43,7 +46,7 @@ marks and steps into the working figure page.
 
 ## Done means
 
-`figcheck.py` exits 0, the final state is read once at full size, the figure
+`figcheck.py` exits 0 (no `draft`), the final state is read once at full size, the figure
 runs in the deck (in the editor too, `liveInEditor`), it has a poster, and the
 slide's speaker notes carry one sentence per state. Compare all of a deck's
 figures side by side before calling the deck done.

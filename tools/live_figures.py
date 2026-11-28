@@ -66,11 +66,12 @@ TEMPLATE = config.template()
 # A resumed agent plans a big layout change silently before its first save;
 # the presenter, watching the canvas, sees nothing for minutes. Say it every round.
 REVISE_PREFIX = ("The presenter is watching your figure live. Save a rough, valid version of "
-                 "any layout change within ~2 minutes, then refine it with small Edits.\n\n")
+                 "any layout change within ~2 minutes (move the existing marks or boxes), "
+                 "then refine it region by region with small Edits, saving after each.\n\n")
 PLACEHOLDER = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>
 <style>html,body{{margin:0;height:100%;background:#fff;font-family:Manrope,Segoe UI,sans-serif;color:#1A2326}}
 body{{display:grid;place-items:center}}p{{font-size:22px;opacity:.55}}</style></head>
-<body><p>{name} · an agent is building this figure…</p></body></html>
+<body><p>{name} · an agent is building this figure… (its blockout lands next)</p></body></html>
 """
 
 

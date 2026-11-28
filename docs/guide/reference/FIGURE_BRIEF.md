@@ -8,6 +8,8 @@
 # Your figure: slide N, "<exact slide title>"
 Your file: `$DECK_DIR/build/figures/NAME.html` (name = `NAME`).
 Suggested example: `examples/<one file>.html`. Read only that one.
+The file is <a placeholder: start with blockout.py / already a blockout of the
+states below, made by the coordinator: start refining it, region by region>.
 <!-- redo only: -->
 The file holds an earlier draft. <Replace it / improve it, keeping X, Y, Z.>
 

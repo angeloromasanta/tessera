@@ -48,7 +48,9 @@ activity**:
    Regions as plain boxes with one-word labels at their real positions;
    placeholder text; a poll with its question already set; a game or activity
    as a playable skeleton (one round, one screen, the phone page posting one
-   answer). No styling and no motion yet.
+   answer). No styling and no motion yet. A figure's draft is its
+   **blockout** (`blockout.py`, [figures.md](figures.md) "Blockout"): every
+   state as boxes, so the person clicks through the whole build first.
 2. **Say where it is in one line** (the slide id or title), so the person
    watching the editor looks at it.
 3. **Get it seen before polishing.** Wait only when the claim or the mechanic
